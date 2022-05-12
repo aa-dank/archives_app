@@ -1,8 +1,10 @@
+import helpers
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, BooleanField, SelectField
 from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError
 from flask_wtf.file import FileField, FileRequired
 from archiver.models import User
+
 
 DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 'C - Consultants',
                      'D - Environmental Review Process', 'E - Program and Design',
@@ -35,12 +37,29 @@ class LoginForm(FlaskForm):
     remember = BooleanField('Remember Me')
     submit = SubmitField('Login')
 
-class uploadFileForm(FlaskForm):
+class UploadFileForm(FlaskForm):
     project_number = StringField('Project Number', validators=[DataRequired()])
     new_filename = StringField('New Filename')
     document_date = StringField('Document Date')
     destination_directory = SelectField('Destination Directory', validators=[DataRequired()], choices=DIRECTORY_CHOICES)
     notes = StringField('Notes')
-    upload = FileField('File Upload', validators=[FileRequired()])
+    upload = FileField('File Upload', validators=[FileRequired()]) #TODO should we use filetype validation
     submit = SubmitField('Archive File')
+
+class ServerChange(FlaskForm):
+    # Place to enter path to asset to be deleted
+    path_delete = StringField('Path to asset to delete', validators=[])
+
+    # Enter a path to be changed, current_path, and then the path that it should be changed to
+    current_path = StringField('Path to Change', validators=[])
+    new_path = StringField('New Path')
+
+
+    new_directory = BooleanField('New Directory')
+    submit = SubmitField('Make Change')
+
+    def validate_new_directory(self, new_directory):
+        curent_path_list = helpers.split_path(self.current_path)
+
+
 

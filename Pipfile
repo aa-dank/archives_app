@@ -10,6 +10,7 @@ flask-sqlalchemy = "*"
 email-validator = "*"
 flask-bcrypt = "*"
 flask-login = "*"
+python-dateutil = "*"
 
 [dev-packages]
 

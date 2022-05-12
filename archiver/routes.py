@@ -1,8 +1,11 @@
+import os
+from archival_file import ArchivalFile
 from flask import render_template, url_for, flash, redirect, request
 from flask_login import login_user, logout_user, login_required, current_user
 from archiver.forms import *
 from archiver.models import *
 from archiver import app, db, bcrypt
+
 
 posts = [
     {
@@ -63,15 +66,42 @@ def login():
     return render_template('login.html', title='Login', form=form)
 
 
+def save_uploaded_file(uploaded_file):
+    #TODO placeholder
+    f_name, f_ext = os.path.splitext(uploaded_file.filename)
+    path = os.path.join(app.root_path)
+    return path
+
 @app.route("/upload_file", methods=['GET', 'POST'])
 @login_required
 def upload_file():
-    form = uploadFileForm()
+    form = UploadFileForm()
     if form.validate_on_submit():
-        # flash(f'Submittal {form.submittal_name.data} sent!', 'success')
-        flash(f'File received!', 'success')
-        return redirect(url_for('upload_file'))
+        arch_file = ArchivalFile(form_upload=form.upload, project=form.project_number.data,
+                                 new_filename=form.new_filename.data, notes=form.notes.data,
+                                 destination_dir=form.destination_directory.data)
+        archiving_successful = arch_file.archive_in_destination()
+        if archiving_successful:
+            archived_file = ArchivedFile(destination_path=arch_file.destination_path,
+                                         project_number=arch_file.project_number, document_date=form.document_date.data,
+                                         destination_directory=arch_file.destination_dir, file_code=arch_file.file_code,
+                                         notes=arch_file.notes, filename=arch_file.assemble_destination_filename())
+            #TODO how to add the filesize and archivist id to this. Also need to add extension
+            #TODO should I remove the form_upload attribute from archivalFile
+            db.session.add(archived_file)
+            db.session.commit()
+            flash(f'File received!', 'success')
+            return redirect(url_for('upload_file'))
     return render_template('upload_file.html', title='Upload File to Archive', form=form)
+
+@app.route("/change", methods=['GET', 'POST'])
+@login_required
+def server_change():
+    form = ServerChange()
+    if form.validate_on_submit():
+
+
+
 
 @app.route("/logout")
 def logout():
@@ -81,4 +111,5 @@ def logout():
 @app.route("/account")
 @login_required
 def account():
+
     return render_template('account.html', title='Account')

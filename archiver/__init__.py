@@ -3,8 +3,6 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
 
-
-
 # app setup
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'ABC'
@@ -15,4 +13,5 @@ login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
 
-from archiver import routes #TODO may need to be moved after db=SQLAlchemy
+# This needs to be imported down here for important reasons beyond me.
+from archiver import routes
