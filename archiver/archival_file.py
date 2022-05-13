@@ -280,9 +280,9 @@ class ArchivalFile:
                 if len(dirs_matching_proj_num) == 1:
                     new_path = os.path.join(new_path, dirs_matching_proj_num[0])
 
-                new_path = path_from_project_num_dir_to_destination(path_to_project_num_dir= new_path,
-                                                                    large_template_destination= self.nested_large_template_destination_dir(),
-                                                                    destination_filename= self.assemble_destination_filename())
+                new_path = path_from_project_num_dir_to_destination(path_to_project_num_dir=new_path,
+                                                                    large_template_destination=self.nested_large_template_destination_dir(),
+                                                                    destination_filename=self.assemble_destination_filename())
                 self.destination_path = new_path
                 return self.destination_path
 

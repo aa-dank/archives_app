@@ -35,4 +35,17 @@ class ArchivedFile(db.Model):
     extension = db.column(db.String)
 
     def __repr__(self):
+        #TODO does date_archived need to be changed to
         return f"Archived File('{self.destination_path}', '{self.project_number}', '{self.file_size}', '{self.date_archived}')"
+
+class ServerChange(db.Model):
+    __tablename__ = 'server_changes'
+    id = db.Column(db.Integer, primary_key=True)
+    old_path = db.Column(db.String)
+    new_path = db.Column(db.String)
+    change_type = db.Column(db.Float, nullable=False)
+    date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow())
+    archivist_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+
+    def __repr__(self):
+        return f"Server Change('{self.change_type}', '{self.date}', '{self.old_path}', '{self.new_path}')"

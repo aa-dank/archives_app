@@ -99,7 +99,7 @@ def upload_file():
 def server_change():
     form = ServerChange()
     if form.validate_on_submit():
-
+        pass
 
 
 

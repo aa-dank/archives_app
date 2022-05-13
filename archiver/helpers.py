@@ -92,5 +92,27 @@ def is_valid_email(potential_email: str):
 
 
 def mounted_path_to_network_path(mounted_path, network_location = config.RECORDS_SERVER_LOCATION):
-    #TODO Complete this definition
-    pass
+    """
+
+    :param mounted_path: string version of the path
+    :param network_location:
+    :return:
+    """
+    def is_similar_ip_address(ip_address1, ip_address2):
+        just_the_digits = lambda s: [char for char in s if char.isdigit()]
+        return just_the_digits(ip_address1) == just_the_digits(ip_address2)
+    
+    mounted_path_list = split_path(mounted_path)
+    # If mounted_path is already a network path to same location, 
+    if is_similar_ip_address(mounted_path_list[0], network_location):
+        return mounted_path
+
+    #need to determine if the path is actually a mounted path
+    count_alpha_chars = lambda s: len([char for char in s if char.isalpha()])
+    if not count_alpha_chars(mounted_path_list[0]) == 1:
+        raise Exception(f"mounted_path parameter doesn't appear to have a mount point: \n{mounted_path}")
+
+    mounted_path_list[0] = network_location
+    return os.path.join(*mounted_path_list)
+
+    
