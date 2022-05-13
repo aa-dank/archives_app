@@ -35,7 +35,7 @@ class server_change:
             while True:
                 for idx, new_path_dir in enumerate(new_path_list):
                     if new_path_dir != old_path_list[idx]:
-                        new_change_path = os.path.join(*new_path_list[:idx])
+                        new_change_path = os.path.join(*new_path_list[:idx]) #TODO test these indexes are correct
                         old_change_path = os.path.join(*old_path_list[:idx])
                         os.rename(old_change_path, new_change_path)
                         old_path = os.path.join(new_change_path, *old_path_list[idx:])
@@ -44,8 +44,14 @@ class server_change:
 
         # if the change_type is 'MOVE'
         if self.change_type.upper() == self.change_type_possibilities[2]:
-            #TODO complete this
-            pass
+            filename = helpers.split_path(self.old_path)[-1]
+            destination_path = os.path.join(self.new_path, filename)
+            if os.path.isfile(self.old_path):
+                shutil.copyfile(src=self.old_path, dst=destination_path)
+                return True
+
+            shutil.move(self.old_path, destination_path, copy_function=shutil.copytree)
+            return True
 
         # if the change_type is 'MAKE'
         if self.change_type.upper() == self.change_type_possibilities[3]:
