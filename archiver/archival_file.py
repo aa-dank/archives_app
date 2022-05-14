@@ -1,8 +1,8 @@
 import os
-import helpers
 import logging
 import shutil
-import config
+import archiver.config as config
+import archiver.helpers as helpers
 from dateutil import parser
 from datetime import datetime
 from collections import defaultdict
@@ -10,7 +10,7 @@ from collections import defaultdict
 
 class ArchivalFile:
 
-    def __init__(self, form_upload = None, current_path: str = None, project: str = None, destination_path: str = None, new_filename: str = None,
+    def __init__(self, wtform_upload = None, current_path: str = None, project: str = None, destination_path: str = None, new_filename: str = None,
                  notes: str = None, destination_dir: str = None, document_date: str = None):
         """
 
@@ -21,7 +21,7 @@ class ArchivalFile:
         :param notes: for recording notes in the database
         :param destination_dir: chosen directory from the directory templates
         """
-        self.wtform_upload = form_upload
+        self.wtform_upload = wtform_upload
         self.current_path = current_path
         self.size = 0
         if self.current_path and os.path.exists(self.current_path):

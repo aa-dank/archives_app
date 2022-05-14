@@ -1,0 +1,108 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <form method="POST" action="" enctype="multipart/form-data">
+            {{ form.hidden_tag() }}
+            <fieldset class="form-group">
+                <legend class="border-bottom mb-4">Make Server Changes</legend>
+                <h6>Intro:</h6>
+                <p>
+                    This form serves as a way to make changes to the directories and files on the records server. Multiple changes can be made with a single change execution, but this is not recommended because it can result in collisions.
+                </p>
+                <hr>
+                <div class="form-group">
+                    <h6>Delete File/Directory</h6>
+                    <p>Enter the full path to the file or directory to be deleted</p>
+                    {{ form.path_delete.label(class="form-control-label") }}
+                    {% if form.path_delete.errors %}
+                        {{ form.path_delete(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.path_delete.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.path_delete(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <hr>
+                <div class="form-group">
+                    <h6>Change File or Directory Name(s)</h6>
+                    <p>Enter the full path of the asset which will be changed, then enter the desired, new path that will be the result after the renaming.</p>
+                    {{ form.current_path.label(class="form-control-label") }}
+                    {% if form.current_path.errors %}
+                        {{ form.current_path(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.current_path.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.current_path(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    {{ form.new_path.label(class="form-control-label") }}
+                    {% if form.new_path.errors %}
+                        {{ form.new_path(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.new_path.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.new_path(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <hr>
+                <div class="form-group">
+                    <h6>Move a File or Directory</h6>
+                    <p>Enter the path to the asset to be moved and the path to the destination directory where it will be moved.</p>
+                    {{ form.asset_path.label(class="form-control-label") }}
+                    {% if form.asset_path.errors %}
+                        {{ form.asset_path(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.asset_path.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.asset_path(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    {{ form.destination_path.label(class="form-control-label") }}
+                    {% if form.destination_path.errors %}
+                        {{ form.destination_path(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.destination_path.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.destination_path(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <hr>
+                <div class="form-group">
+                    <h6>Make a New Directory</h6>
+                    <p>Enter the path for the directory you would like to be created.</p>
+                    {{ form.new_directory.label(class="form-control-file") }}
+                    {% if form.new_directory.errors %}
+                        {{ form.new_directory(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.new_directory.errors %}
+                                <span class="text-danger">{{ error }}</span></br>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.new_directory(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+            </fieldset>
+            <div class="form-group">
+                {{ form.submit(class="btn btn-outline-info") }}
+            </div>
+        </form>
+    </div>
+{% endblock content %}

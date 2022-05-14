@@ -2,7 +2,7 @@ import subprocess
 import re
 import os
 import sys
-import config
+import archiver.config as config
 
 def split_path(path):
     '''splits a path into each piece that corresponds to a mount point, directory name, or file'''
@@ -91,7 +91,7 @@ def is_valid_email(potential_email: str):
     return re.fullmatch(email_regex, potential_email)
 
 
-def mounted_path_to_network_path(mounted_path, network_location = config.RECORDS_SERVER_LOCATION):
+def mounted_path_to_networked_path(mounted_path, network_location=config.RECORDS_SERVER_LOCATION):
     """
 
     :param mounted_path: string version of the path

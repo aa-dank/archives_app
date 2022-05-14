@@ -1,12 +1,12 @@
 import os.path
 
-import helpers
+import archiver.helpers as helpers
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, BooleanField, SelectField
 from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError
 from flask_wtf.file import FileField, FileRequired
 from flask_login import current_user
-from archiver.models import User
+from archiver.models import UserModel
 
 
 DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 'C - Consultants',
@@ -30,7 +30,7 @@ class RegistrationForm(FlaskForm):
     submit = SubmitField('Sign Up')
 
     def validate_email(self, email):
-        user = User.query.filter_by(email=email.data).first()
+        user = UserModel.query.filter_by(email=email.data).first()
         if user:
             raise ValidationError('Account registered to this email already exists.')
 
@@ -62,28 +62,28 @@ class ServerChange(FlaskForm):
     destination_path = StringField('Destination Directory Path')
 
     # Form field for adding a new directory
-    new_directory = BooleanField('New Directory')
-    submit = SubmitField('Execute Change.')
-
+    new_directory = StringField('New Directory Path')
+    submit = SubmitField('Execute Change(s)')
 
     def validate_new_directory(self, new_directory):
         if new_directory:
-            new_directory = helpers.mounted_path_to_network_path(mounted_path=new_directory.data)
-            new_dir_list = helpers.split_path(new_directory.data)
-            if not os.path.exists(os.path.join(new_dir_list[:-1])):
-                raise ValidationError(f"Parent directory doesn't exist for making this directory:\n{new_directory.data}")
+            network_directory = helpers.mounted_path_to_networked_path(mounted_path=new_directory.data)
+            if os.path.exists(os.path.join(network_directory)):
+                raise ValidationError(f"Directory already exists:\n{new_directory.data}")
 
     def validate_destination_path(self, destination_path):
         if destination_path.data:
-            if not os.path.exists(destination_path.data)
+            network_path = helpers.mounted_path_to_networked_path(destination_path.data)
+            if not os.path.exists(network_path):
                 raise ValidationError(f"Destination location doesn't exist: \n{destination_path.data}")
 
-            elif not os.path.isdir(destination_path.data):
+            elif not os.path.isdir(network_path):
                 raise ValidationError(f"Destination location is not a directory: \n{destination_path.data}")
 
     def validate_asset_path(self, asset_path):
         if asset_path.data:
-            if not os.path.exists(asset_path.data)
+            network_path = helpers.mounted_path_to_networked_path(asset_path.data)
+            if not os.path.exists(network_path):
                 raise ValidationError(f"Asset doesn't exist to move: \n{asset_path.data}")
 
 
