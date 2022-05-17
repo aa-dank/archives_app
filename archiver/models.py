@@ -37,7 +37,7 @@ class ArchivedFileModel(db.Model):
 
     def __repr__(self):
         # TODO does date_archived need to be changed to string
-        return f"Archived File('{self.destination_path}', '{self.project_number}', '{self.file_size}', '{self.date_archived}')"
+        return f"Archived File('{self.destination_path}', '{self.project_number}', '{self.file_size}')"
 
 class ServerChangeModel(db.Model):
     __tablename__ = 'server_changes'
@@ -49,4 +49,4 @@ class ServerChangeModel(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 
     def __repr__(self):
-        return f"Server Change('{self.change_type}', '{self.date}', '{self.old_path}', '{self.new_path}')"
+        return f"Server Change('{self.change_type}', '{self.old_path}', '{self.new_path}')"

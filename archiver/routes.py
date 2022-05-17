@@ -1,6 +1,6 @@
 import os
 from archiver.archival_file import ArchivalFile
-from archiver.server_change import ServerChange
+from archiver.server_edit import ServerEdit
 from flask import render_template, url_for, flash, redirect, request
 from flask_login import login_user, logout_user, login_required, current_user
 from archiver.forms import *
@@ -99,44 +99,46 @@ def upload_file():
 @app.route("/server_change", methods=['GET', 'POST'])
 @login_required
 def server_change():
-    def save_server_change(change: ServerChange):
+    def save_server_change(executed_edit: ServerEdit):
         """
         Subroutine for saving server changes to database
-        :param change: ServerChange object
+        :param change: ServerEdit object
         :return: None
         """
-        change_model = ServerChangeModel(**vars(change))
+        editor = UserModel.query.filter_by(email=executed_edit.user).first()
+        change_model = ServerChangeModel(old_path=executed_edit.old_path, new_path=executed_edit.new_path,
+                                         change_type=executed_edit.change_type, user_id=editor.id)
         db.session.add(change_model)
         db.session.commit()
 
     form = ServerChange()
     if form.validate_on_submit():
         # TODO how to get current user email or id or whatever
-        user = current_user
+        user_email = current_user.email
 
         # if the user entered a path to delete
         if form.path_delete.data:
-            deletion = ServerChange(change_type='DELETE', new_path=form.path_delete.data, user=user)
+            deletion = ServerEdit(change_type='DELETE', user=user_email, old_path=form.path_delete.data)
             deletion.execute()
             save_server_change(deletion)
 
         # if the user entered a path to change and the desired path change
         if form.current_path.data and form.new_path.data:
-            renaming = ServerChange(change_type='RENAME', old_path=form.current_path.data, new_path=form.new_path.data,
-                                  user=user)
+            renaming = ServerEdit(change_type='RENAME', user=user_email, old_path=form.current_path.data,
+                                  new_path=form.new_path.data)
             renaming.execute()
             save_server_change(renaming)
 
         # if the user entered a path to an asset to move and a location to move it to
         if form.asset_path.data and form.destination_path.data:
-            move = ServerChange(change_type='MOVE', old_path=form.asset_path, new_path=form.destination_path.data,
-                                user=user)
+            move = ServerEdit(change_type='MOVE', user=user_email, old_path=form.asset_path,
+                              new_path=form.destination_path.data)
             move.execute()
             save_server_change(move)
 
         # if user entered a path for a new directory to be made
         if form.new_directory.data:
-            creation = ServerChange(change_type='CREATE', new_path=form.new_directory.data, user=user)
+            creation = ServerEdit(change_type='CREATE', user=user_email, new_path=form.new_directory.data)
             creation.execute()
             save_server_change(creation)
     return render_template('server_change.html', title='Make change to file server', form=form)

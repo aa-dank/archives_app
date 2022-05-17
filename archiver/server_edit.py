@@ -2,12 +2,24 @@ import os
 import shutil
 import archiver.helpers as helpers
 
-class ServerChange:
-    def __int__(self, change_type, new_path, old_path, user):
+class ServerEdit:
+    def __init__(self, change_type, user, new_path=None, old_path=None):
+        """
+
+        :param change_type:
+        :param new_path: resulting path after the change will be made
+        :param old_path: resultin
+        :param user:
+        :return:
+        """
         self.change_type_possibilities = ('DELETE', 'RENAME', 'MOVE', 'CREATE')
         self.change_type = change_type
-        self.new_path = helpers.mounted_path_to_networked_path(new_path)
-        self.old_path = helpers.mounted_path_to_networked_path(old_path)
+        self.new_path = None
+        if new_path:
+            self.new_path = helpers.mounted_path_to_networked_path(new_path)
+        self.old_path = None
+        if old_path:
+            self.old_path = helpers.mounted_path_to_networked_path(old_path)
         self.user = user
         self.change_executed = False
 

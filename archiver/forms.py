@@ -1,6 +1,7 @@
 import os.path
 
 import archiver.helpers as helpers
+import archiver.config as config
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, BooleanField, SelectField
 from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError
@@ -44,7 +45,8 @@ class UploadFileForm(FlaskForm):
     project_number = StringField('Project Number', validators=[DataRequired()])
     new_filename = StringField('New Filename')
     document_date = StringField('Document Date')
-    destination_directory = SelectField('Destination Directory', validators=[DataRequired()], choices=DIRECTORY_CHOICES)
+    destination_directory = SelectField('Destination Directory', validators=[DataRequired()],
+                                        choices=config.DIRECTORY_CHOICES)
     notes = StringField('Notes')
     upload = FileField('File Upload', validators=[FileRequired()]) #TODO should we use filetype validation
     submit = SubmitField('Archive File')
@@ -65,8 +67,14 @@ class ServerChange(FlaskForm):
     new_directory = StringField('New Directory Path')
     submit = SubmitField('Execute Change(s)')
 
+    def validate_path_delete(self, path_delete):
+        if path_delete.data:
+            network_path = helpers.mounted_path_to_networked_path(mounted_path=path_delete.data)
+            if not os.path.exists(network_path):
+                raise ValidationError(f"Destination location doesn't exist: \n{path_delete.data}")
+
     def validate_new_directory(self, new_directory):
-        if new_directory:
+        if new_directory.data:
             network_directory = helpers.mounted_path_to_networked_path(mounted_path=new_directory.data)
             if os.path.exists(os.path.join(network_directory)):
                 raise ValidationError(f"Directory already exists:\n{new_directory.data}")
