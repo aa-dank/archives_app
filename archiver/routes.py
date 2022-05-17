@@ -141,6 +141,9 @@ def server_change():
             creation = ServerEdit(change_type='CREATE', user=user_email, new_path=form.new_directory.data)
             creation.execute()
             save_server_change(creation)
+
+        flash(f'Server oprerating system call executed to make requested change.', 'success')
+        return redirect(url_for('server_change'))
     return render_template('server_change.html', title='Make change to file server', form=form)
 
 @app.route("/logout")

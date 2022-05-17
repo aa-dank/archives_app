@@ -44,7 +44,7 @@ class ServerChangeModel(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     old_path = db.Column(db.String)
     new_path = db.Column(db.String)
-    change_type = db.Column(db.Float, nullable=False)
+    change_type = db.Column(db.String, nullable=False)
     date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow())
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 

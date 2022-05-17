@@ -39,7 +39,7 @@ class ServerEdit:
         # If the change type is 'RENAME'
         if self.change_type.upper() == self.change_type_possibilities[1]:
             old_path = self.old_path
-            old_path_list = helpers.split_path(self.old_path)
+            old_path_list = helpers.split_path(old_path)
             new_path_list = helpers.split_path(self.new_path)
             if not len(old_path_list) == len(new_path_list):
                 raise Exception(
@@ -47,12 +47,14 @@ class ServerEdit:
                 return self.change_executed
 
             while True:
+                if old_path == self.new_path:
+                    break
                 for idx, new_path_dir in enumerate(new_path_list):
                     if new_path_dir != old_path_list[idx]:
-                        new_change_path = os.path.join(*new_path_list[:idx]) #TODO test these indexes are correct
-                        old_change_path = os.path.join(*old_path_list[:idx])
+                        new_change_path = os.path.join(*new_path_list[:idx+1]) #TODO test these indexes are correct
+                        old_change_path = os.path.join(*old_path_list[:idx+1])
                         os.rename(old_change_path, new_change_path)
-                        old_path = os.path.join(new_change_path, *old_path_list[idx:])
+                        old_path = os.path.join(new_change_path, *old_path_list[idx+1:])
                         old_path_list = helpers.split_path(old_path)
                         break
 

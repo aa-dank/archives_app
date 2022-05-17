@@ -79,6 +79,12 @@ class ServerChange(FlaskForm):
             if os.path.exists(os.path.join(network_directory)):
                 raise ValidationError(f"Directory already exists:\n{new_directory.data}")
 
+    def validate_current_path(self, current_path):
+        if current_path.data:
+            network_path = helpers.mounted_path_to_networked_path(current_path.data)
+            if not os.path.exists(network_path):
+                raise ValidationError(f"Destination location doesn't exist: \n{current_path.data}")
+
     def validate_destination_path(self, destination_path):
         if destination_path.data:
             network_path = helpers.mounted_path_to_networked_path(destination_path.data)
