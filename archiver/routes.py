@@ -6,7 +6,8 @@ from flask_login import login_user, logout_user, login_required, current_user
 from archiver.forms import *
 from archiver.models import *
 from archiver import app, db, bcrypt
-
+from dateutil import parser
+from functools import wraps
 
 posts = [
     {
@@ -24,6 +25,24 @@ posts = [
 ]
 
 
+def roles_required(roles: list[str]):
+    """
+    :param roles: list of the roles that can access the endpoint
+    :return: actual decorator function
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrap(*args, **kwargs):
+            user_role_list = current_user.roles.split(",")
+            if current_user.roles and [role for role in roles if role in user_role_list]:
+                return func(*args, **kwargs)
+            else:
+                flash("Need a different role to access this.", 'danger')
+                return redirect(url_for('home'))
+
+    return decorator
+
+
 @app.route("/")
 @app.route("/home")
 def home():
@@ -32,15 +51,16 @@ def home():
 
 @app.route("/register", methods=['GET', 'POST'])
 def register():
-    #if the current user has already been authenticated, just send them to the home page.
+    # if the current user has already been authenticated, just send them to the home page.
     if current_user.is_authenticated:
         return redirect(url_for('home'))
 
     form = RegistrationForm()
     if form.validate_on_submit():
         hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
+        user_roles = ",".join(form.roles.data)
         user = UserModel(email=form.email.data, first_name=form.first_name.data, last_name=form.last_name.data,
-                         password=hashed_password)
+                         roles=user_roles, password=hashed_password)
         db.session.add(user)
         db.session.commit()
         flash(f'Account created for {form.email.data}!', 'success')
@@ -50,7 +70,7 @@ def register():
 
 @app.route("/login", methods=['GET', 'POST'])
 def login():
-    #if the current user has already been authenticated, just send them to the home page.
+    # if the current user has already been authenticated, just send them to the home page.
     if current_user.is_authenticated:
         return redirect(url_for('home'))
 
@@ -68,33 +88,35 @@ def login():
     return render_template('login.html', title='Login', form=form)
 
 
-def save_uploaded_file(uploaded_file):
-    #TODO placeholder
-    f_name, f_ext = os.path.splitext(uploaded_file.filename)
-    path = os.path.join(app.root_path)
-    return path
-
 @app.route("/upload_file", methods=['GET', 'POST'])
 @login_required
 def upload_file():
     form = UploadFileForm()
     if form.validate_on_submit():
         arch_file = ArchivalFile(wtform_upload=form.upload, project=form.project_number.data,
-                                 new_filename=form.new_filename.data, notes=form.notes.data,
+                                 new_filename=helpers.cleanse_filename(form.new_filename.data), notes=form.notes.data,
                                  destination_dir=form.destination_directory.data)
         archiving_successful = arch_file.archive_in_destination()
+
+        # if the file was successfully moved to its destination, we will save the data to the database
         if archiving_successful:
+            upload_size = os.path.getsize(arch_file.assemble_destination_path())
+            dt = parser.parse(form.document_date.data).strftime()
             archived_file = ArchivedFileModel(destination_path=arch_file.destination_path,
-                                              project_number=arch_file.project_number, document_date=form.document_date.data,
-                                              destination_directory=arch_file.destination_dir, file_code=arch_file.file_code,
-                                              notes=arch_file.notes, filename=arch_file.assemble_destination_filename())
-            #TODO how to add the filesize and archivist id to this. Also need to add extension
-            #TODO should I remove the wtform_upload attribute from archivalFile
+                                              project_number=arch_file.project_number,
+                                              document_date=form.document_date.data,
+                                              destination_directory=arch_file.destination_dir,
+                                              file_code=arch_file.file_code, archivist_id=current_user.id,
+                                              file_size=upload_size, notes=arch_file.notes,
+                                              filename=arch_file.assemble_destination_filename())
+
+            # TODO should I remove the wtform_upload attribute from archivalFile
             db.session.add(archived_file)
             db.session.commit()
-            flash(f'File received!', 'success')
+            flash(f'File archived!', 'success')
             return redirect(url_for('upload_file'))
     return render_template('upload_file.html', title='Upload File to Archive', form=form)
+
 
 @app.route("/server_change", methods=['GET', 'POST'])
 @login_required
@@ -131,7 +153,7 @@ def server_change():
 
         # if the user entered a path to an asset to move and a location to move it to
         if form.asset_path.data and form.destination_path.data:
-            move = ServerEdit(change_type='MOVE', user=user_email, old_path=form.asset_path,
+            move = ServerEdit(change_type='MOVE', user=user_email, old_path=form.asset_path.data,
                               new_path=form.destination_path.data)
             move.execute()
             save_server_change(move)
@@ -146,13 +168,16 @@ def server_change():
         return redirect(url_for('server_change'))
     return render_template('server_change.html', title='Make change to file server', form=form)
 
+
 @app.route("/logout")
+@login_required
 def logout():
     logout_user()
+    flash(f'You have logged out. Good-bye.', 'success')
     return redirect(url_for('home'))
+
 
 @app.route("/account")
 @login_required
 def account():
-
     return render_template('account.html', title='Account')

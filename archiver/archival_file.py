@@ -46,7 +46,7 @@ class ArchivalFile:
         :return:
         """
         if self.wtform_upload:
-            current_filename = self.wtform_upload.filename
+            current_filename = self.wtform_upload.data.filename
         if self.current_path:
             current_filename = helpers.split_path(self.current_path)[-1]
 
@@ -378,7 +378,7 @@ class ArchivalFile:
 
         elif self.wtform_upload:
             try:
-                self.wtform_upload.save(self.assemble_destination_path())
+                self.wtform_upload.data.save(self.assemble_destination_path())
                 put_in_destination = True
             except Exception as e:
                 logging.exception(f"Could not save wtform file data to archive file destination. Threw this error: {e}")

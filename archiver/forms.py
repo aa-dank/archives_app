@@ -3,29 +3,19 @@ import os.path
 import archiver.helpers as helpers
 import archiver.config as config
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SubmitField, BooleanField, SelectField
+from wtforms import StringField, PasswordField, SubmitField, BooleanField, SelectField, SelectMultipleField
 from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError
 from flask_wtf.file import FileField, FileRequired
 from flask_login import current_user
 from archiver.models import UserModel
 
 
-DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 'C - Consultants',
-                     'D - Environmental Review Process', 'E - Program and Design',
-                     'F - Bid Documents and Contract Award', 'G - Construction', "H - Submittals and O&M's",
-                     'A1 - Miscellaneous', 'A2 - Working File', 'A3 - Project Directory Matrix & Project Chronology',
-                     "B1 - CPS and Chancellor's Approvals", 'B100 - Other', 'B11 - LEED',
-                     'B12 - Outside Regulatory Agencies', 'B13 - Coastal Commission',
-                     'B2 - Office of the President UC Regents', 'B3 - State Public Works Board',
-                     'B4 - Department of Finance', 'B5 - Legislative Submittals', 'B6 - State Fire Marshal',
-                     'B7 - Office of State Architect  (DSA)', 'B8 -  General Counsel'
-                     ]
-
 class RegistrationForm(FlaskForm):
     # username = StringField('Username', validators= [DataRequired(), Length(min=2)])
     email = StringField('Email', validators=[DataRequired(), Email()])
     first_name = StringField('First Name', validators=[DataRequired()])
     last_name = StringField('Last Name', validators=[DataRequired()])
+    roles = SelectMultipleField('Role(s)', validators=[DataRequired()], choices=config.ROLES)
     password = PasswordField('password', validators=[DataRequired()])
     confirm_password = PasswordField('Confirm Password', validators= [DataRequired(), EqualTo('password')])
     submit = SubmitField('Sign Up')

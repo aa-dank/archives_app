@@ -4,6 +4,7 @@ import os
 import sys
 import archiver.config as config
 
+
 def split_path(path):
     '''splits a path into each piece that corresponds to a mount point, directory name, or file'''
     allparts = []
@@ -86,6 +87,7 @@ def clean_path(path: str):
                                          relative_levels:])
     return path
 
+
 def is_valid_email(potential_email: str):
     email_regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
     return re.fullmatch(email_regex, potential_email)
@@ -98,16 +100,17 @@ def mounted_path_to_networked_path(mounted_path, network_location=config.RECORDS
     :param network_location:
     :return:
     """
+
     def is_similar_ip_address(ip_address1, ip_address2):
         just_the_digits = lambda s: [char for char in s if char.isdigit()]
         return just_the_digits(ip_address1) == just_the_digits(ip_address2)
-    
+
     mounted_path_list = split_path(mounted_path)
     # If mounted_path is already a network path to same location, 
     if is_similar_ip_address(mounted_path_list[0], network_location):
         return mounted_path
 
-    #need to determine if the path is actually a mounted path
+    # need to determine if the path is actually a mounted path
     count_alpha_chars = lambda s: len([char for char in s if char.isalpha()])
     if not count_alpha_chars(mounted_path_list[0]) == 1:
         raise Exception(f"mounted_path parameter doesn't appear to have a mount point: \n{mounted_path}")
@@ -115,4 +118,8 @@ def mounted_path_to_networked_path(mounted_path, network_location=config.RECORDS
     mounted_path_list[0] = network_location
     return os.path.join(*mounted_path_list)
 
-    
+
+def cleanse_filename(pruposed_filename: str):
+    clean_filename = pruposed_filename.replace('\n', '')
+    clean_filename = "".join(i for i in clean_filename if i not in "\/:*?<>|")
+    return clean_filename

@@ -13,6 +13,7 @@ class UserModel(db.Model, UserMixin):
     email = db.Column(db.String, unique=True, nullable=False)
     first_name = db.Column(db.String, unique=True, nullable=False)
     last_name = db.Column(db.String, unique=True, nullable=False)
+    roles = db.Column(db.String, unique=True, nullable=False)
     password = db.Column(db.String(60), nullable=False)
     archived_files = db.relationship('ArchivedFileModel', backref='archivist', lazy=True)
 

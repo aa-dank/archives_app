@@ -46,12 +46,16 @@ class ServerEdit:
                     f"Attempt at renaming paths failed. Paths are not the same length: \n {self.new_path}\n{self.old_path}")
                 return self.change_executed
 
+            # if this a change of a filepath, we need to cleanse the filename
+            if os.path.isfile(old_path):
+                new_path_list[-1] = helpers.cleanse_filename(new_path_list[-1])
+
             while True:
                 if old_path == self.new_path:
                     break
                 for idx, new_path_dir in enumerate(new_path_list):
                     if new_path_dir != old_path_list[idx]:
-                        new_change_path = os.path.join(*new_path_list[:idx+1]) #TODO test these indexes are correct
+                        new_change_path = os.path.join(*new_path_list[:idx+1])
                         old_change_path = os.path.join(*old_path_list[:idx+1])
                         os.rename(old_change_path, new_change_path)
                         old_path = os.path.join(new_change_path, *old_path_list[idx+1:])
@@ -67,6 +71,7 @@ class ServerEdit:
             destination_path = os.path.join(self.new_path, filename)
             if os.path.isfile(self.old_path):
                 shutil.copyfile(src=self.old_path, dst=destination_path)
+                os.remove(self.old_path)
                 self.change_executed = True
                 return self.change_executed
 

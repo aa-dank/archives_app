@@ -45,3 +45,7 @@ DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 
                      'G9 - Testing and Inspection Reports. Testing Labratory', 'H - Submittals']
 
 RECORDS_SERVER_LOCATION = r"""\\128.114.170.73\PPC_Records"""
+
+DEFAULT_DATETIME_FORMAT = "%m/%d/%Y, %H:%M:%S"
+
+ROLES = ['ADMIN', 'ARCHIVIST', 'STAFF']
