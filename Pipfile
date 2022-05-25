@@ -11,6 +11,7 @@ email-validator = "*"
 flask-bcrypt = "*"
 flask-login = "*"
 python-dateutil = "*"
+pillow = "*"
 
 [dev-packages]
 

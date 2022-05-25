@@ -46,6 +46,8 @@ class ServerChangeModel(db.Model):
     old_path = db.Column(db.String)
     new_path = db.Column(db.String)
     change_type = db.Column(db.String, nullable=False)
+    files_effected = db.Column(db.Integer)
+    data_effected = db.Column(db.Numeric)
     date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow())
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 

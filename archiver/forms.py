@@ -1,5 +1,4 @@
-import os.path
-
+import os
 import archiver.helpers as helpers
 import archiver.config as config
 from flask_wtf import FlaskForm
@@ -9,6 +8,7 @@ from flask_wtf.file import FileField, FileRequired
 from flask_login import current_user
 from archiver.models import UserModel
 
+config.DIRECTORY_CHOICES.sort()
 
 class RegistrationForm(FlaskForm):
     # username = StringField('Username', validators= [DataRequired(), Length(min=2)])
@@ -38,10 +38,19 @@ class UploadFileForm(FlaskForm):
     destination_directory = SelectField('Destination Directory', validators=[DataRequired()],
                                         choices=config.DIRECTORY_CHOICES)
     notes = StringField('Notes')
-    upload = FileField('File Upload', validators=[FileRequired()]) #TODO should we use filetype validation
+    upload = FileField('File Upload', validators=[FileRequired()])
     submit = SubmitField('Archive File')
 
-class ServerChange(FlaskForm):
+class InboxTopForm(FlaskForm):
+    project_number = StringField('Project Number', validators=[DataRequired()])
+    new_filename = StringField('New Filename')
+    document_date = StringField('Document Date')
+    destination_directory = SelectField('Destination Directory', choices=config.DIRECTORY_CHOICES.sort())
+    destination_path = StringField('Destination Path')
+    notes = StringField('Notes')
+    submit = SubmitField('Archive File')
+
+class ServerChangeForm(FlaskForm):
     # Place to enter path to asset to be deleted
     path_delete = StringField('Path to asset to delete')
 

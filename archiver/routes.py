@@ -39,7 +39,6 @@ def roles_required(roles: list[str]):
             else:
                 flash("Need a different role to access this.", 'danger')
                 return redirect(url_for('home'))
-
     return decorator
 
 
@@ -88,35 +87,20 @@ def login():
     return render_template('login.html', title='Login', form=form)
 
 
-@app.route("/upload_file", methods=['GET', 'POST'])
+@app.route("/logout")
 @login_required
-def upload_file():
-    form = UploadFileForm()
-    if form.validate_on_submit():
-        arch_file = ArchivalFile(wtform_upload=form.upload, project=form.project_number.data,
-                                 new_filename=helpers.cleanse_filename(form.new_filename.data), notes=form.notes.data,
-                                 destination_dir=form.destination_directory.data)
-        archiving_successful = arch_file.archive_in_destination()
+def logout():
+    logout_user()
+    flash(f'You have logged out. Good-bye.', 'success')
+    return redirect(url_for('home'))
 
-        # if the file was successfully moved to its destination, we will save the data to the database
-        if archiving_successful:
-            upload_size = os.path.getsize(arch_file.assemble_destination_path())
-            dt = parser.parse(form.document_date.data).strftime()
-            archived_file = ArchivedFileModel(destination_path=arch_file.destination_path,
-                                              project_number=arch_file.project_number,
-                                              document_date=form.document_date.data,
-                                              destination_directory=arch_file.destination_dir,
-                                              file_code=arch_file.file_code, archivist_id=current_user.id,
-                                              file_size=upload_size, notes=arch_file.notes,
-                                              filename=arch_file.assemble_destination_filename())
 
-            # TODO should I remove the wtform_upload attribute from archivalFile
-            db.session.add(archived_file)
-            db.session.commit()
-            flash(f'File archived!', 'success')
-            return redirect(url_for('upload_file'))
-    return render_template('upload_file.html', title='Upload File to Archive', form=form)
-
+@app.route("/send_archives_file")
+@login_required
+def send_archives_file():
+    k = "this is a test"
+    print(k)
+    return k
 
 @app.route("/server_change", methods=['GET', 'POST'])
 @login_required
@@ -133,7 +117,7 @@ def server_change():
         db.session.add(change_model)
         db.session.commit()
 
-    form = ServerChange()
+    form = ServerChangeForm()
     if form.validate_on_submit():
         # TODO how to get current user email or id or whatever
         user_email = current_user.email
@@ -169,12 +153,39 @@ def server_change():
     return render_template('server_change.html', title='Make change to file server', form=form)
 
 
-@app.route("/logout")
+@app.route("/upload_file", methods=['GET', 'POST'])
 @login_required
-def logout():
-    logout_user()
-    flash(f'You have logged out. Good-bye.', 'success')
-    return redirect(url_for('home'))
+def upload_file():
+    form = UploadFileForm()
+    if form.validate_on_submit():
+        arch_file = ArchivalFile(wtform_upload=form.upload, project=form.project_number.data,
+                                 new_filename=helpers.cleanse_filename(form.new_filename.data), notes=form.notes.data,
+                                 destination_dir=form.destination_directory.data)
+        archiving_successful = arch_file.archive_in_destination()
+
+        # if the file was successfully moved to its destination, we will save the data to the database
+        if archiving_successful:
+            upload_size = os.path.getsize(arch_file.assemble_destination_path())
+            dt = parser.parse(form.document_date.data).strftime()
+            archived_file = ArchivedFileModel(destination_path=arch_file.destination_path,
+                                              project_number=arch_file.project_number,
+                                              document_date=form.document_date.data,
+                                              destination_directory=arch_file.destination_dir,
+                                              file_code=arch_file.file_code, archivist_id=current_user.id,
+                                              file_size=upload_size, notes=arch_file.notes,
+                                              filename=arch_file.assemble_destination_filename())
+
+            # TODO should I remove the wtform_upload attribute from archivalFile
+            db.session.add(archived_file)
+            db.session.commit()
+            flash(f'File archived!', 'success')
+            return redirect(url_for('upload_file'))
+    return render_template('upload_file.html', title='Upload File to Archive', form=form)
+
+@app.route("/inbox_top")
+def process_inbox_item():
+    form = InboxTopForm()
+    return render_template('inbox_top.html', title='Inbox', form=form)
 
 
 @app.route("/account")

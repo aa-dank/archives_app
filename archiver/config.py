@@ -42,9 +42,11 @@ DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 
                      'G4 - Progress Meeting Notes', 'G5 - UCSC Inspectors Daily Reports', 'G5.1 - Hot Work Permits',
                      'G6 - UCSC Memoranda', 'G6.1 - Architects Field Reports', 'G7 - Contractors Daily Reports',
                      'G8 - Testing and Inspection Reports. Geotechnical Engineer',
-                     'G9 - Testing and Inspection Reports. Testing Labratory', 'H - Submittals']
+                     'G9 - Testing and Inspection Reports. Testing Labratory']
 
 RECORDS_SERVER_LOCATION = r"""\\128.114.170.73\PPC_Records"""
+
+INBOXES_LOCATION = r"""\\128.114.170.27\Cannon_Scans\INBOXES"""
 
 DEFAULT_DATETIME_FORMAT = "%m/%d/%Y, %H:%M:%S"
 
