@@ -1,4 +1,5 @@
 import os
+import archiver.ArchiverUtilities as ArchiverUtilities
 from archiver.archival_file import ArchivalFile
 from archiver.server_edit import ServerEdit
 from flask import render_template, url_for, flash, redirect, request
@@ -34,11 +35,13 @@ def roles_required(roles: list[str]):
         @wraps(func)
         def wrap(*args, **kwargs):
             user_role_list = current_user.roles.split(",")
+            # if the user has at least a single role and at least one of the user roles is in roles...
             if current_user.roles and [role for role in roles if role in user_role_list]:
                 return func(*args, **kwargs)
             else:
                 flash("Need a different role to access this.", 'danger')
                 return redirect(url_for('home'))
+        return wrap
     return decorator
 
 
@@ -157,35 +160,36 @@ def server_change():
 @login_required
 def upload_file():
     form = UploadFileForm()
+    temp_files_directory = os.path.join(os.getcwd(), r"archiver\static\temp_files")
     if form.validate_on_submit():
-        arch_file = ArchivalFile(wtform_upload=form.upload, project=form.project_number.data,
-                                 new_filename=helpers.cleanse_filename(form.new_filename.data), notes=form.notes.data,
-                                 destination_dir=form.destination_directory.data)
+        temp_path = os.path.join(temp_files_directory, form.upload.data.filename)
+        form.upload.data.save(temp_path)
+        upload_size = os.path.getsize(temp_path)
+        arch_file = ArchivalFile(current_path=temp_path, project=form.project_number.data,
+                                 new_filename=ArchiverUtilities.cleanse_filename(form.new_filename.data),
+                                 notes=form.notes.data, destination_dir=form.destination_directory.data)
         archiving_successful = arch_file.archive_in_destination()
 
         # if the file was successfully moved to its destination, we will save the data to the database
         if archiving_successful:
-            upload_size = os.path.getsize(arch_file.assemble_destination_path())
-            dt = parser.parse(form.document_date.data).strftime()
-            archived_file = ArchivedFileModel(destination_path=arch_file.destination_path,
+            archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
                                               project_number=arch_file.project_number,
                                               document_date=form.document_date.data,
                                               destination_directory=arch_file.destination_dir,
                                               file_code=arch_file.file_code, archivist_id=current_user.id,
                                               file_size=upload_size, notes=arch_file.notes,
                                               filename=arch_file.assemble_destination_filename())
-
-            # TODO should I remove the wtform_upload attribute from archivalFile
             db.session.add(archived_file)
             db.session.commit()
-            flash(f'File archived!', 'success')
+            flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
             return redirect(url_for('upload_file'))
     return render_template('upload_file.html', title='Upload File to Archive', form=form)
 
-@app.route("/inbox_top")
-def process_inbox_item():
+@app.route("/inbox_item")
+@roles_required(['ADMIN', 'ARCHIVIST'])
+def inbox_item():
     form = InboxTopForm()
-    return render_template('inbox_top.html', title='Inbox', form=form)
+    return render_template('inbox_item.html', title='Inbox', form=form)
 
 
 @app.route("/account")

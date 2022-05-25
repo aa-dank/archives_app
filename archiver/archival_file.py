@@ -1,16 +1,19 @@
 import os
 import logging
 import shutil
-import archiver.config as config
-import archiver.helpers as helpers
+import archiver.ArchiverUtilities as ArchiverUtilities
 from dateutil import parser
 from datetime import datetime
 from collections import defaultdict
+from archiver.config import DIRECTORY_CHOICES, RECORDS_SERVER_LOCATION
+
+# ArchivalFile class from Archives_archiver program should be interchangeable with this one if the above imports
+# are preserved
 
 
 class ArchivalFile:
 
-    def __init__(self, wtform_upload = None, current_path: str = None, project: str = None, destination_path: str = None, new_filename: str = None,
+    def __init__(self, current_path: str, project: str = None, destination_path: str = None, new_filename: str = None,
                  notes: str = None, destination_dir: str = None, document_date: str = None):
         """
 
@@ -21,7 +24,6 @@ class ArchivalFile:
         :param notes: for recording notes in the database
         :param destination_dir: chosen directory from the directory templates
         """
-        self.wtform_upload = wtform_upload
         self.current_path = current_path
         self.size = 0
         if self.current_path and os.path.exists(self.current_path):
@@ -30,11 +32,11 @@ class ArchivalFile:
         self.destination_dir = destination_dir
         self.new_filename = new_filename
         self.notes = notes
-        self.destination_path = destination_path
+        self.cached_destination_path = destination_path
         self.datetime_archived = None
         self.file_code = None
         if destination_dir:
-            self.file_code = helpers.file_code_from_destination_dir(destination_dir)
+            self.file_code = ArchiverUtilities.file_code_from_destination_dir(destination_dir)
         self.document_date = None
         if document_date:
             self.document_date = parser.parse(document_date)
@@ -45,11 +47,7 @@ class ArchivalFile:
         them from current filename to desired new filename
         :return:
         """
-        if self.wtform_upload:
-            current_filename = self.wtform_upload.data.filename
-        if self.current_path:
-            current_filename = helpers.split_path(self.current_path)[-1]
-
+        current_filename = ArchiverUtilities.split_path(self.current_path)[-1]
         dest_filename = current_filename
         if self.new_filename:
             dest_filename = self.new_filename
@@ -72,26 +70,27 @@ class ArchivalFile:
 
         :return:
         """
-        # TODO handle situation when there is a destination_path but no destination_dir_name
+        # TODO handle situation when there is a cached_destination_path but no destination_dir_name
 
         nested_dirs = self.destination_dir
         if nested_dirs[1].isdigit():
             # a directory from DIRECTORY_CHOICES is parent directory if it shares same first char and doesn't have a
             # digit in second char position
             is_parent_dir = lambda child_dir, dir: dir[0] == child_dir[0] and not dir[1].isdigit()
-            parent_dir = [dir for dir in config.DIRECTORY_CHOICES if is_parent_dir(nested_dirs, dir)][0]
+            parent_dir = [dir for dir in DIRECTORY_CHOICES if is_parent_dir(nested_dirs, dir)][0]
             nested_dirs = os.path.join(parent_dir, nested_dirs)
         return str(nested_dirs)
 
-    def assemble_destination_path(self):
+    def get_destination_path(self):
         """
         Major function that builds a plausible path string in the following steps:
-        Step 1: Looks for xx directory in root (RECORDS_SERVER_LOCATION) and adds to path
-        Step 2: Looks through next two levels in directory hierarchy for directories that start with the project number
+        Step 1: If it already has a cached destination path, return that
+        Step 2: Looks for xx directory in root (RECORDS_SERVER_LOCATION) and adds to path
+        Step 3: Looks through next two levels in directory hierarchy for directories that start with the project number
             or a project number prefix and add them to the path.
-        Step 3: Looks for desired directory location in nested levels and adds it to new path
+        Step 4: Looks for desired directory location in nested levels and adds it to new path
 
-        ...unless there is already a path in destination_path attribute, in which case that will be returned
+        ...unless there is already a path in cached_destination_path attribute, in which case that will be returned
         :return: string (or path object?)
         """
 
@@ -122,9 +121,9 @@ class ArchivalFile:
                 return os.path.join(new_path, destination_filename)
 
             new_path_dirs = list_of_child_dirs(new_path)
-            destination_dir = helpers.split_path(large_template_destination)[-1]
+            destination_dir = ArchiverUtilities.split_path(large_template_destination)[-1]
             destination_dir_prefix = destination_dir.split(" ")[0] + " - "  # eg "F5 - ", "G12 - ", "H - ", etc
-            destination_dir_parent_dir = helpers.split_path(large_template_destination)[0]
+            destination_dir_parent_dir = ArchiverUtilities.split_path(large_template_destination)[0]
 
             # if the destination directory is a large template child director...
             if not destination_dir_parent_dir == large_template_destination:
@@ -185,22 +184,22 @@ class ArchivalFile:
 
             return os.path.join(new_path, destination_filename)
 
-        ############### Start of assemble_destination_path() #################
-        if not self.destination_path:
+        ############### Start of get_destination_path() #################
+        if not self.cached_destination_path:
 
             # sept
-            xx_level_dir_prefix, project_num_prefix = helpers.prefixes_from_project_number(self.project_number)
-            root_directories_list = list_of_child_dirs(config.RECORDS_SERVER_LOCATION)
+            xx_level_dir_prefix, project_num_prefix = ArchiverUtilities.prefixes_from_project_number(self.project_number)
+            root_directories_list = list_of_child_dirs(RECORDS_SERVER_LOCATION)
             matching_root_dirs = [dir_name for dir_name in root_directories_list if
                                   dir_name.lower().startswith(xx_level_dir_prefix.lower())]
 
             # if we have more than one matching root dir we throw an error
             if len(matching_root_dirs) != 1:
                 raise Exception(
-                    f"{len(matching_root_dirs)} matching directories in {config.RECORDS_SERVER_LOCATION} for project number {self.project_number}")
+                    f"{len(matching_root_dirs)} matching directories in {RECORDS_SERVER_LOCATION} for project number {self.project_number}")
 
             # add the directory matching the xx level prefix for this project number
-            new_path = os.path.join(config.RECORDS_SERVER_LOCATION, matching_root_dirs[0])
+            new_path = os.path.join(RECORDS_SERVER_LOCATION, matching_root_dirs[0])
             # list of contents of xx level directory which are not files (ie directories in xx level directory)
             xx_dir_dirs = list_of_child_dirs(new_path)
 
@@ -228,7 +227,7 @@ class ArchivalFile:
                     new_path = os.path.join(new_path, self.project_number)
                     new_path = os.path.join(new_path, self.nested_large_template_destination_dir())
                     new_path = os.path.join(new_path, self.assemble_destination_filename())
-                    self.destination_path = new_path
+                    self.cached_destination_path = new_path
                     return new_path
 
                 if len(dirs_matching_prefix) == 1:
@@ -251,16 +250,16 @@ class ArchivalFile:
                     new_path = path_from_project_num_dir_to_destination(new_path,
                                                                         self.nested_large_template_destination_dir(),
                                                                         self.assemble_destination_filename())
-                    self.destination_path = new_path
-                    return self.destination_path
+                    self.cached_destination_path = new_path
+                    return self.cached_destination_path
 
                 if len(dirs_matching_proj_num) == 1:
                     new_path = os.path.join(new_path, dirs_matching_proj_num[0])
                     new_path = path_from_project_num_dir_to_destination(new_path,
                                                                         self.nested_large_template_destination_dir(),
                                                                         self.assemble_destination_filename())
-                    self.destination_path = new_path
-                    return self.destination_path
+                    self.cached_destination_path = new_path
+                    return self.cached_destination_path
 
             # if we do find a dir that corresponds with the project number...
             if len(dirs_matching_proj_num) == 1:
@@ -283,12 +282,12 @@ class ArchivalFile:
                 new_path = path_from_project_num_dir_to_destination(path_to_project_num_dir=new_path,
                                                                     large_template_destination=self.nested_large_template_destination_dir(),
                                                                     destination_filename=self.assemble_destination_filename())
-                self.destination_path = new_path
-                return self.destination_path
+                self.cached_destination_path = new_path
+                return self.cached_destination_path
 
 
-            self.destination_path = new_path
-        return self.destination_path
+            self.cached_destination_path = new_path
+        return self.cached_destination_path
 
     def attribute_defaultdict(self):
         date_stamp = ''
@@ -297,27 +296,29 @@ class ArchivalFile:
             date_stamp = self.datetime_archived.strftime("%m/%d/%Y, %H:%M:%S")
         if self.document_date:
             doc_date = self.document_date.strftime("%m/%d/%Y, %H:%M:%S")
-        if (self.destination_path or self.current_path) and not self.size:
-            #TODO How to get a size from self.wtform_upload
-            if not self.destination_path:
+        if (self.get_destination_path() or self.current_path) and not self.size:
+            if not os.path.isfile(self.get_destination_path()):
                 self.size = str(os.path.getsize(self.current_path))
             else:
-                self.size = str(os.path.getsize(self.destination_path))
+                self.size = str(os.path.getsize(self.get_destination_path()))
 
         #if we don't have a file code, generate one from the destination
         if self.destination_dir and not self.file_code:
-            self.file_code = helpers.file_code_from_destination_dir(self.destination_dir)
+            self.file_code = ArchiverUtilities.file_code_from_destination_dir(self.destination_dir)
+
+        if not self.project_number:
+            self.project_number = ArchiverUtilities.project_number_from_path(self.get_destination_path())
 
         attribute_dict = {"date_archived": date_stamp, "project_number": self.project_number,
-                          "destination_path": self.destination_path, "document_date": doc_date,
+                          "destination_path": self.get_destination_path(), "document_date": doc_date,
                           "destination_directory": self.destination_dir, "file_code": self.file_code,
                           "file_size": self.size, "notes": self.notes}
         return defaultdict(lambda: None, attribute_dict)
 
+
     def check_permissions(self):
         """
         Returns a string describing issues with permissions that may arise when trying to archive the file.
-        Most relevant for files that need to be moved from one local or networked directory to the archive server.
         :return:
         """
         if not os.path.exists(self.current_path):
@@ -338,50 +339,24 @@ class ArchivalFile:
         return issues_found
 
 
-    def archive_in_destination(self, destination=None):
+    def archive_in_destination(self):
 
         # if the file has already been archived return the destination path
         if self.datetime_archived:
-            return self.destination_path
+            return self.get_destination_path()
 
-        # process optional parameter destination
-        if destination:
-            if destination in config.DIRECTORY_CHOICES:
-                self.destination_dir = destination
-            else:
-                self.destination_path = destination
-
-        if not self.destination_path:
-            self.destination_path = self.assemble_destination_path()
-
-        destination_path_list = helpers.split_path(self.destination_path)
+        destination_path_list = ArchiverUtilities.split_path(self.get_destination_path())
         destination_dir_path = os.path.join(*destination_path_list[:-1])
 
         if not os.path.exists(destination_dir_path):
             os.makedirs(destination_dir_path)
         self.datetime_archived = datetime.now()
-
-
-        put_in_destination = False
-        if self.current_path:
-
-            try:
-                shutil.copyfile(src=self.current_path, dst=self.destination_path)
-                put_in_destination = True
-            except Exception as e:
-                logging.exception(f"Failed to shutil.copyfile() to destination. Threw this error: {e}")
-
-            try:
-                os.remove(self.current_path)
-            except Exception as e:
-                logging.exception(f"Could not delete the file. Threw this error: {e}")
-
-        elif self.wtform_upload:
-            try:
-                self.wtform_upload.data.save(self.assemble_destination_path())
-                put_in_destination = True
-            except Exception as e:
-                logging.exception(f"Could not save wtform file data to archive file destination. Threw this error: {e}")
-
-        return put_in_destination
-
+        try:
+            shutil.copyfile(src=self.current_path, dst=self.get_destination_path())
+        except Exception as e:
+            return False, e
+        try:
+            os.remove(self.current_path)
+            return True, ''
+        except Exception as e:
+            return False, e

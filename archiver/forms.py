@@ -1,5 +1,5 @@
 import os
-import archiver.helpers as helpers
+import archiver.ArchiverUtilities as helpers
 import archiver.config as config
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, BooleanField, SelectField, SelectMultipleField
