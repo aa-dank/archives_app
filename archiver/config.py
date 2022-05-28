@@ -25,7 +25,7 @@ DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 
                      'F2 - Reviews', 'F2.1 - Constructibility, Code Reviews', 'F2.2 - In-house. PP reviews',
                      'F3 - Structural, Title 24, Mech Calculations', 'F4 - Plan Deposits, Planholders, Ads for Bid',
                      'F2.3 - Independent Cost Review', 'F2.4 - Independent Seismic Review', 'F2.5 - Other',
-                     'F5 - Drawings and Spec', 'F7 - Bid Summary Forms', 'F7.1 - Bid Protest', 'F8 - Contract',
+                     'F5 - Drawings and Specifications', 'F7 - Bid Summary Forms', 'F7.1 - Bid Protest', 'F8 - Contract',
                      'F9 - Builders Risk Insurance', 'G1 - Construction Correspondence',
                      'G1.1 - Contractor Correspondences', 'G1.2 - Executive Architect Correspondences',
                      'G1.3 - Users.Building Committee.Campus Correspondences', 'G1.4 - PPC and PP. Certified Payroll',
@@ -46,7 +46,7 @@ DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 
 
 RECORDS_SERVER_LOCATION = r"""\\128.114.170.73\PPC_Records"""
 
-INBOXES_LOCATION = r"""\\128.114.170.27\Cannon_Scans\INBOXES"""
+INBOXES_LOCATION = r"""\\128.114.170.27\Cannon_Scans\INBOX"""
 
 DEFAULT_DATETIME_FORMAT = "%m/%d/%Y, %H:%M:%S"
 

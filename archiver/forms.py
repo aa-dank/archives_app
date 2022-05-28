@@ -10,6 +10,7 @@ from archiver.models import UserModel
 
 config.DIRECTORY_CHOICES.sort()
 
+
 class RegistrationForm(FlaskForm):
     # username = StringField('Username', validators= [DataRequired(), Length(min=2)])
     email = StringField('Email', validators=[DataRequired(), Email()])
@@ -17,7 +18,7 @@ class RegistrationForm(FlaskForm):
     last_name = StringField('Last Name', validators=[DataRequired()])
     roles = SelectMultipleField('Role(s)', validators=[DataRequired()], choices=config.ROLES)
     password = PasswordField('password', validators=[DataRequired()])
-    confirm_password = PasswordField('Confirm Password', validators= [DataRequired(), EqualTo('password')])
+    confirm_password = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')])
     submit = SubmitField('Sign Up')
 
     def validate_email(self, email):
@@ -25,11 +26,13 @@ class RegistrationForm(FlaskForm):
         if user:
             raise ValidationError('Account registered to this email already exists.')
 
+
 class LoginForm(FlaskForm):
     email = StringField('Email', validators=[DataRequired(), Email()])
     password = PasswordField('Password', validators=[DataRequired()])
     remember = BooleanField('Remember Me')
     submit = SubmitField('Login')
+
 
 class UploadFileForm(FlaskForm):
     project_number = StringField('Project Number', validators=[DataRequired()])
@@ -41,14 +44,17 @@ class UploadFileForm(FlaskForm):
     upload = FileField('File Upload', validators=[FileRequired()])
     submit = SubmitField('Archive File')
 
-class InboxTopForm(FlaskForm):
-    project_number = StringField('Project Number', validators=[DataRequired()])
+
+class InboxItemForm(FlaskForm):
+    download_item = SubmitField('Download')
+    project_number = StringField('Project Number')
     new_filename = StringField('New Filename')
     document_date = StringField('Document Date')
-    destination_directory = SelectField('Destination Directory', choices=config.DIRECTORY_CHOICES.sort())
+    destination_directory = SelectField('Destination Directory', choices=config.DIRECTORY_CHOICES)
     destination_path = StringField('Destination Path')
     notes = StringField('Notes')
     submit = SubmitField('Archive File')
+
 
 class ServerChangeForm(FlaskForm):
     # Place to enter path to asset to be deleted
@@ -98,9 +104,3 @@ class ServerChangeForm(FlaskForm):
             network_path = helpers.mounted_path_to_networked_path(asset_path.data)
             if not os.path.exists(network_path):
                 raise ValidationError(f"Asset doesn't exist to move: \n{asset_path.data}")
-
-
-
-
-
-

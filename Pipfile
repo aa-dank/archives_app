@@ -12,6 +12,7 @@ flask-bcrypt = "*"
 flask-login = "*"
 python-dateutil = "*"
 pillow = "*"
+pymupdf = "*"
 
 [dev-packages]
 

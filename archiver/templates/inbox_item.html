@@ -4,7 +4,10 @@
         <form method="POST" action="" enctype="multipart/form-data">
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
-                <legend class="border-bottom mb-4">Upload File</legend>
+                <legend class="border-bottom mb-4">Inbox Item to Archive</legend>
+                <div class="form-group">
+                <p>{{item_filename}}</p>{{ form.download_item(class="btn btn-outline-info") }}
+            </div>
                 <div class="form-group">
                     {{ form.project_number.label(class="form-control-label") }}
                     {% if form.project_number.errors %}
@@ -18,7 +21,6 @@
                         {{ form.project_number(class="form-control form-control-lg") }}
                     {% endif %}
                 </div>
-                <button type="button" onclick="window.location.href='{{ url_for( 'send_archives_file') }}';">Download</button>
                 <div class="form-group">
                     {{ form.new_filename.label(class="form-control-label") }}
                     {% if form.new_filename.errors %}
