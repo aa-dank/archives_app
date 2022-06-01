@@ -136,7 +136,6 @@ def server_change():
 
     form = ServerChangeForm()
     if form.validate_on_submit():
-        # TODO how to get current user email or id or whatever
         user_email = current_user.email
 
         # if the user entered a path to delete
@@ -245,7 +244,10 @@ def inbox_item():
     temp_files_directory = os.path.join(os.getcwd(), r"archiver\static\temp_files")
     arch_file_filename = user_inbox_files()[0]
     arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
-    arch_file_preview = pdf_preview_image(arch_file_path, temp_files_directory) #TODO how to embed in the form html
+    arch_file_preview_image_path = pdf_preview_image(arch_file_path, temp_files_directory)
+    preview_image_url = flask.url_for(r"static", filename = "temp_files/" + ArchiverUtilities.split_path(arch_file_preview_image_path)[-1])
+    #TODO when to delete these preview images
+
     form = InboxItemForm()
 
     # if the flask.session has data previously entered in this form, then re-enter it into the form before rendering
@@ -289,7 +291,7 @@ def inbox_item():
             return flask.redirect(flask.url_for('inbox_item'))
         else:
             pass #TODO
-    return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename)
+    return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename, preview_image=preview_image_url)
 
 
 @app.route("/account")

@@ -46,6 +46,6 @@ desktop.ini
 *.pdf
 
 #Dev Files
-/dev_files
-/file_to_archive/*
+archiver/file_to_archive/*
+archiver/static/temp_files/*
 .idea/csv-plugin.xml
