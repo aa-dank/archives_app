@@ -12,6 +12,8 @@ from archiver import app, db, bcrypt
 from dateutil import parser
 from functools import wraps
 
+DEFAULT_PREVIEW_IMAGE = "default_preview.png" #TODO make this image
+
 posts = [
     {
         'author': 'Corey Schafer',
@@ -94,6 +96,8 @@ def login():
         user = UserModel.query.filter_by(email=form.email.data).first()
         if user and bcrypt.check_password_hash(user.password, form.password.data):
             login_user(user, remember=form.remember.data)
+            flask.session[current_user.email] = {}
+            flask.session[current_user.email]['temporary files'] = []
             next_page = flask.request.args.get('next')
             # after successful login it will attempt to send user to the previous page they were trying to access.
             # If that is not available, it will flask.redirect to the home page
@@ -106,6 +110,15 @@ def login():
 @app.route("/logout")
 @login_required
 def logout():
+    # before logging out we will delete their temporary files and remove their dict from the session
+    if flask.session.get(current_user.email):
+        temp_files = flask.session.get(current_user.email).get('temporary files')
+        for file_path in temp_files:
+            try:
+                os.remove(file_path)
+            except:
+                pass
+        flask.session.pop(current_user.email)
     logout_user()
     flask.flash(f'You have logged out. Good-bye.', 'success')
     return flask.redirect(flask.url_for('home'))
@@ -202,24 +215,6 @@ def upload_file():
 @app.route("/inbox_item", methods=['GET', 'POST'])
 @roles_required(['ADMIN', 'ARCHIVIST'])
 def inbox_item():
-    def pdf_preview_image(pdf_path, image_destination):
-        """
-
-        :param pdf_path:
-        :param image_destination:
-        :return:
-        """
-        # Turn the pdf filename into equivalent png filename and create destination path
-        pdf_filename = ArchiverUtilities.split_path(pdf_path)[-1]
-        preview_filename = ".".join(pdf_filename.split(".")[:-1])
-        preview_filename += ".png"
-        output_path = os.path.join(image_destination, preview_filename)
-
-        # create png preview and save it
-        fitz_doc = fitz.open(pdf_path)
-        first_page_pix_map = fitz_doc.load_page(0).get_pixmap()
-        first_page_pix_map.save(output_path)
-        return output_path
 
     user_inbox_path = os.path.join(config.INBOXES_LOCATION, get_user_handle())
     user_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
@@ -241,19 +236,27 @@ def inbox_item():
         item_path = os.path.join(config.INBOXES_LOCATION, general_inbox_files[0])
         shutil.move(item_path, os.path.join(user_inbox_path, general_inbox_files[0]))
 
-    temp_files_directory = os.path.join(os.getcwd(), r"archiver\static\temp_files")
+
     arch_file_filename = user_inbox_files()[0]
-    arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
-    arch_file_preview_image_path = pdf_preview_image(arch_file_path, temp_files_directory)
-    preview_image_url = flask.url_for(r"static", filename = "temp_files/" + ArchiverUtilities.split_path(arch_file_preview_image_path)[-1])
-    #TODO when to delete these preview images
+    preview_image_url = flask.url_for(r"static", filename="temp_files/" + DEFAULT_PREVIEW_IMAGE)
+    # create the file preview image if it is a pdf
+    if arch_file_filename.split(".")[-1].lower() in ['pdf']:
+        temp_files_directory = os.path.join(os.getcwd(), r"archiver\static\temp_files")
+        arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
+        arch_file_preview_image_path = ArchiverUtilities.pdf_preview_image(arch_file_path, temp_files_directory)
+        preview_image_url = flask.url_for(r"static", filename = "temp_files/" + ArchiverUtilities.split_path(arch_file_preview_image_path)[-1])
+
+    # Record image path to session so it can be deleted upon logout
+    if not flask.session[current_user.email].get('temporary files'):
+        flask.session[current_user.email]['temporary files'] = []
+    flask.session[current_user.email]['temporary files'].append(arch_file_preview_image_path)
 
     form = InboxItemForm()
 
     # if the flask.session has data previously entered in this form, then re-enter it into the form before rendering
     # it in html
-    if flask.session.get('inbox_form_data'):
-        sesh_data = flask.session.get('inbox_form_data')
+    if flask.session.get(current_user.email) and flask.session.get(current_user.email).get('inbox_form_data'):
+        sesh_data = flask.session.get(current_user.email).get('inbox_form_data')
         form.project_number.data = sesh_data.get('project_number')
         form.destination_path.data = sesh_data.get('destination_path')
         form.notes.data = sesh_data.get('notes')
@@ -267,7 +270,7 @@ def inbox_item():
         # and rerender the page.
         if form.download_item.data:
             file_can_be_opened_in_browser = arch_file_filename.split(".")[-1].lower() in ['pdf', 'html']
-            flask.session['inbox_form_data'] = form.data #TODO make this user specific data
+            flask.session[current_user.email]['inbox_form_data'] = form.data
             return flask.send_file(arch_file_path, as_attachment= not file_can_be_opened_in_browser)
             #return flask.redirect(flask.url_for('inbox_item'))
 
@@ -287,6 +290,7 @@ def inbox_item():
                                               filename=arch_file.assemble_destination_filename())
             db.session.add(archived_file)
             db.session.commit()
+            os.remove(arch_file_path) #TODO having problems deleting old files
             flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
             return flask.redirect(flask.url_for('inbox_item'))
         else:

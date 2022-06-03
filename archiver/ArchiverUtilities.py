@@ -1,9 +1,10 @@
+import fitz
 import subprocess
 import re
 import os
 import sys
 import archiver.config as config
-
+from PIL import Image
 
 def split_path(path):
     '''splits a path into each piece that corresponds to a mount point, directory name, or file'''
@@ -123,3 +124,31 @@ def cleanse_filename(pruposed_filename: str):
     clean_filename = pruposed_filename.replace('\n', '')
     clean_filename = "".join(i for i in clean_filename if i not in "\/:*?<>|")
     return clean_filename
+
+
+def pdf_preview_image(pdf_path, image_destination, max_width=1080):
+    """
+
+    :param pdf_path:
+    :param image_destination:
+    :return:
+    """
+    # Turn the pdf filename into equivalent png filename and create destination path
+    pdf_filename = split_path(pdf_path)[-1]
+    preview_filename = ".".join(pdf_filename.split(".")[:-1])
+    preview_filename += ".png"
+    output_path = os.path.join(image_destination, preview_filename) #TODO avoid filename of existing file
+
+    # use pymupdf to get pdf data for pillow Image object
+    fitz_doc = fitz.open(pdf_path) #TODO do I need to close this?
+    page_pix_map = fitz_doc.load_page(0).get_pixmap()
+    page_img = Image.frombytes("RGB", [page_pix_map.width, page_pix_map.height], page_pix_map.samples)
+
+    # if the preview image is beyond our max_width we resize it to that max_width
+    if page_img.width > max_width:
+        max_width_percent = (max_width / float(page_img.size[0]))
+        hsize = int((float(page_img.size[1]) * float(max_width_percent)))
+        page_img = page_img.resize((max_width, hsize), Image.ANTIALIAS)
+
+    page_img.save(output_path)
+    return output_path
