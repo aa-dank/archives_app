@@ -120,8 +120,8 @@ def mounted_path_to_networked_path(mounted_path, network_location=config.RECORDS
     return os.path.join(*mounted_path_list)
 
 
-def cleanse_filename(pruposed_filename: str):
-    clean_filename = pruposed_filename.replace('\n', '')
+def cleanse_filename(proposed_filename: str):
+    clean_filename = proposed_filename.replace('\n', '')
     clean_filename = "".join(i for i in clean_filename if i not in "\/:*?<>|")
     return clean_filename
 

@@ -65,7 +65,6 @@ def roles_required(roles: list[str]):
 def home():
     return flask.render_template('home.html', posts=posts)
 
-
 @app.route("/register", methods=['GET', 'POST'])
 def register():
     # if the current user has already been authenticated, just send them to the home page.
