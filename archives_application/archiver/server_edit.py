@@ -1,6 +1,7 @@
 import os
 import shutil
-import archiver.ArchiverUtilities as ArchiverUtilities
+from . import utilities
+
 
 class ServerEdit:
     def __init__(self, change_type, user, new_path=None, old_path=None):
@@ -16,10 +17,10 @@ class ServerEdit:
         self.change_type = change_type
         self.new_path = None
         if new_path:
-            self.new_path = ArchiverUtilities.mounted_path_to_networked_path(new_path)
+            self.new_path = utilities.mounted_path_to_networked_path(new_path)
         self.old_path = None
         if old_path:
-            self.old_path = ArchiverUtilities.mounted_path_to_networked_path(old_path)
+            self.old_path = utilities.mounted_path_to_networked_path(old_path)
         self.user = user
         self.change_executed = False
         self.data_effected = 0
@@ -52,8 +53,8 @@ class ServerEdit:
         # If the change type is 'RENAME'
         if self.change_type.upper() == self.change_type_possibilities[1]:
             old_path = self.old_path
-            old_path_list = ArchiverUtilities.split_path(old_path)
-            new_path_list = ArchiverUtilities.split_path(self.new_path)
+            old_path_list = utilities.split_path(old_path)
+            new_path_list = utilities.split_path(self.new_path)
             if not len(old_path_list) == len(new_path_list):
                 raise Exception(
                     f"Attempt at renaming paths failed. Paths are not the same length: \n {self.new_path}\n{self.old_path}")
@@ -63,7 +64,7 @@ class ServerEdit:
             if os.path.isfile(old_path):
                 self.files_effected = 1
                 self.data_effected = os.path.getsize(old_path)
-                new_path_list[-1] = ArchiverUtilities.cleanse_filename(new_path_list[-1])
+                new_path_list[-1] = utilities.cleanse_filename(new_path_list[-1])
 
             else:
                 get_quantity_effected(self.old_path)
@@ -78,7 +79,7 @@ class ServerEdit:
                         try:
                             os.rename(old_change_path, new_change_path)
                             old_path = os.path.join(new_change_path, *old_path_list[idx+1:])
-                            old_path_list = ArchiverUtilities.split_path(old_path)
+                            old_path_list = utilities.split_path(old_path)
                         except Exception as e:
                             raise Exception(f"There was an issue trying to change the name. If it is permissions issue, consider that it might be someone using a directory that would be changed \n{e}")
                         break
@@ -88,7 +89,7 @@ class ServerEdit:
 
         # if the change_type is 'MOVE'
         if self.change_type.upper() == self.change_type_possibilities[2]:
-            filename = ArchiverUtilities.split_path(self.old_path)[-1]
+            filename = utilities.split_path(self.old_path)[-1]
             destination_path = os.path.join(self.new_path, filename)
             if os.path.isfile(self.old_path):
                 self.files_effected = 1

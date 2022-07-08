@@ -3,7 +3,7 @@ import subprocess
 import re
 import os
 import sys
-import archiver.config as config
+from archives_application import config as config
 from PIL import Image
 
 def split_path(path):
@@ -123,6 +123,7 @@ def mounted_path_to_networked_path(mounted_path, network_location=config.RECORDS
 def cleanse_filename(proposed_filename: str):
     clean_filename = proposed_filename.replace('\n', '')
     clean_filename = "".join(i for i in clean_filename if i not in "\/:*?<>|")
+    clean_filename = clean_filename.strip()
     return clean_filename
 
 
