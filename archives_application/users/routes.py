@@ -23,7 +23,7 @@ def register():
                          roles=user_roles, password=hashed_password)
         db.session.add(user)
         db.session.commit()
-        flask.flash(f'Account crflask.eated for {form.email.data}!', 'success')
+        flask.flash(f'Account created for {form.email.data}!', 'success')
         return flask.redirect(flask.url_for('users.login'))
     return flask.render_template('register.html', title='Register', form=form)
 

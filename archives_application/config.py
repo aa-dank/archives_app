@@ -55,5 +55,5 @@ DEFAULT_DATETIME_FORMAT = "%m/%d/%Y, %H:%M:%S"
 ROLES = ['ADMIN', 'ARCHIVIST', 'STAFF']
 
 class DefaultConfig:
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///archiver.db'
+    SQLALCHEMY_DATABASE_URI = 'sqlite////ppcou.ucsc.edu/Data/Archive_Data/archives_app.db'
     SECRET_KEY = 'ABC'
