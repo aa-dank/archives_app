@@ -2,6 +2,7 @@ import flask
 import os
 from flask_login import login_user, logout_user, login_required, current_user
 from flask import Blueprint
+from flask_dance.contrib.google import google
 from archives_application import db, bcrypt
 from archives_application.models import *
 from .forms import *
