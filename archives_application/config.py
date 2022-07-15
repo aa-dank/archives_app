@@ -1,4 +1,5 @@
 import os
+import json
 
 DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 'C - Consultants',
                      'D - Environmental Review Process', 'E - Program and Design',
@@ -54,10 +55,20 @@ DEFAULT_DATETIME_FORMAT = "%m/%d/%Y, %H:%M:%S"
 
 ROLES = ['ADMIN', 'ARCHIVIST', 'STAFF']
 
-class DefaultConfig:
-    SQLALCHEMY_DATABASE_URI = 'sqlite////ppcou.ucsc.edu/Data/Archive_Data/archives_app.db'
-    SECRET_KEY = 'ABC'
+def google_creds_from_creds_json(path=r'archives_application/google_client_secret.json'):
+    with open(path) as creds_json:
+        creds_dict = json.load(creds_json)['web']
+        client_id = creds_dict.get('client_id')
+        client_secret = creds_dict.get('client_secret')
+    return client_id, client_secret
 
-    # Client secret and id to use goo
-    ***REMOVED***
-    ***REMOVED***
+
+class DefaultTestConfig:
+    SQLALCHEMY_DATABASE_URI = r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
+    SECRET_KEY = 'ABC'
+    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET = google_creds_from_creds_json()
+    GOOGLE_DISCOVERY_URL = (r"https://accounts.google.com/.well-known/openid-configuration")
+    OAUTHLIB_INSECURE_TRANSPORT = True
+
+
+

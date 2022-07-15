@@ -1,14 +1,155 @@
 import flask
+import json
 import os
+import requests
 from flask_login import login_user, logout_user, login_required, current_user
-from flask import Blueprint
-from flask_dance.contrib.google import google
 from archives_application import db, bcrypt
 from archives_application.models import *
 from .forms import *
 
 
-users = Blueprint('users', __name__)
+#TODO we should probably create a dataclass for individual info about a user. Now it is saved in a dictionary
+
+users = flask.Blueprint('users', __name__)
+
+def get_google_provider_urls():
+    """
+    This function serves to retrieve the authorization (and other) endpoints from google so they do not have to be
+    hard-coded into the application.
+    :return: Dictionary of URLs
+    """
+    g_discovery_url = flask.current_app.config.get('GOOGLE_DISCOVERY_URL')
+    response = requests.get(g_discovery_url)
+    if not response.status_code == 200:
+        raise Exception(
+            f"Did not get valid status code from request to {g_discovery_url}\n Got code {response.status_code} instead.")
+    return response.json()
+
+def user_login_flow(user):
+    login_user(user)
+    flask.session[user.email] = {}
+    flask.session[user.email]['temporary files'] = []
+
+"""
+@login_manager.user_loader
+def load_user(user_id):
+    return UserModel.get(user_id) #TODO user is db model
+"""
+
+@users.route("/choose_login")
+def choose_login():
+    """
+    Returns html page where people can choose to login using the google authentication flow or a archives app account
+    :return:
+    """
+    if current_user.is_authenticated:
+        flask.flash(f'Already logged in.', 'message')
+        return flask.redirect(flask.url_for('main.home'))
+
+    return flask.render_template('choose_login.html', title='Register') #TODO add google login link to template
+
+@users.route("/google_auth")
+def google_auth():
+    """
+    Google authentication was created using following tutorial (which needed to be heavily modified to work within this
+    application):
+    https://realpython.com/flask-google-login/
+
+    :return:
+    """
+    authorization_endpoint = get_google_provider_urls()["authorization_endpoint"]
+    # Use library to construct the request for Google login and provide
+    # scopes that let you retrieve user's profile from Google
+    client = flask.current_app.config['google_auth_client']
+    request_uri = client.prepare_request_uri(
+        authorization_endpoint,
+        redirect_uri=flask.request.base_url + "/callback",
+        scope=["openid", "email", "profile"],
+    )
+    return flask.redirect(request_uri)
+
+@users.route("/google_auth/callback")
+def callback():
+    """
+    When Google sends back the unique login code, it’ll be sending it to this login callback endpoint on your application
+    :return:
+    """
+    def parse_given_name(given_name:str):
+        #TODO
+        return "", ""
+
+    client = flask.current_app.config['google_auth_client']
+    # Get authorization code Google sent back to you
+    code = flask.request.args.get("code")
+
+    #Get token url endpoint
+    token_endpoint = get_google_provider_urls()["token_endpoint"]
+
+    # Prepare and send a request to get tokens! Yay tokens!
+    token_url, headers, body = client.prepare_token_request(
+        token_endpoint,
+        authorization_response=flask.request.url,
+        redirect_url=flask.request.base_url,
+        code=code
+    )
+    token_response = requests.post(
+        token_url,
+        headers=headers,
+        data=body,
+        auth=(flask.current_app.config['GOOGLE_CLIENT_ID'], flask.current_app.config['GOOGLE_CLIENT_SECRET'])
+    )
+
+    # Parse the tokens!
+    client.parse_request_body_response(json.dumps(token_response.json()))
+
+    # Now that you have tokens (yay) let's find and hit the URL
+    # from Google that gives you the user's profile information,
+    # including their Google profile image and email
+    userinfo_endpoint = get_google_provider_urls()["userinfo_endpoint"]
+    uri, headers, body = client.add_token(userinfo_endpoint)
+    userinfo_response = requests.get(uri, headers=headers, data=body)
+
+    # You want to make sure their email is verified.
+    # The user authenticated with Google, authorized your
+    # app, and now you've verified their email through Google!
+    users_email, first_name, last_name = "","",""
+    if userinfo_response.json().get("email_verified"):
+        users_email = userinfo_response.json()["email"]
+        picture = userinfo_response.json()["picture"]
+    else:
+        flask.flash(f'User email not available or not verified by Google.', 'warning')
+        return flask.redirect(flask.url_for('main.home'))
+
+    # Determine if the user is in the database. If not we add them to database
+    user = UserModel.query.filter_by(email=users_email).first()
+    if not user:
+        flask.session['new user'] = {"email": users_email}
+        return flask.redirect(flask.url_for('users.google_register'))
+
+    user_login_flow(user)
+    return flask.redirect(flask.url_for('main.home'))
+
+
+@users.route("/google_auth/register", methods=['GET', 'POST'])
+def google_register():
+    # if this endpoint was called without first doing the google Oauth dance
+    if not flask.session.get('new user'):
+        flask.flash(f'Authenticate via Google Oauth before registering Google account.', 'warning')
+        return flask.redirect(flask.url_for('main.home'))
+    new_user_email = flask.session['new user']['email']
+    form = GoogleRegisterForm()
+    if form.validate_on_submit():
+        user_roles = ",".join(form.roles.data)
+        user = UserModel(email=new_user_email, first_name=form.first_name.data,
+                         last_name=form.last_name.data, roles=user_roles)
+        db.session.add(user)
+        db.session.commit()
+        user = UserModel.query.filter_by(email=new_user_email).first()
+        user_login_flow(user=user)
+        flask.flash(f'Account created for {new_user_email}!', 'success')
+        return flask.redirect(flask.url_for('main.home'))
+    return flask.render_template('google_register.html', title='Register', form=form)
+
 
 @users.route("/register", methods=['GET', 'POST'])
 def register():
@@ -19,6 +160,10 @@ def register():
     form = RegistrationForm()
     if form.validate_on_submit():
         hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
+        db_user = UserModel.query.filter_by(email=form.email.data).first()
+        if db_user:
+            flask.flash(f'''An account already exists for the email "{form.email.data}"''', 'warning')
+            return flask.redirect(flask.url_for('main.home'))
         user_roles = ",".join(form.roles.data)
         user = UserModel(email=form.email.data, first_name=form.first_name.data, last_name=form.last_name.data,
                          roles=user_roles, password=hashed_password)
@@ -39,9 +184,7 @@ def login():
     if form.validate_on_submit():
         user = UserModel.query.filter_by(email=form.email.data).first()
         if user and bcrypt.check_password_hash(user.password, form.password.data):
-            login_user(user, remember=form.remember.data)
-            flask.session[current_user.email] = {}
-            flask.session[current_user.email]['temporary files'] = []
+            user_login_flow(user=user)
             next_page = flask.request.args.get('next')
             # after successful login it will attempt to send user to the previous page they were trying to access.
             # If that is not available, it will flask.redirect to the home page

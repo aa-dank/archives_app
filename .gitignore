@@ -44,8 +44,11 @@ desktop.ini
 # Test and development files #
 ######################
 *.pdf
+archives_application/config.py
+
 
 #Dev Files
 archives_application/archiver/file_to_archive/*
 archives_application/archiver/static/temp_files/*
+/dev_files
 .idea/csv-plugin.xml

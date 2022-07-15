@@ -11,10 +11,10 @@ class UserModel(db.Model, UserMixin):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String, unique=True, nullable=False)
-    first_name = db.Column(db.String, unique=True, nullable=False)
-    last_name = db.Column(db.String, unique=True, nullable=False)
-    roles = db.Column(db.String, unique=True, nullable=False)
-    password = db.Column(db.String(60), nullable=False)
+    first_name = db.Column(db.String)
+    last_name = db.Column(db.String)
+    roles = db.Column(db.String)
+    password = db.Column(db.String(60))
     archived_files = db.relationship('ArchivedFileModel', backref='archivist', lazy=True)
 
     def __repr__(self):
