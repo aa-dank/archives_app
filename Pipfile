@@ -13,6 +13,9 @@ flask-login = "*"
 python-dateutil = "*"
 pillow = "*"
 pymupdf = "*"
+gunicorn = "*"
+notebook = "*"
+
 
 [dev-packages]
 

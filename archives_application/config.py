@@ -55,12 +55,33 @@ DEFAULT_DATETIME_FORMAT = "%m/%d/%Y, %H:%M:%S"
 
 ROLES = ['ADMIN', 'ARCHIVIST', 'STAFF']
 
-def google_creds_from_creds_json(path=r'archives_application/google_client_secret.json'):
+JSON_CONFIG_FILE = r'archives_application/app_config.json'
+
+GOOGLE_CREDS_FILE = r'archives_application/google_client_secret.json'
+
+def google_creds_from_creds_json(path=GOOGLE_CREDS_FILE):
     with open(path) as creds_json:
         creds_dict = json.load(creds_json)['web']
         client_id = creds_dict.get('client_id')
         client_secret = creds_dict.get('client_secret')
+
     return client_id, client_secret
+
+
+def json_to_config_factory(google_creds_path: str = GOOGLE_CREDS_FILE, config_json_path: str = JSON_CONFIG_FILE):
+    """
+    THis function turns a json file of config info and a google credentials json file into a flask app config class.
+    The purpose is to allow the changing of app settings using a json file
+    :param config_json_path: string path
+    :param google_creds_path: string path
+    :return: DynamicServerConfig class with json keys as attributes
+    """
+    with open(config_json_path) as config_file:
+        config_dict = json.load(config_file)
+    config_dict['GOOGLE_CLIENT_ID'], config_dict['GOOGLE_CLIENT_SECRET'] = google_creds_from_creds_json(google_creds_path)
+    config_dict['OAUTHLIB_INSECURE_TRANSPORT'] = True
+    config_dict['GOOGLE_DISCOVERY_URL'] = (r"https://accounts.google.com/.well-known/openid-configuration")
+    return type("DynamicServerConfig", bases=(), dict=config_dict)
 
 
 class DefaultTestConfig:
@@ -69,6 +90,9 @@ class DefaultTestConfig:
     GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET = google_creds_from_creds_json()
     GOOGLE_DISCOVERY_URL = (r"https://accounts.google.com/.well-known/openid-configuration")
     OAUTHLIB_INSECURE_TRANSPORT = True
+
+
+
 
 
 

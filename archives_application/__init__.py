@@ -3,7 +3,7 @@ import flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
-from archives_application.config import DefaultTestConfig
+from archives_application.config import DefaultTestConfig, json_to_config_factory
 from oauthlib.oauth2 import WebApplicationClient
 
 
@@ -13,7 +13,7 @@ login_manager = LoginManager()
 login_manager.login_view = 'users.login'
 login_manager.login_message_category = 'info'
 
-
+#def create_app(config_class = json_to_config_factory):
 def create_app(config_class = DefaultTestConfig):
     app = flask.Flask(__name__)
     app.config.from_object(config_class)
@@ -29,7 +29,7 @@ def create_app(config_class = DefaultTestConfig):
     app.register_blueprint(main)
 
     # This sets an environmental variable to allow oauth authentication flow to use http requests (vs https)
-    if config_class.OAUTHLIB_INSECURE_TRANSPORT:
+    if hasattr(config_class, 'OAUTHLIB_INSECURE_TRANSPORT'):
         os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
     #load google credentials and client into the app config

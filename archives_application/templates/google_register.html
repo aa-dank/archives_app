@@ -1,5 +1,10 @@
 {% extends "layout.html" %}
 {% block content %}
+    <div>
+        <p>
+            We do not have a registered account matching this email:{{ email}}
+        </p>
+    </div>
     <div class="content-section">
         <form method="POST" action="">
             {{ form.hidden_tag() }}
