@@ -129,7 +129,6 @@ def callback():
     user_login_flow(user)
     return flask.redirect(flask.url_for('main.home'))
 
-
 @users.route("/google_auth/register", methods=['GET', 'POST'])
 def google_register():
     # if this endpoint was called without first doing the google Oauth dance

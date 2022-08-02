@@ -185,13 +185,13 @@ def inbox_item():
             file_can_be_opened_in_browser = arch_file_filename.split(".")[-1].lower() in ['pdf', 'html']
             flask.session[current_user.email]['inbox_form_data'] = form.data
             return flask.send_file(arch_file_path, as_attachment= not file_can_be_opened_in_browser)
-            #return flask.redirect(flask.url_for('inbox_item'))
+
 
         upload_size = os.path.getsize(arch_file_path)
         arch_file = ArchivalFile(current_path=arch_file_path, project=form.project_number.data,
                                  new_filename=utilities.cleanse_filename(form.new_filename.data),
                                  notes=form.notes.data, destination_dir=form.destination_directory.data)
-        archiving_successful = arch_file.archive_in_destination()
+        archiving_successful = arch_file.archive_in_destination()[0]
         if archiving_successful:
 
             archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
@@ -203,10 +203,18 @@ def inbox_item():
                                               filename=arch_file.assemble_destination_filename())
             db.session.add(archived_file)
             db.session.commit()
-            os.remove(arch_file_path) #TODO having problems deleting old files
-            flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
-            return flask.redirect(flask.url_for('inbox_item'))
+            try:
+                os.remove(arch_file_path) #TODO having problems deleting old files
+                flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
+            except Exception as e:
+                flask.flash(
+                    f'File archived, but could not remove it from this location:\n{arch_file.current_path}\nException:\n{e.message}')
+
+            return flask.redirect(flask.url_for('archiver.inbox_item'))
         else:
-            pass #TODO
-    return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename, preview_image=preview_image_url)
+            flask.flash(
+                f'Failed to archive file:\n{arch_file.current_path}\nDestination:\n{arch_file.get_destination_path()}')
+            return flask.redirect(flask.url_for('archiver.inbox_item'))
+    return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename,
+                                 preview_image=preview_image_url)
 
