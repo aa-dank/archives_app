@@ -1,5 +1,6 @@
 import os
 import shutil
+import flask
 from . import utilities
 
 
@@ -17,10 +18,12 @@ class ServerEdit:
         self.change_type = change_type
         self.new_path = None
         if new_path:
-            self.new_path = utilities.mounted_path_to_networked_path(new_path)
+            self.new_path = utilities.mounted_path_to_networked_path(mounted_path=new_path,
+                                                                     network_location=flask.current_app.config.get('ARCHIVES_LOCATION'))
         self.old_path = None
         if old_path:
-            self.old_path = utilities.mounted_path_to_networked_path(old_path)
+            self.old_path = utilities.mounted_path_to_networked_path(mounted_path=old_path,
+                                                                     network_location=flask.current_app.config.get('ARCHIVES_LOCATION'))
         self.user = user
         self.change_executed = False
         self.data_effected = 0

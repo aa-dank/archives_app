@@ -3,7 +3,7 @@ import flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
-from archives_application.config import DefaultTestConfig, json_to_config_factory
+from archives_application.app_config import DefaultTestConfig, json_to_config_factory
 from oauthlib.oauth2 import WebApplicationClient
 
 

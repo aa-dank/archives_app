@@ -3,7 +3,6 @@ import subprocess
 import re
 import os
 import sys
-from archives_application import config as config
 from PIL import Image
 
 def split_path(path):
@@ -94,7 +93,7 @@ def is_valid_email(potential_email: str):
     return re.fullmatch(email_regex, potential_email)
 
 
-def mounted_path_to_networked_path(mounted_path, network_location=config.RECORDS_SERVER_LOCATION):
+def mounted_path_to_networked_path(mounted_path, network_location):
     """
 
     :param mounted_path: string version of the path

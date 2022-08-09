@@ -1,11 +1,12 @@
 import os
 import logging
 import shutil
+import typing
 from . import utilities
 from dateutil import parser
 from datetime import datetime
 from collections import defaultdict
-from archives_application.config import DIRECTORY_CHOICES, RECORDS_SERVER_LOCATION
+
 
 # ArchivalFile class from Archives_archiver program should be interchangeable with this one if the above imports
 # are preserved
@@ -14,20 +15,24 @@ from archives_application.config import DIRECTORY_CHOICES, RECORDS_SERVER_LOCATI
 class ArchivalFile:
 
     def __init__(self, current_path: str, project: str = None, destination_path: str = None, new_filename: str = None,
-                 notes: str = None, destination_dir: str = None, document_date: str = None):
+                 notes: str = None, destination_dir: str = None, document_date: str = None,
+                 archives_location: str = None, directory_choices: typing.List[str] = []):
         """
-
+        :param archives_location: string path to archives directory
         :param current_path: path to  file
         :param project: project number string
         :param destination_path: the desired path for the file when tit is archived
         :param new_filename: optional file name for the destination file
         :param notes: for recording notes in the database
         :param destination_dir: chosen directory from the directory templates
+        :param directory_choices: list of destination directories to choose from
         """
         self.current_path = current_path
         self.size = 0
         if self.current_path and os.path.exists(self.current_path):
             self.size = str(os.path.getsize(current_path))
+        self.archives_location = archives_location
+        self.directory_choices = directory_choices
         self.project_number = project
         self.destination_dir = destination_dir
         self.new_filename = new_filename
@@ -74,10 +79,10 @@ class ArchivalFile:
 
         nested_dirs = self.destination_dir
         if nested_dirs[1].isdigit():
-            # a directory from DIRECTORY_CHOICES is parent directory if it shares same first char and doesn't have a
+            # a directory from self.directory_choices is parent directory if it shares same first char and doesn't have a
             # digit in second char position
             is_parent_dir = lambda child_dir, dir: dir[0] == child_dir[0] and not dir[1].isdigit()
-            parent_dir = [dir for dir in DIRECTORY_CHOICES if is_parent_dir(nested_dirs, dir)][0]
+            parent_dir = [dir for dir in self.directory_choices if is_parent_dir(nested_dirs, dir)][0]
             nested_dirs = os.path.join(parent_dir, nested_dirs)
         return str(nested_dirs)
 
@@ -85,7 +90,7 @@ class ArchivalFile:
         """
         Major function that builds a plausible path string in the following steps:
         Step 1: If it already has a cached destination path, return that
-        Step 2: Looks for xx directory in root (RECORDS_SERVER_LOCATION) and adds to path
+        Step 2: Looks for xx directory in root (self.archives_location) and adds to path
         Step 3: Looks through next two levels in directory hierarchy for directories that start with the project number
             or a project number prefix and add them to the path.
         Step 4: Looks for desired directory location in nested levels and adds it to new path
@@ -189,17 +194,17 @@ class ArchivalFile:
 
             # sept
             xx_level_dir_prefix, project_num_prefix = utilities.prefixes_from_project_number(self.project_number)
-            root_directories_list = list_of_child_dirs(RECORDS_SERVER_LOCATION)
+            root_directories_list = list_of_child_dirs(self.archives_location)
             matching_root_dirs = [dir_name for dir_name in root_directories_list if
                                   dir_name.lower().startswith(xx_level_dir_prefix.lower())]
 
             # if we have more than one matching root dir we throw an error
             if len(matching_root_dirs) != 1:
                 raise Exception(
-                    f"{len(matching_root_dirs)} matching directories in {RECORDS_SERVER_LOCATION} for project number {self.project_number}")
+                    f"{len(matching_root_dirs)} matching directories in {self.archives_location} for project number {self.project_number}")
 
             # add the directory matching the xx level prefix for this project number
-            new_path = os.path.join(RECORDS_SERVER_LOCATION, matching_root_dirs[0])
+            new_path = os.path.join(self.archives_location, matching_root_dirs[0])
             # list of contents of xx level directory which are not files (ie directories in xx level directory)
             xx_dir_dirs = list_of_child_dirs(new_path)
 

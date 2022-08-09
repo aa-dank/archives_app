@@ -1,4 +1,3 @@
-import os
 import json
 
 DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 'C - Consultants',
@@ -49,13 +48,11 @@ DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 
                      'G8 - Testing and Inspection Reports. Geotechnical Engineer',
                      'G9 - Testing and Inspection Reports. Testing Laboratory']
 
-RECORDS_SERVER_LOCATION = r"""\\ppcou.ucsc.edu\Data\PPC_Records"""
+#INBOXES_LOCATION = r"""\\ppcou.ucsc.edu\Data\Cannon_Scans\INBOX"""
 
-INBOXES_LOCATION = r"""\\ppcou.ucsc.edu\Data\Cannon_Scans\INBOX"""
+#DEFAULT_DATETIME_FORMAT = "%m/%d/%Y, %H:%M:%S"
 
-DEFAULT_DATETIME_FORMAT = "%m/%d/%Y, %H:%M:%S"
-
-ROLES = ['ADMIN', 'ARCHIVIST', 'STAFF']
+#ROLES = ['ADMIN', 'ARCHIVIST', 'STAFF']
 
 JSON_CONFIG_FILE = r'archives_application/app_config.json'
 
@@ -73,16 +70,28 @@ def google_creds_from_creds_json(path=GOOGLE_CREDS_FILE):
 def json_to_config_factory(google_creds_path: str = GOOGLE_CREDS_FILE, config_json_path: str = JSON_CONFIG_FILE):
     """
     THis function turns a json file of config info and a google credentials json file into a flask app config class.
-    The purpose is to allow the changing of app settings using a json file
+    The purpose is to allow the changing of app settings using a json file. Where different json files represent new
+    configurations and configurations can be changed by changing the json file
     :param config_json_path: string path
     :param google_creds_path: string path
     :return: DynamicServerConfig class with json keys as attributes
     """
+
+    def establish_database_path(share_path, database_location):
+        #TODO
+        pass
+
+
     with open(config_json_path) as config_file:
         config_dict = json.load(config_file)
     config_dict['GOOGLE_CLIENT_ID'], config_dict['GOOGLE_CLIENT_SECRET'] = google_creds_from_creds_json(google_creds_path)
     config_dict['OAUTHLIB_INSECURE_TRANSPORT'] = True
     config_dict['GOOGLE_DISCOVERY_URL'] = (r"https://accounts.google.com/.well-known/openid-configuration")
+    config_dict['SQLALCHEMY_DATABASE_URI'] = establish_database_path(share_path=config_dict['SHARE_LOCATION'],
+                                                                     database_location=config_dict['Sqalchemy_Database_Location'])
+    config_dict['ARCHIVES_LOCATION'] = establish_database_path(share_path=config_dict['SHARE_LOCATION'],
+                                                               database_location=['Archives_Directory'])
+
     return type("DynamicServerConfig", bases=(), dict=config_dict)
 
 

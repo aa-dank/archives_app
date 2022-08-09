@@ -1,5 +1,5 @@
 import os
-from archives_application import archiver as helpers, config as config
+from archives_application import archiver as helpers, app_config as config
 from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField, SelectField
 from wtforms.validators import DataRequired, ValidationError

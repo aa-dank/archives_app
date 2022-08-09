@@ -105,7 +105,9 @@ def upload_file():
         upload_size = os.path.getsize(temp_path)
         arch_file = ArchivalFile(current_path=temp_path, project=form.project_number.data,
                                  new_filename=utilities.cleanse_filename(form.new_filename.data),
-                                 notes=form.notes.data, destination_dir=form.destination_directory.data)
+                                 notes=form.notes.data, destination_dir=form.destination_directory.data,
+                                 directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
+                                 archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'))
         archiving_successful = arch_file.archive_in_destination()
 
         # if the file was successfully moved to its destination, we will save the data to the database
@@ -128,7 +130,7 @@ def upload_file():
 @roles_required(['ADMIN', 'ARCHIVIST'])
 def inbox_item():
 
-    user_inbox_path = os.path.join(config.INBOXES_LOCATION, get_user_handle())
+    user_inbox_path = os.path.join(flask.current_app.config.get('INBOXES_LOCATION'), get_user_handle())
     user_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
                                 os.path.isfile(os.path.join(user_inbox_path, thing))]
     if not os.path.exists(user_inbox_path):
@@ -137,8 +139,8 @@ def inbox_item():
     # if no files in the user inbox, move a file from the INBOX directory to the user inbox to be processed.
     # This avoids other users from processing the same file, creating errors.
     if not user_inbox_files():
-        general_inbox_files = [t for t in os.listdir(config.INBOXES_LOCATION) if os.path.isfile(os.path.join(
-            config.INBOXES_LOCATION, t))]
+        general_inbox_files = [t for t in os.listdir(flask.current_app.config.get('INBOXES_LOCATION')) if
+                               os.path.isfile(os.path.join(flask.current_app.config.get('INBOXES_LOCATION'), t))]
 
         # if there are no files to archive in either the user inbox or the archivist inbox we will send the user to
         # the homepage.
@@ -146,7 +148,7 @@ def inbox_item():
             flask.flash("The archivist inboxes are empty. Add files to the inbox directories to archive them.", 'info')
             return flask.redirect(flask.url_for('main.home'))
 
-        item_path = os.path.join(config.INBOXES_LOCATION, general_inbox_files[0])
+        item_path = os.path.join(flask.current_app.config.get('INBOXES_LOCATION'), general_inbox_files[0])
         shutil.move(item_path, os.path.join(user_inbox_path, general_inbox_files[0]))
 
 
@@ -190,7 +192,9 @@ def inbox_item():
         upload_size = os.path.getsize(arch_file_path)
         arch_file = ArchivalFile(current_path=arch_file_path, project=form.project_number.data,
                                  new_filename=utilities.cleanse_filename(form.new_filename.data),
-                                 notes=form.notes.data, destination_dir=form.destination_directory.data)
+                                 notes=form.notes.data, destination_dir=form.destination_directory.data,
+                                 archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'),
+                                 directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'))
         archiving_successful = arch_file.archive_in_destination()[0]
         if archiving_successful:
 
@@ -204,7 +208,10 @@ def inbox_item():
             db.session.add(archived_file)
             db.session.commit()
             try:
-                os.remove(arch_file_path) #TODO having problems deleting old files
+
+                # make sure that the old file has been removed
+                if os.path.exists(arch_file_path):
+                    os.remove(arch_file_path) #TODO having problems deleting old files
                 flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
             except Exception as e:
                 flask.flash(
@@ -217,4 +224,3 @@ def inbox_item():
             return flask.redirect(flask.url_for('archiver.inbox_item'))
     return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename,
                                  preview_image=preview_image_url)
-
