@@ -137,6 +137,10 @@ def google_register():
         return flask.redirect(flask.url_for('main.home'))
     new_user_email = flask.session['new user']['email']
     form = GoogleRegisterForm()
+
+    # cannot use flask.current_form in the form definition. Hence...
+    form.roles.choices = flask.current_app.config.get('ROLES')
+
     if form.validate_on_submit():
         user_roles = ",".join(form.roles.data)
         user = UserModel(email=new_user_email, first_name=form.first_name.data,
@@ -157,6 +161,10 @@ def register():
         return flask.redirect(flask.url_for('main.home'))
 
     form = RegistrationForm()
+
+    # cannot use flask.current_form in the form definition. Hence...
+    form.roles.choices = flask.current_app.config.get('ROLES')
+
     if form.validate_on_submit():
         hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
         db_user = UserModel.query.filter_by(email=form.email.data).first()

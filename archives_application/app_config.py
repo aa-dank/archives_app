@@ -124,7 +124,7 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
         else:
             # networked location my need additional slashes
             networked = is_network_path(location)
-            if networked[0]and not os.path.exists(location):
+            if networked[0] and not os.path.exists(location):
                 location = r"\\" + location
             if networked[1] and not os.path.exists(location):
                 location = r"//" + location
@@ -141,7 +141,8 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
                                                                      sqlite_url=True)
     config_dict['ARCHIVES_LOCATION'] = establish_location_path(share_path=config_dict['SHARE_LOCATION'],
                                                                location=config_dict['Archives_Directory'])
-    return type("DynamicServerConfig", bases=(), dict=config_dict)
+    #return type("DynamicServerConfig", bases=(), dict=config_dict)
+    return type("DynamicServerConfig", (), config_dict)
 
 """
 class DefaultTestConfig:

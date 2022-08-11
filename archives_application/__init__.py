@@ -24,6 +24,9 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     bcrypt.init_app(app)
     login_manager.init_app(app)
 
+    # Set a version number
+    app.config['VERSION'] = '0.0.1'
+
     from archives_application.users.routes import users
     from archives_application.archiver.routes import archiver
     from archives_application.main.routes import main

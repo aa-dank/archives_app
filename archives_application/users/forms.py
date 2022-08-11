@@ -10,7 +10,7 @@ class RegistrationForm(FlaskForm):
     email = StringField('Email', validators=[DataRequired(), Email()])
     first_name = StringField('First Name', validators=[DataRequired()])
     last_name = StringField('Last Name', validators=[DataRequired()])
-    roles = SelectMultipleField('Role(s)', validators=[DataRequired()], choices=flask.current_app.config.get('ROLES'))
+    roles = SelectMultipleField('Role(s)', validators=[DataRequired()])
     password = PasswordField('password', validators=[DataRequired()])
     confirm_password = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')])
     submit = SubmitField('Sign Up')
@@ -29,5 +29,5 @@ class LoginForm(FlaskForm):
 class GoogleRegisterForm(FlaskForm):
     first_name = StringField('First Name', validators=[DataRequired()])
     last_name = StringField('Last Name', validators=[DataRequired()])
-    roles = SelectMultipleField('Role(s)', validators=[DataRequired()], choices=flask.current_app.config.get('ROLES'))
+    roles = SelectMultipleField('Role(s)', validators=[DataRequired()])
     submit = SubmitField('Sign Up')
