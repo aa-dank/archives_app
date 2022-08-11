@@ -1,4 +1,5 @@
 import json
+import os
 
 DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 'C - Consultants',
                      'D - Environmental Review Process', 'E - Program and Design',
@@ -54,12 +55,12 @@ DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 
 
 #ROLES = ['ADMIN', 'ARCHIVIST', 'STAFF']
 
-JSON_CONFIG_FILE = r'archives_application/app_config.json'
+#JSON_CONFIG_FILE = r'archives_application/app_config.json'
 
 GOOGLE_CREDS_FILE = r'archives_application/google_client_secret.json'
 
-def google_creds_from_creds_json(path=GOOGLE_CREDS_FILE):
-    with open(path) as creds_json:
+def google_creds_from_creds_json(creds_path):
+    with open(creds_path) as creds_json:
         creds_dict = json.load(creds_json)['web']
         client_id = creds_dict.get('client_id')
         client_secret = creds_dict.get('client_secret')
@@ -67,7 +68,7 @@ def google_creds_from_creds_json(path=GOOGLE_CREDS_FILE):
     return client_id, client_secret
 
 
-def json_to_config_factory(google_creds_path: str = GOOGLE_CREDS_FILE, config_json_path: str = JSON_CONFIG_FILE):
+def json_to_config_factory(google_creds_path: str, config_json_path: str):
     """
     THis function turns a json file of config info and a google credentials json file into a flask app config class.
     The purpose is to allow the changing of app settings using a json file. Where different json files represent new
@@ -77,9 +78,57 @@ def json_to_config_factory(google_creds_path: str = GOOGLE_CREDS_FILE, config_js
     :return: DynamicServerConfig class with json keys as attributes
     """
 
-    def establish_database_path(share_path, database_location):
-        #TODO
-        pass
+    def establish_location_path(share_path, location, sqlite_url=False):
+        """
+        This subfunction tests whether the location is an absolute path or a path relative to the location of
+        of the share and whether it is a network or local path and returns the string url for it. The purpose is to
+        allow absolute paths to be set if the files are moved somewhere other than the share.
+        :param share_path: location of share either the directory it is mounted to or the network location
+        :param location: Complete path or path within the share
+        :param sqlite_url: whether the url needs an sqlite prefix
+        :return:
+        """
+        #TODO the logic of this function is poorly tested.
+        sqlite_prefix = r"'sqlite:///"
+
+
+        is_network_path = lambda some_path: (os.path.exists(r"\\" + combined_path), os.path.exists(r"//" + combined_path))
+
+        combined_path = os.path.join(share_path, location)
+        if os.path.exists(combined_path) or any(is_network_path(combined_path)):
+            if sqlite_url:
+
+                # if it is running on windows it needs an additional slash
+                # https://docs.sqlalchemy.org/en/14/core/engines.html#sqlite
+                if os.name not in ['nt']:
+                    combined_path = r"/" + combined_path
+                combined_path = sqlite_prefix + combined_path
+
+            else:
+                # networked location my need additional slashes
+                networked = is_network_path(combined_path)
+                if networked[0] and not os.path.exists(combined_path):
+                    combined_path = r"\\" + combined_path
+                if networked[1] and not os.path.exists(combined_path):
+                    combined_path = r"//" + combined_path
+
+            return combined_path
+
+        if sqlite_url:
+            # if it is running on windows it needs an additional slash
+            # https://docs.sqlalchemy.org/en/14/core/engines.html#sqlite
+            if os.name not in ['nt']:
+                location = r"/" + location
+            location = sqlite_prefix + location
+
+        else:
+            # networked location my need additional slashes
+            networked = is_network_path(location)
+            if networked[0]and not os.path.exists(location):
+                location = r"\\" + location
+            if networked[1] and not os.path.exists(location):
+                location = r"//" + location
+        return location
 
 
     with open(config_json_path) as config_file:
@@ -87,21 +136,21 @@ def json_to_config_factory(google_creds_path: str = GOOGLE_CREDS_FILE, config_js
     config_dict['GOOGLE_CLIENT_ID'], config_dict['GOOGLE_CLIENT_SECRET'] = google_creds_from_creds_json(google_creds_path)
     config_dict['OAUTHLIB_INSECURE_TRANSPORT'] = True
     config_dict['GOOGLE_DISCOVERY_URL'] = (r"https://accounts.google.com/.well-known/openid-configuration")
-    config_dict['SQLALCHEMY_DATABASE_URI'] = establish_database_path(share_path=config_dict['SHARE_LOCATION'],
-                                                                     database_location=config_dict['Sqalchemy_Database_Location'])
-    config_dict['ARCHIVES_LOCATION'] = establish_database_path(share_path=config_dict['SHARE_LOCATION'],
-                                                               database_location=['Archives_Directory'])
-
+    config_dict['SQLALCHEMY_DATABASE_URI'] = establish_location_path(share_path=config_dict['SHARE_LOCATION'],
+                                                                     location=config_dict['Sqalchemy_Database_Location'],
+                                                                     sqlite_url=True)
+    config_dict['ARCHIVES_LOCATION'] = establish_location_path(share_path=config_dict['SHARE_LOCATION'],
+                                                               location=config_dict['Archives_Directory'])
     return type("DynamicServerConfig", bases=(), dict=config_dict)
 
-
+"""
 class DefaultTestConfig:
     SQLALCHEMY_DATABASE_URI = r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
     SECRET_KEY = 'ABC'
-    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET = google_creds_from_creds_json()
+    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET = google_creds_from_creds_json(GOOGLE_CREDS_FILE)
     GOOGLE_DISCOVERY_URL = (r"https://accounts.google.com/.well-known/openid-configuration")
     OAUTHLIB_INSECURE_TRANSPORT = True
-
+"""
 
 
 

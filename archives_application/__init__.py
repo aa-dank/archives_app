@@ -3,7 +3,7 @@ import flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
-from archives_application.app_config import DefaultTestConfig, json_to_config_factory
+from archives_application.app_config import json_to_config_factory
 from oauthlib.oauth2 import WebApplicationClient
 
 
@@ -12,9 +12,12 @@ bcrypt = Bcrypt()
 login_manager = LoginManager()
 login_manager.login_view = 'users.login'
 login_manager.login_message_category = 'info'
+google_creds_json = r'google_client_secret.json'
+config_json = r'test_app_config.json'
+#config_json = r'deploy_app_config.json'
 
-#def create_app(config_class = json_to_config_factory):
-def create_app(config_class = DefaultTestConfig):
+def create_app(config_class=json_to_config_factory(google_creds_path=google_creds_json,config_json_path=config_json)):
+#def create_app(config_class = DefaultTestConfig):
     app = flask.Flask(__name__)
     app.config.from_object(config_class)
     db.init_app(app)
