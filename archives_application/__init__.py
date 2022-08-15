@@ -25,7 +25,8 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '0.0.1'
+    app.config['VERSION'] = '0.1.1'
+    app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     from archives_application.users.routes import users
     from archives_application.archiver.routes import archiver
@@ -38,10 +39,5 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     if hasattr(config_class, 'OAUTHLIB_INSECURE_TRANSPORT'):
         os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-    #load google credentials and client into the app config
-    app.config['GOOGLE_DISCOVERY_URL'] = config_class.GOOGLE_DISCOVERY_URL
-    app.config['GOOGLE_CLIENT_SECRET'] = config_class.GOOGLE_CLIENT_SECRET
-    app.config['GOOGLE_CLIENT_ID'] = config_class.GOOGLE_CLIENT_ID
-    app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     return app

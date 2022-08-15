@@ -15,7 +15,8 @@ pillow = "*"
 pymupdf = "*"
 gunicorn = "*"
 notebook = "*"
-
+oauthlib = "*"
+requests = "*"
 
 [dev-packages]
 

@@ -49,14 +49,6 @@ DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 
                      'G8 - Testing and Inspection Reports. Geotechnical Engineer',
                      'G9 - Testing and Inspection Reports. Testing Laboratory']
 
-#INBOXES_LOCATION = r"""\\ppcou.ucsc.edu\Data\Cannon_Scans\INBOX"""
-
-#DEFAULT_DATETIME_FORMAT = "%m/%d/%Y, %H:%M:%S"
-
-#ROLES = ['ADMIN', 'ARCHIVIST', 'STAFF']
-
-#JSON_CONFIG_FILE = r'archives_application/app_config.json'
-
 GOOGLE_CREDS_FILE = r'archives_application/google_client_secret.json'
 
 def google_creds_from_creds_json(creds_path):
@@ -78,56 +70,28 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
     :return: DynamicServerConfig class with json keys as attributes
     """
 
-    def establish_location_path(share_path, location, sqlite_url=False):
-        """
-        This subfunction tests whether the location is an absolute path or a path relative to the location of
-        of the share and whether it is a network or local path and returns the string url for it. The purpose is to
-        allow absolute paths to be set if the files are moved somewhere other than the share.
-        :param share_path: location of share either the directory it is mounted to or the network location
-        :param location: Complete path or path within the share
-        :param sqlite_url: whether the url needs an sqlite prefix
-        :return:
-        """
-        #TODO the logic of this function is poorly tested.
-        sqlite_prefix = r"'sqlite:///"
+    def establish_location_path(location, sqlite_url=False):
+        # TODO the logic of this function is poorly tested.
+        # example of working test config url: r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
+        sqlite_prefix = r"sqlite://"
+        is_network_path = lambda some_path: (os.path.exists(r"\\" + some_path), os.path.exists(r"//" + some_path))
+        bck_slsh, frwd_slsh = is_network_path(location)
+        has_sqlite_prefix = location.lower().startswith("sqlite")
 
-
-        is_network_path = lambda some_path: (os.path.exists(r"\\" + combined_path), os.path.exists(r"//" + combined_path))
-
-        combined_path = os.path.join(share_path, location)
-        if os.path.exists(combined_path) or any(is_network_path(combined_path)):
-            if sqlite_url:
-
-                # if it is running on windows it needs an additional slash
-                # https://docs.sqlalchemy.org/en/14/core/engines.html#sqlite
-                if os.name not in ['nt']:
-                    combined_path = r"/" + combined_path
-                combined_path = sqlite_prefix + combined_path
-
-            else:
-                # networked location my need additional slashes
-                networked = is_network_path(combined_path)
-                if networked[0] and not os.path.exists(combined_path):
-                    combined_path = r"\\" + combined_path
-                if networked[1] and not os.path.exists(combined_path):
-                    combined_path = r"//" + combined_path
-
-            return combined_path
-
-        if sqlite_url:
-            # if it is running on windows it needs an additional slash
-            # https://docs.sqlalchemy.org/en/14/core/engines.html#sqlite
-            if os.name not in ['nt']:
+        # if network location, process as such, including
+        if frwd_slsh:
+            location = r"//" + location
+            if (os.name in ['nt']) and (not has_sqlite_prefix) and sqlite_url:
                 location = r"/" + location
-            location = sqlite_prefix + location
+            if sqlite_url and not has_sqlite_prefix:
+                location = sqlite_prefix + location
+            return location
 
-        else:
-            # networked location my need additional slashes
-            networked = is_network_path(location)
-            if networked[0] and not os.path.exists(location):
-                location = r"\\" + location
-            if networked[1] and not os.path.exists(location):
-                location = r"//" + location
+        if bck_slsh:
+            location = r"\\" + location
+            return location
+
+
         return location
 
 
@@ -136,12 +100,9 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
     config_dict['GOOGLE_CLIENT_ID'], config_dict['GOOGLE_CLIENT_SECRET'] = google_creds_from_creds_json(google_creds_path)
     config_dict['OAUTHLIB_INSECURE_TRANSPORT'] = True
     config_dict['GOOGLE_DISCOVERY_URL'] = (r"https://accounts.google.com/.well-known/openid-configuration")
-    config_dict['SQLALCHEMY_DATABASE_URI'] = establish_location_path(share_path=config_dict['SHARE_LOCATION'],
-                                                                     location=config_dict['Sqalchemy_Database_Location'],
-                                                                     sqlite_url=True)
-    config_dict['ARCHIVES_LOCATION'] = establish_location_path(share_path=config_dict['SHARE_LOCATION'],
-                                                               location=config_dict['Archives_Directory'])
-    #return type("DynamicServerConfig", bases=(), dict=config_dict)
+    # test value should be r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
+    config_dict['SQLALCHEMY_DATABASE_URI'] = establish_location_path(location=config_dict['Sqalchemy_Database_Location'],sqlite_url=True)
+    config_dict['ARCHIVES_LOCATION'] = establish_location_path(location=config_dict['Archives_Directory'])
     return type("DynamicServerConfig", (), config_dict)
 
 """
