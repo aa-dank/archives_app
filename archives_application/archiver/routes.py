@@ -130,7 +130,7 @@ def upload_file():
 @roles_required(['ADMIN', 'ARCHIVIST'])
 def inbox_item():
 
-    user_inbox_path = os.path.join(flask.current_app.config.get('INBOXES_LOCATION'), get_user_handle())
+    user_inbox_path = os.path.join(flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION"), get_user_handle())
     user_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
                                 os.path.isfile(os.path.join(user_inbox_path, thing))]
     if not os.path.exists(user_inbox_path):
@@ -148,13 +148,15 @@ def inbox_item():
             flask.flash("The archivist inboxes are empty. Add files to the inbox directories to archive them.", 'info')
             return flask.redirect(flask.url_for('main.home'))
 
-        item_path = os.path.join(flask.current_app.config.get('INBOXES_LOCATION'), general_inbox_files[0])
+        item_path = os.path.join(flask.current_app.config.get('ARCHIVIST_INBOX_LOCATION'), general_inbox_files[0])
         shutil.move(item_path, os.path.join(user_inbox_path, general_inbox_files[0]))
 
 
     arch_file_filename = user_inbox_files()[0]
     preview_image_url = flask.url_for(r"static", filename="temp_files/" + DEFAULT_PREVIEW_IMAGE)
+
     # create the file preview image if it is a pdf
+    arch_file_preview_image_path = None
     if arch_file_filename.split(".")[-1].lower() in ['pdf']:
         temp_files_directory = os.path.join(os.getcwd(), r"archives_application\static\temp_files")
         arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
@@ -164,7 +166,10 @@ def inbox_item():
     # Record image path to session so it can be deleted upon logout
     if not flask.session[current_user.email].get('temporary files'):
         flask.session[current_user.email]['temporary files'] = []
-    flask.session[current_user.email]['temporary files'].append(arch_file_preview_image_path)
+
+    # if we made a preview image, record the path in the session so it can be removed upon logout
+    if arch_file_preview_image_path:
+        flask.session[current_user.email]['temporary files'].append(arch_file_preview_image_path)
 
     form = InboxItemForm()
 

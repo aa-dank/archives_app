@@ -102,7 +102,7 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
     config_dict['GOOGLE_DISCOVERY_URL'] = (r"https://accounts.google.com/.well-known/openid-configuration")
     # test value should be r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
     config_dict['SQLALCHEMY_DATABASE_URI'] = establish_location_path(location=config_dict['Sqalchemy_Database_Location'],sqlite_url=True)
-    config_dict['ARCHIVES_LOCATION'] = establish_location_path(location=config_dict['Archives_Directory'])
+    config_dict['ARCHIVES_LOCATION'] = establish_location_path(location=config_dict['ARCHIVES_LOCATION'])
     return type("DynamicServerConfig", (), config_dict)
 
 """
