@@ -43,7 +43,6 @@ def roles_required(roles: list[str]):
     return decorator
 
 
-
 @archiver.route("/server_change", methods=['GET', 'POST'])
 @login_required
 def server_change():
@@ -90,14 +89,18 @@ def server_change():
             save_server_change(creation)
 
         flask.flash(f'Server oprerating system call executed to make requested change.', 'success')
-        return flask.redirect(flask.url_for('server_change'))
+        return flask.redirect(flask.url_for('archiver.server_change'))
     return flask.render_template('server_change.html', title='Make change to file server', form=form)
+
+
 
 
 @archiver.route("/upload_file", methods=['GET', 'POST'])
 @login_required
 def upload_file():
     form = UploadFileForm()
+    # set filing code choices from app config
+    form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
     temp_files_directory = os.path.join(os.getcwd(), r"archives_application\static\temp_files")
     if form.validate_on_submit():
         temp_path = os.path.join(temp_files_directory, form.upload.data.filename)
@@ -130,7 +133,8 @@ def upload_file():
 @roles_required(['ADMIN', 'ARCHIVIST'])
 def inbox_item():
 
-    user_inbox_path = os.path.join(flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION"), get_user_handle())
+    inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
+    user_inbox_path = os.path.join(inbox_path, get_user_handle())
     user_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
                                 os.path.isfile(os.path.join(user_inbox_path, thing))]
     if not os.path.exists(user_inbox_path):
@@ -139,8 +143,8 @@ def inbox_item():
     # if no files in the user inbox, move a file from the INBOX directory to the user inbox to be processed.
     # This avoids other users from processing the same file, creating errors.
     if not user_inbox_files():
-        general_inbox_files = [t for t in os.listdir(flask.current_app.config.get('INBOXES_LOCATION')) if
-                               os.path.isfile(os.path.join(flask.current_app.config.get('INBOXES_LOCATION'), t))]
+        general_inbox_files = [t for t in os.listdir(inbox_path) if
+                               os.path.isfile(os.path.join(inbox_path, t))]
 
         # if there are no files to archive in either the user inbox or the archivist inbox we will send the user to
         # the homepage.
@@ -148,7 +152,7 @@ def inbox_item():
             flask.flash("The archivist inboxes are empty. Add files to the inbox directories to archive them.", 'info')
             return flask.redirect(flask.url_for('main.home'))
 
-        item_path = os.path.join(flask.current_app.config.get('ARCHIVIST_INBOX_LOCATION'), general_inbox_files[0])
+        item_path = os.path.join(inbox_path, general_inbox_files[0])
         shutil.move(item_path, os.path.join(user_inbox_path, general_inbox_files[0]))
 
 
@@ -172,6 +176,7 @@ def inbox_item():
         flask.session[current_user.email]['temporary files'].append(arch_file_preview_image_path)
 
     form = InboxItemForm()
+    form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
 
     # if the flask.session has data previously entered in this form, then re-enter it into the form before rendering
     # it in html
@@ -198,7 +203,7 @@ def inbox_item():
         arch_file = ArchivalFile(current_path=arch_file_path, project=form.project_number.data,
                                  new_filename=utilities.cleanse_filename(form.new_filename.data),
                                  notes=form.notes.data, destination_dir=form.destination_directory.data,
-                                 archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'),
+                                 archives_location=inbox_path,
                                  directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'))
         archiving_successful = arch_file.archive_in_destination()[0]
         if archiving_successful:

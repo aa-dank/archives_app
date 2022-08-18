@@ -151,4 +151,5 @@ def pdf_preview_image(pdf_path, image_destination, max_width=1080):
         page_img = page_img.resize((max_width, hsize), Image.ANTIALIAS)
 
     page_img.save(output_path)
+    fitz_doc.close()
     return output_path
