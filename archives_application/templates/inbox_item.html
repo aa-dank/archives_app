@@ -6,12 +6,15 @@
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Inbox Item to Archive</legend>
                 <div class="form-group">
-                <p>{{item_filename}}</p>
+                    <h4>File to archive:</h4>
+                    <p>{{item_filename}}</p>
                     <img src="{{ preview_image }}">
                     {{ form.download_item(class="btn btn-outline-info") }}
             </div>
+                <h4>Instructions:</h4>
+                <p>Enter a project number and destination directory (filing code). Alternatively, enter a destination path. (Useful if the document is not for a project or doesn't have a filing cde.)</p>
                 <div class="form-group">
-                    {{ form.project_number.label(class="form-control-label") }}
+                    <h6>{{ form.project_number.label(class="form-control-label") }}</h6>
                     {% if form.project_number.errors %}
                         {{ form.project_number(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -24,7 +27,7 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    {{ form.new_filename.label(class="form-control-label") }}
+                    <h6>{{ form.new_filename.label(class="form-control-label") }}</h6>
                     {% if form.new_filename.errors %}
                         {{ form.new_filename(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -37,7 +40,7 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    {{ form.document_date.label(class="form-control-label") }}
+                    <h6>{{ form.document_date.label(class="form-control-label") }}</h6>
                     {% if form.document_date.errors %}
                         {{ form.document_date(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -50,7 +53,7 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    {{ form.destination_directory.label(class="form-control-label") }}
+                    <h6>{{ form.destination_directory.label(class="form-control-label") }}</h6>
                     {% if form.destination_directory.errors %}
                         {{ form.destination_directory(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -63,7 +66,7 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    {{ form.destination_path.label(class="form-control-label") }}
+                    <h6>{{ form.destination_path.label(class="form-control-label") }}</h6>
                     {% if form.destination_path.errors %}
                         {{ form.destination_path(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -76,7 +79,8 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    {{ form.notes.label(class="form-control-label") }}
+                    <h6>{{ form.notes.label(class="form-control-label") }}</h6>
+                    <p>Notes are good for documenting issues with the file.</p>
                     {% if form.notes.errors %}
                         {{ form.notes(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">

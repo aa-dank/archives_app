@@ -4,9 +4,11 @@ import re
 import os
 import sys
 from PIL import Image
+from pathlib import Path
 
 def split_path(path):
     '''splits a path into each piece that corresponds to a mount point, directory name, or file'''
+    path = str(path)
     allparts = []
     while 1:
         parts = os.path.split(path)
@@ -100,23 +102,25 @@ def mounted_path_to_networked_path(mounted_path, network_location):
     :param network_location:
     :return:
     """
+    def is_already_network_location(location, some_network_location):
+        test_location = "".join(i for i in str(location) if i not in "\/:.")
+        test_network_loc = "".join(i for i in str(some_network_location) if i not in "\/:.")
+        if test_location.startswith(test_network_loc):
+            return True
+        return False
 
-    def is_similar_ip_address(ip_address1, ip_address2):
-        just_the_digits = lambda s: [char for char in s if char.isdigit()]
-        return just_the_digits(ip_address1) == just_the_digits(ip_address2)
-
-    mounted_path_list = split_path(mounted_path)
-    # If mounted_path is already a network path to same location, 
-    if is_similar_ip_address(mounted_path_list[0], network_location):
+    if is_already_network_location(location=mounted_path, some_network_location=network_location):
+        if not mounted_path.startswith(r"//"):
+            mounted_path = "//" + mounted_path
         return mounted_path
 
-    # need to determine if the path is actually a mounted path
-    count_alpha_chars = lambda s: len([char for char in s if char.isalpha()])
-    if not count_alpha_chars(mounted_path_list[0]) == 1:
-        raise Exception(f"mounted_path parameter doesn't appear to have a mount point: \n{mounted_path}")
-
-    mounted_path_list[0] = network_location
-    return os.path.join(*mounted_path_list)
+    mounted_path = Path(mounted_path)
+    network_loc_as_path = Path(network_location)
+    new_path_list = list(network_loc_as_path.parts) + list(mounted_path.parts[1:])
+    new_network_path = os.path.join(*new_path_list)
+    if not new_network_path.startswith(r"//"):
+        new_network_path = "//" + new_network_path
+    return new_network_path
 
 
 def cleanse_filename(proposed_filename: str):

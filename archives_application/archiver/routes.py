@@ -6,6 +6,7 @@ from .server_edit import ServerEdit
 from .forms import *
 from flask_login import login_required, current_user
 from functools import wraps
+from pathlib import Path
 from archives_application.models import *
 from flask import Blueprint
 
@@ -194,18 +195,23 @@ def inbox_item():
         # if the user clicked the download button, we send the file to the user, save what data the user has entered,
         # and rerender the page.
         if form.download_item.data:
+            # boolean for whether to attempt opening the file in the browser
             file_can_be_opened_in_browser = arch_file_filename.split(".")[-1].lower() in ['pdf', 'html']
             flask.session[current_user.email]['inbox_form_data'] = form.data
-            return flask.send_file(arch_file_path, as_attachment= not file_can_be_opened_in_browser)
-
+            return flask.send_file(arch_file_path, as_attachment=not file_can_be_opened_in_browser)
 
         upload_size = os.path.getsize(arch_file_path)
+        archival_filename = arch_file_filename
+        if form.new_filename.data:
+            archival_filename = utilities.cleanse_filename(form.new_filename.data)
         arch_file = ArchivalFile(current_path=arch_file_path, project=form.project_number.data,
-                                 new_filename=utilities.cleanse_filename(form.new_filename.data),
-                                 notes=form.notes.data, destination_dir=form.destination_directory.data,
-                                 archives_location=inbox_path,
-                                 directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'))
-        archiving_successful = arch_file.archive_in_destination()[0]
+                                 new_filename=archival_filename, notes=form.notes.data,
+                                 destination_dir=form.destination_directory.data,
+                                 archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'),
+                                 directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
+                                 destination_path=form.destination_path.data)
+        archiving_successful, archiving_exception = arch_file.archive_in_destination()
+
         if archiving_successful:
 
             archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
@@ -230,7 +236,7 @@ def inbox_item():
             return flask.redirect(flask.url_for('archiver.inbox_item'))
         else:
             flask.flash(
-                f'Failed to archive file:\n{arch_file.current_path}\nDestination:\n{arch_file.get_destination_path()}')
+                f'Failed to archive file:{arch_file.current_path} Destination: {arch_file.get_destination_path()} Error: {archiving_exception}')
             return flask.redirect(flask.url_for('archiver.inbox_item'))
     return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename,
                                  preview_image=preview_image_url)
