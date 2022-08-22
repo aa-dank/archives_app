@@ -36,7 +36,7 @@ def roles_required(roles: list[str]):
             if current_user.roles and [role for role in roles if role in user_role_list]:
                 return func(*args, **kwargs)
             else:
-                flask.flash("Need a different role to access this.", 'danger')
+                flask.flash("Need a different role to access this.", 'warning')
                 return flask.redirect(flask.url_for('main.home'))
 
         return wrap
@@ -232,15 +232,17 @@ def inbox_item():
                 # if the file wasn't deleted...
                 if os.path.exists(arch_file_path):
                     flask.flash(
-                        f'File archived, but could not remove it from this location:\n{arch_file.current_path}\nException:\n{e.message}')
+                        f'File archived, but could not remove it from this location:\n{arch_file.current_path}\nException:\n{e.message}',
+                        'warning')
                 else:
                     flask.current_app.logger.error(e, exc_info = True)
-                    flask.flash(f"An error occured: {e}")
+                    flask.flash(f"An error occured: {e}", 'warning')
             return flask.redirect(flask.url_for('archiver.inbox_item'))
         else:
             flask.current_app.logger.error(archiving_exception, exc_info=True)
             flask.flash(
-                f'Failed to archive file:{arch_file.current_path} Destination: {arch_file.get_destination_path()} Error: {archiving_exception}')
+                f'Failed to archive file:{arch_file.current_path} Destination: {arch_file.get_destination_path()} Error: {archiving_exception}',
+                'warning')
             return flask.redirect(flask.url_for('archiver.inbox_item'))
     return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename,
                                  preview_image=preview_image_url)

@@ -126,6 +126,7 @@ def callback():
         return flask.redirect(flask.url_for('users.google_register'))
 
     user_login_flow(user)
+    flask.flash("Login Successful.", 'success')
     return flask.redirect(flask.url_for('main.home'))
 
 @users.route("/google_auth/register", methods=['GET', 'POST'])
@@ -160,6 +161,19 @@ def google_register():
 
 @users.route("/register", methods=['GET', 'POST'])
 def register():
+    if current_user.is_authenticated:
+        flask.flash(f'Already logged in.', 'message')
+        return flask.redirect(flask.url_for('main.home'))
+
+    return flask.render_template('choose_registration.html', title='Register')
+
+
+@users.route("/new_account_registeration", methods=['GET', 'POST'])
+def new_account_registeration():
+    """
+    This endpoint is for creating and processing a form for creating a new account that does not use google authentication
+    :return:
+    """
     # if the current user has already been authenticated, just send them to the home page.
     if current_user.is_authenticated:
         return flask.redirect(flask.url_for('main.home'))

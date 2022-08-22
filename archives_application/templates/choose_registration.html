@@ -1,0 +1,14 @@
+{% extends "layout.html" %}
+{% block content %}
+    <h2>Choose Registration Method</h2>
+    <div class="border-top pt-3">
+        <p>
+             <a class="ml-2" href="{{ url_for('users.new_account_registeration') }}">Register by Creating Unique Application Credentials</a>
+        </p>
+    </div>
+    <div class="border-top pt-3">
+        <p>
+             <a class="ml-2" href="{{ url_for('users.google_auth') }}">Use Google Credentials to Register (Recommended)</a>
+        </p>
+    </div>
+{% endblock content %}
