@@ -213,28 +213,32 @@ def inbox_item():
         archiving_successful, archiving_exception = arch_file.archive_in_destination()
 
         if archiving_successful:
-
-            archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
-                                              project_number=arch_file.project_number,
-                                              document_date=form.document_date.data,
-                                              destination_directory=arch_file.destination_dir,
-                                              file_code=arch_file.file_code, archivist_id=current_user.id,
-                                              file_size=upload_size, notes=arch_file.notes,
-                                              filename=arch_file.assemble_destination_filename())
-            db.session.add(archived_file)
-            db.session.commit()
             try:
+                archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
+                                                  project_number=arch_file.project_number,
+                                                  document_date=form.document_date.data,
+                                                  destination_directory=arch_file.destination_dir,
+                                                  file_code=arch_file.file_code, archivist_id=current_user.id,
+                                                  file_size=upload_size, notes=arch_file.notes,
+                                                  filename=arch_file.assemble_destination_filename())
+                db.session.add(archived_file)
+                db.session.commit()
 
                 # make sure that the old file has been removed
                 if os.path.exists(arch_file_path):
                     os.remove(arch_file_path) #TODO having problems deleting old files
                 flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
             except Exception as e:
-                flask.flash(
-                    f'File archived, but could not remove it from this location:\n{arch_file.current_path}\nException:\n{e.message}')
-
+                # if the file wasn't deleted...
+                if os.path.exists(arch_file_path):
+                    flask.flash(
+                        f'File archived, but could not remove it from this location:\n{arch_file.current_path}\nException:\n{e.message}')
+                else:
+                    flask.current_app.logger.error(e, exc_info = True)
+                    flask.flash(f"An error occured: {e}")
             return flask.redirect(flask.url_for('archiver.inbox_item'))
         else:
+            flask.current_app.logger.error(archiving_exception, exc_info=True)
             flask.flash(
                 f'Failed to archive file:{arch_file.current_path} Destination: {arch_file.get_destination_path()} Error: {archiving_exception}')
             return flask.redirect(flask.url_for('archiver.inbox_item'))

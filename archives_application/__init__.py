@@ -1,5 +1,6 @@
 import os
 import flask
+import logging # example usage: https://github.com/tenable/flask-logging-demo
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
@@ -18,7 +19,17 @@ config_json = r'test_app_config.json'
 
 def create_app(config_class=json_to_config_factory(google_creds_path=google_creds_json,config_json_path=config_json)):
 #def create_app(config_class = DefaultTestConfig):
+
+    # logging format
+    defaultFormatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
+
+
     app = flask.Flask(__name__)
+
+    #set universal format for all logging handlers.
+    for handler in app.logger.handlers:
+        handler.setFormatter(defaultFormatter)
+
     app.config.from_object(config_class)
     db.init_app(app)
     bcrypt.init_app(app)

@@ -115,7 +115,6 @@ def callback():
     users_email, first_name, last_name = "","",""
     if userinfo_response.json().get("email_verified"):
         users_email = userinfo_response.json()["email"]
-        picture = userinfo_response.json()["picture"]
     else:
         flask.flash(f'User email not available or not verified by Google.', 'warning')
         return flask.redirect(flask.url_for('main.home'))
@@ -142,15 +141,20 @@ def google_register():
     form.roles.choices = flask.current_app.config.get('ROLES')
 
     if form.validate_on_submit():
-        user_roles = ",".join(form.roles.data)
-        user = UserModel(email=new_user_email, first_name=form.first_name.data,
-                         last_name=form.last_name.data, roles=user_roles)
-        db.session.add(user)
-        db.session.commit()
-        user = UserModel.query.filter_by(email=new_user_email).first()
-        user_login_flow(user=user)
-        flask.flash(f'Account created for {new_user_email}!', 'success')
-        return flask.redirect(flask.url_for('main.home'))
+        try:
+            user_roles = ",".join(form.roles.data)
+            user = UserModel(email=new_user_email, first_name=form.first_name.data,
+                             last_name=form.last_name.data, roles=user_roles)
+            db.session.add(user)
+            db.session.commit()
+            user = UserModel.query.filter_by(email=new_user_email).first()
+            user_login_flow(user=user)
+            flask.flash(f'Account created for {new_user_email}!', 'success')
+            return flask.redirect(flask.url_for('main.home'))
+        except Exception as e:
+            flask.current_app.logger.error(e, exc_info=True)
+            flask.flash(f'An error occurred during registration: {e}')
+
     return flask.render_template('google_register.html', title='Register', form=form)
 
 
