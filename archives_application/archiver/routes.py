@@ -22,6 +22,7 @@ def get_user_handle():
     return current_user.email.split("@")[0]
 
 
+#TODO add to location where all routes can use:
 def roles_required(roles: list[str]):
     """
     :param roles: list of the roles that can access the endpoint
@@ -92,8 +93,6 @@ def server_change():
         flask.flash(f'Server oprerating system call executed to make requested change.', 'success')
         return flask.redirect(flask.url_for('archiver.server_change'))
     return flask.render_template('server_change.html', title='Make change to file server', form=form)
-
-
 
 
 @archiver.route("/upload_file", methods=['GET', 'POST'])

@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <form method="POST" action="" enctype="multipart/form-data">
+            {{ form.hidden_tag() }}
+            <fieldset class="form-group">
+                <legend class="border-bottom mb-4">Settings to Change</legend>
+                <p>This form is for making changes to the configuration file. Anything entered here will overwrite the contents of the config file, For the configuration to take effect, the application will require a restart.</p>
+                {% for setting, _ in settings_dict.items() %}
+                    <div class="form-group">
+                        <!╌  ╌>
+                        <h6>{{ form[setting].label (class="form-control-label") }}</h6>
+                        {% if settings_dict[setting]["DESCRIPTION"] %}
+                            <p>Description: {{ settings_dict[setting]["DESCRIPTION"] }}</p>
+                        {% endif %}
+                        {% if form[setting].errors %}
+                            {{ form[setting](class="form-control form-control-lg is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in form[setting].errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ form[setting](class="form-control form-control-lg") }}
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </fieldset>
+            <div class="form-group">
+                {{ form.submit(class="btn btn-outline-info") }}
+            </div>
+        </form>
+    </div>
+{% endblock content %}

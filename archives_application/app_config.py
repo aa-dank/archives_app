@@ -49,7 +49,6 @@ DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 
                      'G8 - Testing and Inspection Reports. Geotechnical Engineer',
                      'G9 - Testing and Inspection Reports. Testing Laboratory']
 
-GOOGLE_CREDS_FILE = r'archives_application/google_client_secret.json'
 
 def google_creds_from_creds_json(creds_path):
     with open(creds_path) as creds_json:
@@ -97,22 +96,18 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
 
     with open(config_json_path) as config_file:
         config_dict = json.load(config_file)
+
+    # Remove sub-dictionary and descriptions
+    config_dict = {k: config_dict[k]['VALUE'] for k in list(config_dict.keys())}
     config_dict['GOOGLE_CLIENT_ID'], config_dict['GOOGLE_CLIENT_SECRET'] = google_creds_from_creds_json(google_creds_path)
     config_dict['OAUTHLIB_INSECURE_TRANSPORT'] = True
     config_dict['GOOGLE_DISCOVERY_URL'] = (r"https://accounts.google.com/.well-known/openid-configuration")
-    # test value should be r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
+    # test value fo SQLALCHEMY_DATABASE_URI should be r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
     config_dict['SQLALCHEMY_DATABASE_URI'] = establish_location_path(location=config_dict['Sqalchemy_Database_Location'],sqlite_url=True)
     config_dict['ARCHIVES_LOCATION'] = establish_location_path(location=config_dict['ARCHIVES_LOCATION'])
+    config_dict["ARCHIVIST_INBOX_LOCATION"] = establish_location_path(location=config_dict["ARCHIVIST_INBOX_LOCATION"])
+    config_dict['CONFIG_JSON_PATH'] = config_json_path
     return type("DynamicServerConfig", (), config_dict)
-
-"""
-class DefaultTestConfig:
-    SQLALCHEMY_DATABASE_URI = r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
-    SECRET_KEY = 'ABC'
-    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET = google_creds_from_creds_json(GOOGLE_CREDS_FILE)
-    GOOGLE_DISCOVERY_URL = (r"https://accounts.google.com/.well-known/openid-configuration")
-    OAUTHLIB_INSECURE_TRANSPORT = True
-"""
 
 
 

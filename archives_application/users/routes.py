@@ -12,6 +12,7 @@ from .forms import *
 
 users = flask.Blueprint('users', __name__)
 
+
 def get_google_provider_urls():
     """
     This function serves to retrieve the authorization (and other) endpoints from google so they do not have to be
@@ -25,16 +26,12 @@ def get_google_provider_urls():
             f"Did not get valid status code from request to {g_discovery_url}\n Got code {response.status_code} instead.")
     return response.json()
 
+
 def user_login_flow(user):
     login_user(user)
     flask.session[user.email] = {}
     flask.session[user.email]['temporary files'] = []
 
-"""
-@login_manager.user_loader
-def load_user(user_id):
-    return UserModel.get(user_id) #TODO user is db model
-"""
 
 @users.route("/choose_login")
 def choose_login():
@@ -47,6 +44,7 @@ def choose_login():
         return flask.redirect(flask.url_for('main.home'))
 
     return flask.render_template('choose_login.html', title='Register') #TODO add google login link to template
+
 
 @users.route("/google_auth")
 def google_auth():
@@ -67,6 +65,7 @@ def google_auth():
         scope=["openid", "email", "profile"],
     )
     return flask.redirect(request_uri)
+
 
 @users.route("/google_auth/callback")
 def callback():
@@ -128,6 +127,7 @@ def callback():
     user_login_flow(user)
     flask.flash("Login Successful.", 'success')
     return flask.redirect(flask.url_for('main.home'))
+
 
 @users.route("/google_auth/register", methods=['GET', 'POST'])
 def google_register():
