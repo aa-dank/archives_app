@@ -2,7 +2,7 @@ import os
 import logging
 import shutil
 import typing
-from . import utilities
+from .. import utilities
 from dateutil import parser
 from datetime import datetime
 from collections import defaultdict
@@ -52,7 +52,7 @@ class ArchivalFile:
         them from current filename to desired new filename
         :return:
         """
-        current_filename = ArchiverUtilities.split_path(self.current_path)[-1]
+        current_filename = utilities.split_path(self.current_path)[-1]
         dest_filename = current_filename
         if self.new_filename:
             dest_filename = self.new_filename

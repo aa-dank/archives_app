@@ -18,6 +18,7 @@ config_json = r'test_app_config.json'
 #config_json = r'deploy_app_config.json'
 
 def create_app(config_class=json_to_config_factory(google_creds_path=google_creds_json,config_json_path=config_json)):
+#def create_app(config_class = DefaultTestConfig):
 
     # logging format
     defaultFormatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
@@ -25,7 +26,7 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
 
     app = flask.Flask(__name__)
 
-    # set universal format for all logging handlers.
+    #set universal format for all logging handlers.
     for handler in app.logger.handlers:
         handler.setFormatter(defaultFormatter)
 
@@ -38,18 +39,16 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     app.config['VERSION'] = '0.1.4'
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
-    # add blueprints
     from archives_application.users.routes import users
     from archives_application.archiver.routes import archiver
     from archives_application.main.routes import main
-    from archives_application.timekeeper.routes import timekeeper
     app.register_blueprint(users)
     app.register_blueprint(archiver)
     app.register_blueprint(main)
-    app.register_blueprint(timekeeper)
 
     # This sets an environmental variable to allow oauth authentication flow to use http requests (vs https)
     if hasattr(config_class, 'OAUTHLIB_INSECURE_TRANSPORT'):
         os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
 
     return app

@@ -53,3 +53,13 @@ class ServerChangeModel(db.Model):
 
     def __repr__(self):
         return f"Server Change('{self.change_type}', '{self.old_path}', '{self.new_path}')"
+
+class TimekeeperEventModel(db.Model):
+    __tablename__ = 'timekeeper'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    datetime = db.Column(db.DateTime, nullable=False, default=datetime.utcnow())
+    clock_in = db.Column(db.Boolean, default=False, nullable=False)
+
+    def __repr__(self):
+        return f"Timekeeper event: ('{self.change_type}', '{self.old_path}', '{self.new_path}')"

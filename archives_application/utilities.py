@@ -3,8 +3,12 @@ import subprocess
 import re
 import os
 import sys
+import flask
+from flask_login import current_user
+from functools import wraps
 from PIL import Image
 from pathlib import Path
+
 
 def split_path(path):
     '''splits a path into each piece that corresponds to a mount point, directory name, or file'''
@@ -22,6 +26,28 @@ def split_path(path):
             path = parts[0]
             allparts.insert(0, parts[1])
     return allparts
+
+
+def roles_required(roles: list[str]):
+    """
+    :param roles: list of the roles that can access the endpoint
+    :return: actual decorator function
+    """
+
+    def decorator(func):
+        @wraps(func)
+        def wrap(*args, **kwargs):
+            user_role_list = current_user.roles.split(",")
+            # if the user has at least a single role and at least one of the user roles is in roles...
+            if current_user.roles and [role for role in roles if role in user_role_list]:
+                return func(*args, **kwargs)
+            else:
+                flask.flash("Need a different role to access this.", 'warning')
+                return flask.redirect(flask.url_for('main.home'))
+
+        return wrap
+
+    return decorator
 
 
 def prefixes_from_project_number(project_no: str):

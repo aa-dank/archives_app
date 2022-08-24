@@ -1,12 +1,8 @@
-import flask
 import shutil
-from . import utilities
 from .archival_file import ArchivalFile
 from .server_edit import ServerEdit
 from .forms import *
 from flask_login import login_required, current_user
-from functools import wraps
-from pathlib import Path
 from archives_application.models import *
 from flask import Blueprint
 
@@ -22,31 +18,8 @@ def get_user_handle():
     return current_user.email.split("@")[0]
 
 
-#TODO add to location where all routes can use:
-def roles_required(roles: list[str]):
-    """
-    :param roles: list of the roles that can access the endpoint
-    :return: actual decorator function
-    """
-
-    def decorator(func):
-        @wraps(func)
-        def wrap(*args, **kwargs):
-            user_role_list = current_user.roles.split(",")
-            # if the user has at least a single role and at least one of the user roles is in roles...
-            if current_user.roles and [role for role in roles if role in user_role_list]:
-                return func(*args, **kwargs)
-            else:
-                flask.flash("Need a different role to access this.", 'warning')
-                return flask.redirect(flask.url_for('main.home'))
-
-        return wrap
-
-    return decorator
-
-
 @archiver.route("/server_change", methods=['GET', 'POST'])
-@login_required
+@utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def server_change():
     def save_server_change(executed_edit: ServerEdit):
         """
@@ -130,7 +103,7 @@ def upload_file():
 
 
 @archiver.route("/inbox_item", methods=['GET', 'POST'])
-@roles_required(['ADMIN', 'ARCHIVIST'])
+@utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def inbox_item():
 
     inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
@@ -210,7 +183,6 @@ def inbox_item():
                                  directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
                                  destination_path=form.destination_path.data)
         archiving_successful, archiving_exception = arch_file.archive_in_destination()
-
         if archiving_successful:
             try:
                 archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),

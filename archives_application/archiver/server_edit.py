@@ -1,7 +1,7 @@
 import os
 import shutil
 import flask
-from . import utilities
+from .. import utilities
 
 
 class ServerEdit:

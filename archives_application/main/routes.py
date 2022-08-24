@@ -2,6 +2,7 @@ import flask
 import json
 from flask import Blueprint
 from . import forms
+from .. utilities import roles_required
 
 main = Blueprint('main', __name__)
 
@@ -19,6 +20,7 @@ def main_admin():
 
 
 @main.route("/admin/config", methods=['GET', 'POST'])
+@roles_required(['ADMIN'])
 def change_config_settings():
     config_dict = {}
     config_filepath = flask.current_app.config.get('CONFIG_JSON_PATH')
