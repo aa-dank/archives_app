@@ -1,6 +1,7 @@
 import contextlib
 import flask
 import sqlite3
+import sys
 import pandas as pd
 from datetime import datetime
 
@@ -35,8 +36,16 @@ def fetchall_query_to_dataframe(query_string: str, db_path:str):
 def pop_dialect_from_sqlite_uri(sql_uri:str):
     new_url = sql_uri
     if sql_uri.startswith("sqlite"):
-        if
-        new_url = sql_uri.split("/")[-1]
+        # if the platform is not linux ofr mac, it is assumed to be windows
+        if sys.platform.lower() not in ['linux', 'linux2', 'darwin']:
+            return new_url.split("/")[-1]
+        else:
+            sqlite_prefix = new_url.split("/")[0]
+            new_url = new_url[len(sqlite_prefix):]
+            # remove first char while the first char is '/'.
+            while new_url[0] == "/":
+                new_url = new_url[1:]
+    return new_url
 
 
 @timekeeper.route("/timekeeper", methods=['GET', 'POST'])

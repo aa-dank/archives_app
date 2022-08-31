@@ -58,6 +58,27 @@ def google_creds_from_creds_json(creds_path):
 
     return client_id, client_secret
 
+def establish_location_path(location, sqlite_url=False):
+    # TODO the logic of this function is poorly tested.
+    # example of working test config url: r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
+    sqlite_prefix = r"sqlite://"
+    is_network_path = lambda some_path: (os.path.exists(r"\\" + some_path), os.path.exists(r"//" + some_path))
+    bck_slsh, frwd_slsh = is_network_path(location)
+    has_sqlite_prefix = location.lower().startswith("sqlite")
+
+    # if network location, process as such, including
+    if frwd_slsh:
+        location = r"//" + location
+        if (os.name in ['nt']) and (not has_sqlite_prefix) and sqlite_url:
+            location = r"/" + location
+        if sqlite_url and not has_sqlite_prefix:
+            location = sqlite_prefix + location
+        return location
+
+    if bck_slsh:
+        location = r"\\" + location
+        return location
+    return location
 
 def json_to_config_factory(google_creds_path: str, config_json_path: str):
     """
@@ -69,29 +90,6 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
     :return: DynamicServerConfig class with json keys as attributes
     """
 
-    def establish_location_path(location, sqlite_url=False):
-        # TODO the logic of this function is poorly tested.
-        # example of working test config url: r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
-        sqlite_prefix = r"sqlite://"
-        is_network_path = lambda some_path: (os.path.exists(r"\\" + some_path), os.path.exists(r"//" + some_path))
-        bck_slsh, frwd_slsh = is_network_path(location)
-        has_sqlite_prefix = location.lower().startswith("sqlite")
-
-        # if network location, process as such, including
-        if frwd_slsh:
-            location = r"//" + location
-            if (os.name in ['nt']) and (not has_sqlite_prefix) and sqlite_url:
-                location = r"/" + location
-            if sqlite_url and not has_sqlite_prefix:
-                location = sqlite_prefix + location
-            return location
-
-        if bck_slsh:
-            location = r"\\" + location
-            return location
-
-
-        return location
 
 
     with open(config_json_path) as config_file:
