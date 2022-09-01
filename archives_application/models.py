@@ -2,6 +2,7 @@ from archives_application import db, login_manager
 from datetime import datetime
 from flask_login import UserMixin
 
+
 @login_manager.user_loader
 def load_user(user_id):
     return UserModel.query.get(int(user_id))
@@ -30,7 +31,7 @@ class ArchivedFileModel(db.Model):
     destination_directory = db.Column(db.String, nullable=False)
     file_code = db.Column(db.String, nullable=False)
     file_size = db.Column(db.Float, nullable=False)
-    date_archived = db.Column(db.DateTime, nullable=False, default=datetime.utcnow())
+    date_archived = db.Column(db.DateTime, nullable=False, default=datetime.now())
     archivist_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     notes = db.Column(db.String)
     filename = db.Column(db.String)
@@ -48,7 +49,7 @@ class ServerChangeModel(db.Model):
     change_type = db.Column(db.String, nullable=False)
     files_effected = db.Column(db.Integer)
     data_effected = db.Column(db.Numeric)
-    date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow())
+    date = db.Column(db.DateTime, nullable=False, default=datetime.now())
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 
     def __repr__(self):
@@ -58,7 +59,7 @@ class TimekeeperEventModel(db.Model):
     __tablename__ = 'timekeeper'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    datetime = db.Column(db.DateTime, nullable=False, default=datetime.utcnow())
+    datetime = db.Column(db.DateTime, nullable=False, default=datetime.now())
     clock_in_event = db.Column(db.Boolean, default=False, nullable=False)
     journal = db.Column(db.Text)
 

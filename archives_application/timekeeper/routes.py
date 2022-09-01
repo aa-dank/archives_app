@@ -27,18 +27,23 @@ def fetchall_query_to_dataframe(query_string: str, db_path:str):
     df = pd.DataFrame()
     with contextlib.closing(sqlite3.connect(db_path)) as conn:  # auto-closes
         with conn:  # auto-commits
-            with contextlib.closing(conn.cursor()) as c:
-                cols = [description[0] for description in c.description]
+            cols = TimekeeperEventModel.__table__.columns.keys()
             df = pd.read_sql(sql=query_string, con=conn, columns=cols)
     return df
 
 
 def pop_dialect_from_sqlite_uri(sql_uri:str):
+    """
+    turns the sqlite uri into a normal path by removing the sqlite prefix on the database path required by sqlalchemy.
+    Useful for using normal sqlite3 queries on the database.
+    :param sql_uri:
+    :return:
+    """
     new_url = sql_uri
     if sql_uri.startswith("sqlite"):
-        # if the platform is not linux ofr mac, it is assumed to be windows
-        if sys.platform.lower() not in ['linux', 'linux2', 'darwin']:
-            return new_url.split("/")[-1]
+        # if the platform is not linux or mac, it is assumed to be windows
+        if sys.platform.lower() not in ['linux', 'linux2', 'darwin']: #TODO are windows paths stored with back slash
+            return "\\\\" + new_url.split("/")[-1]
         else:
             sqlite_prefix = new_url.split("/")[0]
             new_url = new_url[len(sqlite_prefix):]
@@ -56,6 +61,20 @@ def timekeeper_event():
     Main timekeeper endpoint that spits out html form for clocking in and clocking out. Clocking events
     :return:
     """
+
+    def exception_handling_pattern(flash_message, thrown_exception):
+        """
+        subroutine for dealing with exceptions that pop up during time keeper api calls
+        :param flash_message:
+        :param thrown_exception:
+        :return:
+        """
+        flash_message = flash_message + f": {thrown_exception}"
+        flask.flash(flash_message, 'error')
+        current_app.logger.error(thrown_exception, exc_info=True)
+        return flask.redirect(flask.url_for('main.home'))
+
+
     def is_clocked_in(user_id):
         """
         uses the user id to query the database to see if the most recent timekeeper event from today was a clock_in_event
@@ -66,9 +85,10 @@ def timekeeper_event():
         """
         user_id = int(user_id)
         query = f"SELECT * FROM timekeeper WHERE strftime('%Y-%m-%d', datetime) = strftime('%Y-%m-%d', date('now')) AND user_id = {user_id}"
+        db_path = pop_dialect_from_sqlite_uri(current_app.config["SQLALCHEMY_DATABASE_URI"])
         try:
 
-            df = fetchall_query_to_dataframe(query_string=query, db_path=current_app.config["Sqalchemy_Database_Location"])
+            df = fetchall_query_to_dataframe(query_string=query, db_path=db_path)
         except Exception as e:
             current_app.logger.error(f"Issue querying the timekeeper table: {e}")
             return (False, e)
@@ -91,9 +111,7 @@ def timekeeper_event():
         if clock_in_check_error:
             raise Exception(clock_in_check_error)
     except Exception as e:
-        flask.flash(f'Error when checking if user is clocked in: {e}', 'error')
-        current_app.logger.error(e)
-        flask.redirect(flask.url_for('main.home'))
+        return exception_handling_pattern(flash_message="Error when checking if user is clocked in", thrown_exception=e)
 
     if form.validate_on_submit():
         if clocked_in:
@@ -107,9 +125,7 @@ def timekeeper_event():
                     flask.flash("Successfully clocked out. Please, don't forget to log-out. Good-Bye.", 'success')
                     flask.redirect(flask.url_for('main.home'))
                 except Exception as e:
-                    flask.flash(f'Error during clocking out process: {e}', 'error')
-                    current_app.logger.error(e)
-                    flask.redirect(flask.url_for('main.home'))
+                    return exception_handling_pattern(flash_message="Error recording user clock-out event", thrown_exception=e)
 
         else:
             if form.clock_in.data:
@@ -122,9 +138,7 @@ def timekeeper_event():
                     flask.flash(f'Successfully clocked in.', 'success')
                     flask.redirect(flask.url_for('main.home'))
                 except Exception as e:
-                    flask.flash(f'Error duriing logging in: {e}', 'error')
-                    current_app.logger.error(e)
-                    flask.redirect(flask.url_for('main.home'))
+                    return exception_handling_pattern(flash_message="Error recording user clock-in event", thrown_exception=e)
 
     return flask.render_template('timekeeper.html', title='Timekeeper', form=form,  clocked_in=clocked_in)
 
