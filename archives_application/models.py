@@ -31,7 +31,7 @@ class ArchivedFileModel(db.Model):
     destination_directory = db.Column(db.String, nullable=False)
     file_code = db.Column(db.String, nullable=False)
     file_size = db.Column(db.Float, nullable=False)
-    date_archived = db.Column(db.DateTime, nullable=False, default=datetime.now())
+    date_archived = db.Column(db.DateTime, nullable=False, default=datetime.now()) #TODO remove these and fill the datetime columns during api call
     archivist_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     notes = db.Column(db.String)
     filename = db.Column(db.String)
@@ -59,7 +59,7 @@ class TimekeeperEventModel(db.Model):
     __tablename__ = 'timekeeper'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    datetime = db.Column(db.DateTime, nullable=False, default=datetime.now())
+    datetime = db.Column(db.DateTime, nullable=False)
     clock_in_event = db.Column(db.Boolean, default=False, nullable=False)
     journal = db.Column(db.Text)
 

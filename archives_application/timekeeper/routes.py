@@ -1,6 +1,4 @@
-import contextlib
 import flask
-import sqlite3
 import sys
 import pandas as pd
 from datetime import datetime
@@ -16,26 +14,13 @@ from .forms import TimekeepingForm
 timekeeper = flask.Blueprint('timekeeper', __name__)
 
 
-def fetchall_query_to_dataframe(query_string: str, db_path:str):
-    """
-    Based on:
-    https://stackoverflow.com/questions/9561832/what-if-i-dont-close-the-database-connection-in-python-sqlite/47501337#47501337
-    :param query_string:
-    :param db_path:
-    :return:
-    """
-    df = pd.DataFrame()
-    with contextlib.closing(sqlite3.connect(db_path)) as conn:  # auto-closes
-        with conn:  # auto-commits
-            cols = TimekeeperEventModel.__table__.columns.keys()
-            df = pd.read_sql(sql=query_string, con=conn, columns=cols)
-    return df
 
 
 def pop_dialect_from_sqlite_uri(sql_uri:str):
     """
     turns the sqlite uri into a normal path by removing the sqlite prefix on the database path required by sqlalchemy.
     Useful for using normal sqlite3 queries on the database.
+    More info: https://docs.sqlalchemy.org/en/14/core/engines.html#database-urls
     :param sql_uri:
     :return:
     """
@@ -84,32 +69,30 @@ def timekeeper_event():
         may have occured while looking this up
         """
         user_id = int(user_id)
-        query = f"SELECT * FROM timekeeper WHERE strftime('%Y-%m-%d', datetime) = strftime('%Y-%m-%d', date('now')) AND user_id = {user_id}"
-        db_path = pop_dialect_from_sqlite_uri(current_app.config["SQLALCHEMY_DATABASE_URI"])
-        try:
 
-            df = fetchall_query_to_dataframe(query_string=query, db_path=db_path)
-        except Exception as e:
-            current_app.logger.error(f"Issue querying the timekeeper table: {e}")
-            return (False, e)
+        #TODO query by datetime: todays_events_query2 = TimekeeperEventModel.query.filter_by(user_id=1, datetime=datetime.now().date())
+        start_of_today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        db.session.commit()
+        todays_events_query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == user_id,
+                                                                TimekeeperEventModel.datetime > start_of_today)
+        todays_events_df = pd.read_sql(todays_events_query.statement, todays_events_query.session.bind)
 
         # if there are no records for the user, they are not clocked in
-        if df.shape[0] == 0:
-            return (False, '')
+        if todays_events_df.shape[0] == 0:
+            return False
 
-        df.sort_values(by='datetime', ascending=True, inplace=True)
-        if df.head(1)["clock_in_event"] == True:
-            return (True, '')
+        todays_events_df.sort_values(by='datetime', ascending=False, inplace=True)
+        if todays_events_df.iloc[0]['clock_in_event']:
+            return True
 
-        return (False, '')
+        return False
 
     current_user_id = UserModel.query.filter_by(email=current_user.email).first().id
     form = TimekeepingForm()
     clocked_in = False
     try:
-        clocked_in, clock_in_check_error = is_clocked_in(user_id=current_user_id)
-        if clock_in_check_error:
-            raise Exception(clock_in_check_error)
+        clocked_in = is_clocked_in(user_id=current_user_id)
+
     except Exception as e:
         return exception_handling_pattern(flash_message="Error when checking if user is clocked in", thrown_exception=e)
 
@@ -118,12 +101,13 @@ def timekeeper_event():
             if form.clock_out.data:
                 try:
                     event_model = TimekeeperEventModel(user_id=current_user_id,
+                                                       datetime=datetime.now(),
                                                        journal=form.journal.data,
                                                        clock_in_event=False)
                     db.session.add(event_model)
                     db.session.commit()
                     flask.flash("Successfully clocked out. Please, don't forget to log-out. Good-Bye.", 'success')
-                    flask.redirect(flask.url_for('main.home'))
+                    return flask.redirect(flask.url_for('main.home'))
                 except Exception as e:
                     return exception_handling_pattern(flash_message="Error recording user clock-out event", thrown_exception=e)
 
@@ -131,12 +115,13 @@ def timekeeper_event():
             if form.clock_in.data:
                 try:
                     event_model = TimekeeperEventModel(user_id=current_user_id,
+                                                       datetime=datetime.now(),
                                                        journal='',
                                                        clock_in_event=True)
                     db.session.add(event_model)
                     db.session.commit()
                     flask.flash(f'Successfully clocked in.', 'success')
-                    flask.redirect(flask.url_for('main.home'))
+                    return flask.redirect(flask.url_for('main.home'))
                 except Exception as e:
                     return exception_handling_pattern(flash_message="Error recording user clock-in event", thrown_exception=e)
 
