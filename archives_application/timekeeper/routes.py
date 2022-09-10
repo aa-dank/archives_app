@@ -221,33 +221,39 @@ def user_timesheet(employee_id):
         flask.flash(flash_message, 'error')
         current_app.logger.error(thrown_exception, exc_info=True)
         return flask.redirect(flask.url_for('main.home'))
-
-    query_start_date = datetime.now() - timedelta(days = 14)
-    query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == employee_id,
+    try:
+        query_start_date = datetime.now() - timedelta(days = 14)
+        query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == employee_id,
                                               TimekeeperEventModel.datetime > query_start_date)
-    timesheet_df = pd.read_sql(query.statement, query.session.bind)
+        timesheet_df = pd.read_sql(query.statement, query.session.bind)
+    except Exception as e:
+        exception_handling_pattern(flash_message="Error getting user timekeeper events from database: ",
+                                   thrown_exception=e)
 
     if timesheet_df.shape[0] == 0:
         flask.flash(f"No clocked time recorded for request period for the id {employee_id}.", category='info')
         return flask.redirect(flask.url_for('main.home'))
 
-    # Create a list of dictionaries, where each dictionary is the aggregated data for that day
-    all_days_data = []
-    for range_date in daterange(start_date=query_start_date.date(), end_date=datetime.now().date()):
-        day_data = {"Date":range_date.strftime('%Y-%m-%d')}
+    try:
+        # Create a list of dictionaries, where each dictionary is the aggregated data for that day
+        all_days_data = []
+        for range_date in daterange(start_date=query_start_date.date(), end_date=datetime.now().date()):
+            day_data = {"Date":range_date.strftime('%Y-%m-%d')}
 
-        # calculate hours and/or determine if entering them is incomplete
-        hours, timesheet_complete = hours_worked_in_day(range_date, employee_id)
-        if not timesheet_complete:
-            day_data["Hours Worked"] = "TIME ENTRY INCOMPLETE"
-        else:
-            day_data["Hours Worked"] = str(hours)
+            # calculate hours and/or determine if entering them is incomplete
+            hours, timesheet_complete = hours_worked_in_day(range_date, employee_id)
+            if not timesheet_complete:
+                day_data["Hours Worked"] = "TIME ENTRY INCOMPLETE"
+            else:
+                day_data["Hours Worked"] = str(hours)
 
-        # Mush all journal entries together into a single journal entry
-        compiled_journal = compile_journal(range_date, timesheet_df, " \ ")
-        day_data["journal"] = compiled_journal
-        all_days_data.append(day_data)
+            # Mush all journal entries together into a single journal entry
+            compiled_journal = compile_journal(range_date, timesheet_df, " \ ")
+            day_data["journal"] = compiled_journal
+            all_days_data.append(day_data)
+    except Exception as e:
+        exception_handling_pattern(flash_message="Error creating table of hours worked: ", thrown_exception=e)
 
     aggregate_hours_df = pd.DataFrame.from_dict(all_days_data)
     html_table = aggregate_hours_df.to_html(index=False, justify='right')
