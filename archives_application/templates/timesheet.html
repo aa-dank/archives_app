@@ -1,0 +1,10 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+      <h2>Timesheet</h2>
+        <p>
+            Days that say "TIME ENTRY INCOMPLETE" are days where a clock-in or clock-out event are missing.
+        </p>
+        {{ table|safe }}
+    </div>
+{% endblock content %}

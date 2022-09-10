@@ -14,8 +14,6 @@ from .forms import TimekeepingForm
 timekeeper = flask.Blueprint('timekeeper', __name__)
 
 
-
-
 def pop_dialect_from_sqlite_uri(sql_uri:str):
     """
     turns the sqlite uri into a normal path by removing the sqlite prefix on the database path required by sqlalchemy.
@@ -41,13 +39,23 @@ def pop_dialect_from_sqlite_uri(sql_uri:str):
 def hours_worked_in_day(day, user_id):
 
     def clocked_out_everytime(event_type_col: pd.Series):
-        """Checks that clock_in_event column is alternating."""
-        if not event_type_col.iloc[0]:
+        """
+        Checks that clock_in_event column is alternating. that the last event was a clock out event.
+        Note that the column passed to this function needs to sorted by time.
+        """
+        if event_type_col.shape[0] < 2 or not event_type_col.iloc[0]:
             return False
         last = event_type_col.iloc[0]
-        for current in event_type_col[:1]:
+        for current in event_type_col[1:]:
             if last == current:
                 return False
+
+            last = current
+
+        # if the last entry is clock-in event return false
+        if event_type_col.iloc[-1]:
+            return False
+
         return True
 
     hours_worked = 0
@@ -74,7 +82,7 @@ def hours_worked_in_day(day, user_id):
             time_in = row['datetime']
 
             # create new dataframe of time-out events that happened after time-in event.
-            time_out_events_df = timesheet_df[not timesheet_df['clock_in_event']]
+            time_out_events_df = timesheet_df[~timesheet_df['clock_in_event']]
             time_out_events_df = time_out_events_df[time_out_events_df["datetime"] > time_in]
             time_out_events_df.sort_values(by='datetime', inplace=True)
 
@@ -82,8 +90,10 @@ def hours_worked_in_day(day, user_id):
             if time_out_events_df.shape[0] == 0:
                 break
 
+            # calculate the differences between this clock in and the subsequent clock out.
             delta = time_out_events_df.iloc[0].loc["datetime"] - time_in
-            hours_worked += delta.hours
+            hours_worked += delta.days * 24
+            hours_worked += delta.seconds // 3600
 
     return hours_worked, clock_ins_have_clock_outs
 
@@ -138,10 +148,10 @@ def timekeeper_event():
 
         return False
 
-    current_user_id = UserModel.query.filter_by(email=current_user.email).first().id
-    form = TimekeepingForm()
-    clocked_in = False
+
     try:
+        current_user_id = UserModel.query.filter_by(email=current_user.email).first().id
+        form = TimekeepingForm()
         clocked_in = is_clocked_in(user_id=current_user_id)
 
     except Exception as e:
@@ -194,10 +204,10 @@ def user_timesheet(employee_id):
         for n in range(int((end_date - start_date).days)):
             yield start_date + timedelta(days=n)
 
-    def compile_journal(date: datetime, timecard_df: pd.DataFrame):
+    def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str:str):
         strftime_dt = lambda dt: dt.strftime("%Y-%m-%d")
         timecard_df = timecard_df[timecard_df["datetime"].map(strftime_dt) == date.strftime("%Y-%m-%d")]
-        compiled_journal = "\n".join([journal for journal in timecard_df["journal"].tolist() if journal])
+        compiled_journal = delimiter_str.join([journal for journal in timecard_df["journal"].tolist() if journal])
         return compiled_journal
 
     def exception_handling_pattern(flash_message, thrown_exception):
@@ -216,8 +226,8 @@ def user_timesheet(employee_id):
     query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
     query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == employee_id,
                                               TimekeeperEventModel.datetime > query_start_date)
-
     timesheet_df = pd.read_sql(query.statement, query.session.bind)
+
     if timesheet_df.shape[0] == 0:
         flask.flash(f"No clocked time recorded for request period for the id {employee_id}.", category='info')
         return flask.redirect(flask.url_for('main.home'))
@@ -227,20 +237,22 @@ def user_timesheet(employee_id):
     for range_date in daterange(start_date=query_start_date.date(), end_date=datetime.now().date()):
         day_data = {"Date":range_date.strftime('%Y-%m-%d')}
 
-        #fill in the hours
+        # calculate hours and/or determine if entering them is incomplete
         hours, timesheet_complete = hours_worked_in_day(range_date, employee_id)
         if not timesheet_complete:
-            day_data["Hours Worked"] = "TIMESHEET INCOMPLETE"
+            day_data["Hours Worked"] = "TIME ENTRY INCOMPLETE"
         else:
             day_data["Hours Worked"] = str(hours)
 
         # Mush all journal entries together into a single journal entry
-        compiled_journal = compile_journal(range_date,timesheet_df)
+        compiled_journal = compile_journal(range_date, timesheet_df, " \ ")
         day_data["journal"] = compiled_journal
         all_days_data.append(day_data)
 
     aggregate_hours_df = pd.DataFrame.from_dict(all_days_data)
-    html_table = aggregate_hours_df.to_html()
+    html_table = aggregate_hours_df.to_html(index=False, justify='right')
+
+    return flask.render_template('timesheet.html', table=html_table)
 
             
             
