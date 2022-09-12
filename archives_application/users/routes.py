@@ -13,6 +13,20 @@ from .forms import *
 users = flask.Blueprint('users', __name__)
 
 
+def exception_handling_pattern(flash_message, thrown_exception, app_obj):
+    """
+    Sub-process for handling patterns
+    @param flash_message:
+    @param thrown_exception:
+    @param app_obj:
+    @return:
+    """
+    flash_message = flash_message + f": {thrown_exception}"
+    flask.flash(flash_message, 'error')
+    app_obj.logger.error(thrown_exception, exc_info=True)
+    return flask.redirect(flask.url_for('main.home'))
+
+
 def get_google_provider_urls():
     """
     This function serves to retrieve the authorization (and other) endpoints from google so they do not have to be
@@ -55,16 +69,22 @@ def google_auth():
 
     :return:
     """
-    authorization_endpoint = get_google_provider_urls()["authorization_endpoint"]
-    # Use library to construct the request for Google login and provide
-    # scopes that let you retrieve user's profile from Google
-    client = flask.current_app.config['google_auth_client']
-    request_uri = client.prepare_request_uri(
-        authorization_endpoint,
-        redirect_uri=flask.request.base_url + "/callback",
-        scope=["openid", "email", "profile"],
-    )
-    return flask.redirect(request_uri)
+    try:
+        authorization_endpoint = get_google_provider_urls()["authorization_endpoint"]
+        # Use library to construct the request for Google login and provide
+        # scopes that let you retrieve user's profile from Google
+        client = flask.current_app.config['google_auth_client']
+        request_uri = client.prepare_request_uri(
+            authorization_endpoint,
+            redirect_uri=flask.request.base_url + "/callback",
+            scope=["openid", "email", "profile"],
+        )
+        return flask.redirect(request_uri)
+
+    except Exception as e:
+        return exception_handling_pattern(flash_message="Error during authentication with Google: ",
+                                          thrown_exception=e, app_obj=flask.current_app)
+
 
 
 @users.route("/google_auth/callback")
@@ -98,36 +118,40 @@ def callback():
         auth=(flask.current_app.config['GOOGLE_CLIENT_ID'], flask.current_app.config['GOOGLE_CLIENT_SECRET'])
     )
 
-    # Parse the tokens!
-    client.parse_request_body_response(json.dumps(token_response.json()))
+    try:
+        # Parse the tokens!
+        client.parse_request_body_response(json.dumps(token_response.json()))
 
-    # Now that you have tokens (yay) let's find and hit the URL
-    # from Google that gives you the user's profile information,
-    # including their Google profile image and email
-    userinfo_endpoint = get_google_provider_urls()["userinfo_endpoint"]
-    uri, headers, body = client.add_token(userinfo_endpoint)
-    userinfo_response = requests.get(uri, headers=headers, data=body)
+        # Now that you have tokens (yay) let's find and hit the URL
+        # from Google that gives you the user's profile information,
+        # including their Google profile image and email
+        userinfo_endpoint = get_google_provider_urls()["userinfo_endpoint"]
+        uri, headers, body = client.add_token(userinfo_endpoint)
+        userinfo_response = requests.get(uri, headers=headers, data=body)
 
-    # You want to make sure their email is verified.
-    # The user authenticated with Google, authorized your
-    # app, and now you've verified their email through Google!
-    users_email, first_name, last_name = "","",""
-    if userinfo_response.json().get("email_verified"):
-        users_email = userinfo_response.json()["email"]
-    else:
-        flask.flash(f'User email not available or not verified by Google.', 'warning')
+        # You want to make sure their email is verified.
+        # The user authenticated with Google, authorized your
+        # app, and now you've verified their email through Google!
+        users_email, first_name, last_name = "","",""
+        if userinfo_response.json().get("email_verified"):
+            users_email = userinfo_response.json()["email"]
+        else:
+            flask.flash(f'User email not available or not verified by Google.', 'warning')
+            return flask.redirect(flask.url_for('main.home'))
+
+        # Determine if the user is in the database. If not we add them to database
+        user = UserModel.query.filter_by(email=users_email).first()
+        if not user:
+            flask.session['new user'] = {"email": users_email}
+            return flask.redirect(flask.url_for('users.google_register'))
+
+        user_login_flow(user)
+        flask.flash("Login Successful.", 'success')
         return flask.redirect(flask.url_for('main.home'))
 
-    # Determine if the user is in the database. If not we add them to database
-    user = UserModel.query.filter_by(email=users_email).first()
-    if not user:
-        flask.session['new user'] = {"email": users_email}
-        return flask.redirect(flask.url_for('users.google_register'))
-
-    user_login_flow(user)
-    flask.flash("Login Successful.", 'success')
-    return flask.redirect(flask.url_for('main.home'))
-
+    except Exception as e:
+        return exception_handling_pattern(flash_message='Error during Google Authentication Callback: ',
+                                          thrown_exception=e, app_obj=flask.current_app)
 
 @users.route("/google_auth/register", methods=['GET', 'POST'])
 def google_register():
@@ -153,8 +177,8 @@ def google_register():
             flask.flash(f'Account created for {new_user_email}!', 'success')
             return flask.redirect(flask.url_for('main.home'))
         except Exception as e:
-            flask.current_app.logger.error(e, exc_info=True)
-            flask.flash(f'An error occurred during registration: {e}')
+            return exception_handling_pattern(flash_message="Error while iniating google registration workflow: ",
+                                              thrown_exception=e, app_obj=flask.current_app)
 
     return flask.render_template('google_register.html', title='Register', form=form)
 
@@ -184,18 +208,24 @@ def new_account_registeration():
     form.roles.choices = flask.current_app.config.get('ROLES')
 
     if form.validate_on_submit():
-        hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
-        db_user = UserModel.query.filter_by(email=form.email.data).first()
-        if db_user:
-            flask.flash(f'''An account already exists for the email "{form.email.data}"''', 'warning')
-            return flask.redirect(flask.url_for('main.home'))
-        user_roles = ",".join(form.roles.data)
-        user = UserModel(email=form.email.data, first_name=form.first_name.data, last_name=form.last_name.data,
-                         roles=user_roles, password=hashed_password)
-        db.session.add(user)
-        db.session.commit()
-        flask.flash(f'Account created for {form.email.data}!', 'success')
-        return flask.redirect(flask.url_for('users.login'))
+        try:
+            hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
+            db_user = UserModel.query.filter_by(email=form.email.data).first()
+            if db_user:
+                flask.flash(f'''An account already exists for the email "{form.email.data}"''', 'warning')
+                return flask.redirect(flask.url_for('main.home'))
+            user_roles = ",".join(form.roles.data)
+            user = UserModel(email=form.email.data, first_name=form.first_name.data, last_name=form.last_name.data,
+                             roles=user_roles, password=hashed_password)
+            db.session.add(user)
+            db.session.commit()
+            flask.flash(f'Account created for {form.email.data}!', 'success')
+            return flask.redirect(flask.url_for('users.login'))
+
+        except Exception as e:
+            return exception_handling_pattern(flash_message="Error occured while creating a new account:",
+                                              thrown_exception=e, app_obj=flask.current_app)
+
     return flask.render_template('register.html', title='Register', form=form)
 
 
@@ -207,15 +237,21 @@ def login():
 
     form = LoginForm()
     if form.validate_on_submit():
-        user = UserModel.query.filter_by(email=form.email.data).first()
-        if user and bcrypt.check_password_hash(user.password, form.password.data):
-            user_login_flow(user=user)
-            next_page = flask.request.args.get('next')
-            # after successful login it will attempt to send user to the previous page they were trying to access.
-            # If that is not available, it will flask.redirect to the home page
-            return flask.redirect(next_page) if next_page else flask.redirect(flask.url_for('main.home'))
-        else:
-            flask.flash(f'Login Unsuccessful! Check credentials.', 'danger')
+        try:
+            user = UserModel.query.filter_by(email=form.email.data).first()
+            if user and bcrypt.check_password_hash(user.password, form.password.data):
+                user_login_flow(user=user)
+                next_page = flask.request.args.get('next')
+                # after successful login it will attempt to send user to the previous page they were trying to access.
+                # If that is not available, it will flask.redirect to the home page
+                return flask.redirect(next_page) if next_page else flask.redirect(flask.url_for('main.home'))
+            else:
+                flask.flash(f'Login Unsuccessful! Check credentials.', 'danger')
+
+        except Exception as e:
+            return exception_handling_pattern(flash_message="Error while processing user login: ",
+                                              thrown_exception=e, app_obj=flask.current_app)
+
     return flask.render_template('login.html', title='Login', form=form)
 
 

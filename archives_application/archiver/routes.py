@@ -1,14 +1,30 @@
+import flask
 import shutil
 from .archival_file import ArchivalFile
 from .server_edit import ServerEdit
 from .forms import *
 from flask_login import login_required, current_user
 from archives_application.models import *
-from flask import Blueprint
 
-archiver = Blueprint('archiver', __name__)
+
+archiver = flask.Blueprint('archiver', __name__)
 
 DEFAULT_PREVIEW_IMAGE = "default_preview.png" #TODO make this image
+
+
+def exception_handling_pattern(flash_message, thrown_exception, app_obj):
+    """
+    Sub-process for handling patterns
+    @param flash_message:
+    @param thrown_exception:
+    @param app_obj:
+    @return:
+    """
+    flash_message = flash_message + f": {thrown_exception}"
+    flask.flash(flash_message, 'error')
+    app_obj.logger.error(thrown_exception, exc_info=True)
+    return flask.redirect(flask.url_for('main.home'))
+
 
 def get_user_handle():
     '''
@@ -35,36 +51,41 @@ def server_change():
 
     form = ServerChangeForm()
     if form.validate_on_submit():
-        user_email = current_user.email
+        try:
+            user_email = current_user.email
 
-        # if the user entered a path to delete
-        if form.path_delete.data:
-            deletion = ServerEdit(change_type='DELETE', user=user_email, old_path=form.path_delete.data)
-            deletion.execute()
-            save_server_change(deletion)
+            # if the user entered a path to delete
+            if form.path_delete.data:
+                deletion = ServerEdit(change_type='DELETE', user=user_email, old_path=form.path_delete.data)
+                deletion.execute()
+                save_server_change(deletion)
 
-        # if the user entered a path to change and the desired path change
-        if form.current_path.data and form.new_path.data:
-            renaming = ServerEdit(change_type='RENAME', user=user_email, old_path=form.current_path.data,
-                                  new_path=form.new_path.data)
-            renaming.execute()
-            save_server_change(renaming)
+            # if the user entered a path to change and the desired path change
+            if form.current_path.data and form.new_path.data:
+                renaming = ServerEdit(change_type='RENAME', user=user_email, old_path=form.current_path.data,
+                                      new_path=form.new_path.data)
+                renaming.execute()
+                save_server_change(renaming)
 
-        # if the user entered a path to an asset to move and a location to move it to
-        if form.asset_path.data and form.destination_path.data:
-            move = ServerEdit(change_type='MOVE', user=user_email, old_path=form.asset_path.data,
-                              new_path=form.destination_path.data)
-            move.execute()
-            save_server_change(move)
+            # if the user entered a path to an asset to move and a location to move it to
+            if form.asset_path.data and form.destination_path.data:
+                move = ServerEdit(change_type='MOVE', user=user_email, old_path=form.asset_path.data,
+                                  new_path=form.destination_path.data)
+                move.execute()
+                save_server_change(move)
 
-        # if user entered a path for a new directory to be made
-        if form.new_directory.data:
-            creation = ServerEdit(change_type='CREATE', user=user_email, new_path=form.new_directory.data)
-            creation.execute()
-            save_server_change(creation)
+            # if user entered a path for a new directory to be made
+            if form.new_directory.data:
+                creation = ServerEdit(change_type='CREATE', user=user_email, new_path=form.new_directory.data)
+                creation.execute()
+                save_server_change(creation)
 
-        flask.flash(f'Server oprerating system call executed to make requested change.', 'success')
-        return flask.redirect(flask.url_for('archiver.server_change'))
+            flask.flash(f'Server oprerating system call executed to make requested change.', 'success')
+            return flask.redirect(flask.url_for('archiver.server_change'))
+
+        except Exception as e:
+            return exception_handling_pattern(flash_message="Error processing or executing change: ",
+                                              thrown_exception=e, app_obj=flask.current_app)
     return flask.render_template('server_change.html', title='Make change to file server', form=form)
 
 
@@ -76,29 +97,33 @@ def upload_file():
     form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
     temp_files_directory = os.path.join(os.getcwd(), r"archives_application\static\temp_files")
     if form.validate_on_submit():
-        temp_path = os.path.join(temp_files_directory, form.upload.data.filename)
-        form.upload.data.save(temp_path)
-        upload_size = os.path.getsize(temp_path)
-        arch_file = ArchivalFile(current_path=temp_path, project=form.project_number.data,
-                                 new_filename=utilities.cleanse_filename(form.new_filename.data),
-                                 notes=form.notes.data, destination_dir=form.destination_directory.data,
-                                 directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
-                                 archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'))
-        archiving_successful = arch_file.archive_in_destination()
+        try:
+            temp_path = os.path.join(temp_files_directory, form.upload.data.filename)
+            form.upload.data.save(temp_path)
+            upload_size = os.path.getsize(temp_path)
+            arch_file = ArchivalFile(current_path=temp_path, project=form.project_number.data,
+                                     new_filename=utilities.cleanse_filename(form.new_filename.data),
+                                     notes=form.notes.data, destination_dir=form.destination_directory.data,
+                                     directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
+                                     archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'))
+            archiving_successful = arch_file.archive_in_destination()
 
-        # if the file was successfully moved to its destination, we will save the data to the database
-        if archiving_successful:
-            archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
-                                              project_number=arch_file.project_number,
-                                              document_date=form.document_date.data,
-                                              destination_directory=arch_file.destination_dir,
-                                              file_code=arch_file.file_code, archivist_id=current_user.id,
-                                              file_size=upload_size, notes=arch_file.notes,
-                                              filename=arch_file.assemble_destination_filename())
-            db.session.add(archived_file)
-            db.session.commit()
-            flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
-            return flask.redirect(flask.url_for('archiver.upload_file'))
+            # if the file was successfully moved to its destination, we will save the data to the database
+            if archiving_successful:
+                archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
+                                                  project_number=arch_file.project_number,
+                                                  document_date=form.document_date.data,
+                                                  destination_directory=arch_file.destination_dir,
+                                                  file_code=arch_file.file_code, archivist_id=current_user.id,
+                                                  file_size=upload_size, notes=arch_file.notes,
+                                                  filename=arch_file.assemble_destination_filename())
+                db.session.add(archived_file)
+                db.session.commit()
+                flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
+                return flask.redirect(flask.url_for('archiver.upload_file'))
+        except Exception as e:
+            return exception_handling_pattern(flash_message="Error occurred while trying to move the asset or record asset move info in database: ",
+                                              thrown_exception=e, app_obj=flask.current_app)
     return flask.render_template('upload_file.html', title='Upload File to Archive', form=form)
 
 

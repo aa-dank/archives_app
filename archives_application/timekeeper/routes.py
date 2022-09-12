@@ -14,6 +14,20 @@ from .forms import TimekeepingForm
 timekeeper = flask.Blueprint('timekeeper', __name__)
 
 
+def exception_handling_pattern(flash_message, thrown_exception, app_obj):
+    """
+    Sub-process for handling patterns
+    @param flash_message:
+    @param thrown_exception:
+    @param app_obj:
+    @return:
+    """
+    flash_message = flash_message + f": {thrown_exception}"
+    flask.flash(flash_message, 'error')
+    app_obj.logger.error(thrown_exception, exc_info=True)
+    return flask.redirect(flask.url_for('main.home'))
+
+
 def pop_dialect_from_sqlite_uri(sql_uri:str):
     """
     turns the sqlite uri into a normal path by removing the sqlite prefix on the database path required by sqlalchemy.
@@ -108,18 +122,6 @@ def timekeeper_event():
     :return:
     """
 
-    def exception_handling_pattern(flash_message, thrown_exception):
-        """
-        subroutine for dealing with exceptions that pop up during time keeper api calls
-        :param flash_message:
-        :param thrown_exception:
-        :return:
-        """
-        flash_message = flash_message + f": {thrown_exception}"
-        flask.flash(flash_message, 'error')
-        current_app.logger.error(thrown_exception, exc_info=True)
-        return flask.redirect(flask.url_for('main.home'))
-
 
     def is_clocked_in(user_id):
         """
@@ -155,7 +157,8 @@ def timekeeper_event():
         clocked_in = is_clocked_in(user_id=current_user_id)
 
     except Exception as e:
-        return exception_handling_pattern(flash_message="Error when checking if user is clocked in", thrown_exception=e)
+        return exception_handling_pattern(flash_message="Error when checking if user is clocked in",
+                                          thrown_exception=e, app_obj=flask.current_app)
 
     if form.validate_on_submit():
         if clocked_in:
@@ -170,7 +173,8 @@ def timekeeper_event():
                     flask.flash("Successfully clocked out. Please, don't forget to log-out. Good-Bye.", 'success')
                     return flask.redirect(flask.url_for('main.home'))
                 except Exception as e:
-                    return exception_handling_pattern(flash_message="Error recording user clock-out event", thrown_exception=e)
+                    return exception_handling_pattern(flash_message="Error recording user clock-out event",
+                                                      thrown_exception=e, app_obj=flask.current_app)
 
         else:
             if form.clock_in.data:
@@ -184,7 +188,8 @@ def timekeeper_event():
                     flask.flash(f'Successfully clocked in.', 'success')
                     return flask.redirect(flask.url_for('main.home'))
                 except Exception as e:
-                    return exception_handling_pattern(flash_message="Error recording user clock-in event", thrown_exception=e)
+                    return exception_handling_pattern(flash_message="Error recording user clock-in event",
+                                                      thrown_exception=e, app_obj=flask.current_app)
 
     return flask.render_template('timekeeper.html', title='Timekeeper', form=form,  clocked_in=clocked_in)
 
@@ -210,17 +215,6 @@ def user_timesheet(employee_id):
         compiled_journal = delimiter_str.join([journal for journal in timecard_df["journal"].tolist() if journal])
         return compiled_journal
 
-    def exception_handling_pattern(flash_message, thrown_exception):
-        """
-        subroutine for dealing with exceptions that pop up during time keeper api calls
-        :param flash_message:
-        :param thrown_exception:
-        :return:
-        """
-        flash_message = flash_message + f": {thrown_exception}"
-        flask.flash(flash_message, 'error')
-        current_app.logger.error(thrown_exception, exc_info=True)
-        return flask.redirect(flask.url_for('main.home'))
     try:
         query_start_date = datetime.now() - timedelta(days = 14)
         query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -229,7 +223,7 @@ def user_timesheet(employee_id):
         timesheet_df = pd.read_sql(query.statement, query.session.bind)
     except Exception as e:
         exception_handling_pattern(flash_message="Error getting user timekeeper events from database: ",
-                                   thrown_exception=e)
+                                   thrown_exception=e, app_obj=flask.current_app)
 
     if timesheet_df.shape[0] == 0:
         flask.flash(f"No clocked time recorded for request period for the id {employee_id}.", category='info')
@@ -253,10 +247,11 @@ def user_timesheet(employee_id):
             day_data["journal"] = compiled_journal
             all_days_data.append(day_data)
     except Exception as e:
-        exception_handling_pattern(flash_message="Error creating table of hours worked: ", thrown_exception=e)
+        exception_handling_pattern(flash_message="Error creating table of hours worked: ",
+                                   thrown_exception=e, app_obj=flask.current_app)
 
     aggregate_hours_df = pd.DataFrame.from_dict(all_days_data)
-    html_table = aggregate_hours_df.to_html(index=False, justify='right')
+    html_table = aggregate_hours_df.to_html(index=False)
 
     return flask.render_template('timesheet.html', table=html_table)
 

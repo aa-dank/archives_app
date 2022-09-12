@@ -13,6 +13,7 @@ x{% extends "layout.html" %}
                 {% else %}
                    <div class="form-group">
                     {{ form.journal.label(class="form-control-label") }}
+                       <p>Use this box to briefly record what was worked on in a succinct few sentences. Though it is brief, details like project number, print requester, etc are useful. This is also a good place to record any discrepencies between hours recorded here and hours claimed on Cruz Pay timesheet.</p>
                     {% if form.journal.errors %}
                         {{ form.journal(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -29,5 +30,7 @@ x{% extends "layout.html" %}
                     </div>
                 {% endif %}
         </form>
+
+    <a href="">View your timesheet here.</a>
     </div>
 {% endblock content %}
