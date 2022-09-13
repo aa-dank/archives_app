@@ -6,7 +6,7 @@ from wtforms.validators import DataRequired, ValidationError
 
 def form_factory(fields_dict,  form_class_name):
     """
-    Generates a flask form froma dictionary. Useful for creating a form for changing values stored in json file
+    Generates a flask form from a dictionary. Useful for creating a form for changing values stored in json file
     :param fields_dict:
     :param form_class_name:
     :return:

@@ -8,7 +8,7 @@ from ..utilities import roles_required
 from ..models import UserModel, TimekeeperEventModel
 from flask import current_app
 from flask_login import login_required, current_user
-from .forms import TimekeepingForm
+from .forms import TimekeepingForm, TimeSheetForm
 
 
 timekeeper = flask.Blueprint('timekeeper', __name__)
@@ -112,7 +112,6 @@ def hours_worked_in_day(day, user_id):
     return hours_worked, clock_ins_have_clock_outs
 
 
-
 @timekeeper.route("/timekeeper", methods=['GET', 'POST'])
 @login_required
 @roles_required(['ADMIN', 'ARCHIVIST'])
@@ -198,6 +197,7 @@ def timekeeper_event():
 @login_required
 @roles_required(['ADMIN', 'ARCHIVIST'])
 def user_timesheet(employee_id):
+
     def daterange(start_date, end_date):
         """
         Based on:
@@ -210,14 +210,30 @@ def user_timesheet(employee_id):
             yield start_date + timedelta(days=n)
 
     def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str:str):
+        """
+        Combines journalcolumn into a single str
+        @param date:
+        @param timecard_df:
+        @param delimiter_str:
+        @return:
+        """
         strftime_dt = lambda dt: dt.strftime("%Y-%m-%d")
         timecard_df = timecard_df[timecard_df["datetime"].map(strftime_dt) == date.strftime("%Y-%m-%d")]
         compiled_journal = delimiter_str.join([journal for journal in timecard_df["journal"].tolist() if journal])
         return compiled_journal
 
+    form = TimeSheetForm()
     try:
+
         query_start_date = datetime.now() - timedelta(days = 14)
         query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        query_end_date = datetime.now()
+        if form.validate_on_submit():
+            user_start_date = form.timesheet_begin.data
+            user_end_date = form.timesheet_end.data
+            query_start_date = datetime(year=user_start_date.year, month=user_start_date.month, day=user_start_date.day)
+            query_end_date = datetime(year=user_end_date.year, month=user_end_date.month, day=user_end_date.day)
+
         query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == employee_id,
                                               TimekeeperEventModel.datetime > query_start_date)
         timesheet_df = pd.read_sql(query.statement, query.session.bind)
@@ -232,7 +248,7 @@ def user_timesheet(employee_id):
     try:
         # Create a list of dictionaries, where each dictionary is the aggregated data for that day
         all_days_data = []
-        for range_date in daterange(start_date=query_start_date.date(), end_date=datetime.now().date()):
+        for range_date in daterange(start_date=query_start_date.date(), end_date=query_end_date.date()):
             day_data = {"Date":range_date.strftime('%Y-%m-%d')}
 
             # calculate hours and/or determine if entering them is incomplete
@@ -246,6 +262,7 @@ def user_timesheet(employee_id):
             compiled_journal = compile_journal(range_date, timesheet_df, " \ ")
             day_data["journal"] = compiled_journal
             all_days_data.append(day_data)
+
     except Exception as e:
         exception_handling_pattern(flash_message="Error creating table of hours worked: ",
                                    thrown_exception=e, app_obj=flask.current_app)
@@ -253,7 +270,7 @@ def user_timesheet(employee_id):
     aggregate_hours_df = pd.DataFrame.from_dict(all_days_data)
     html_table = aggregate_hours_df.to_html(index=False)
 
-    return flask.render_template('timesheet.html', table=html_table)
+    return flask.render_template('timesheet.html', form=form, table=html_table)
 
             
             
