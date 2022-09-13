@@ -191,7 +191,7 @@ def timekeeper_event():
                     return exception_handling_pattern(flash_message="Error recording user clock-in event",
                                                       thrown_exception=e, app_obj=flask.current_app)
 
-    return flask.render_template('timekeeper.html', title='Timekeeper', form=form,  clocked_in=clocked_in)
+    return flask.render_template('timekeeper.html', title='Timekeeper', form=form,  clocked_in=clocked_in, id=current_user_id)
 
 
 @timekeeper.route("/timekeeper/<employee_id>", methods=['GET', 'POST'])

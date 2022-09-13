@@ -11,7 +11,7 @@ from oauthlib.oauth2 import WebApplicationClient
 db = SQLAlchemy()
 bcrypt = Bcrypt()
 login_manager = LoginManager()
-login_manager.login_view = 'users.login'
+login_manager.login_view = 'users.choose_login'
 login_manager.login_message_category = 'info'
 google_creds_json = r'google_client_secret.json'
 config_json = r'test_app_config.json'
@@ -35,7 +35,7 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '0.2.1'
+    app.config['VERSION'] = '0.2.2'
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add blueprints
