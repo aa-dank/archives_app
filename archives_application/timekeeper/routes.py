@@ -190,7 +190,8 @@ def timekeeper_event():
                     return exception_handling_pattern(flash_message="Error recording user clock-in event",
                                                       thrown_exception=e, app_obj=flask.current_app)
 
-    return flask.render_template('timekeeper.html', title='Timekeeper', form=form,  clocked_in=clocked_in, id=current_user_id)
+    return flask.render_template('timekeeper.html', title='Timekeeper', form=form,  clocked_in=clocked_in,
+                                 id=current_user_id)
 
 
 @timekeeper.route("/timekeeper/<employee_id>", methods=['GET', 'POST'])
@@ -270,7 +271,7 @@ def user_timesheet(employee_id):
     aggregate_hours_df = pd.DataFrame.from_dict(all_days_data)
     html_table = aggregate_hours_df.to_html(index=False)
 
-    return flask.render_template('timesheet.html', form=form, table=html_table)
+    return flask.render_template('timesheet.html', title="Timesheet", form=form, table=html_table)
 
 
 @timekeeper.route("/timekeeper/admin", methods=['GET', 'POST'])

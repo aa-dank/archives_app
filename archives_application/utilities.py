@@ -209,5 +209,4 @@ def establish_location_path(location, sqlite_url=False):
         location = r"\\" + location
         return location
 
-
     return location

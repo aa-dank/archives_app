@@ -1,10 +1,10 @@
 import flask
 import json
-from flask import Blueprint, current_app
+import logging
 from . import forms
 from .. utilities import roles_required
 
-main = Blueprint('main', __name__)
+main = flask.Blueprint('main', __name__)
 
 
 def exception_handling_pattern(flash_message, thrown_exception, app_obj):
@@ -19,6 +19,7 @@ def exception_handling_pattern(flash_message, thrown_exception, app_obj):
     flask.flash(flash_message, 'error')
     app_obj.logger.error(thrown_exception, exc_info=True)
     return flask.redirect(flask.url_for('main.home'))
+
 
 @main.route("/")
 @main.route("/home")
@@ -48,7 +49,7 @@ def change_config_settings():
         form = dynamic_form_class()
     except Exception as e:
         return exception_handling_pattern(flash_message='An error occurred opening the config file and creating a form from it:',
-                                   thrown_exception=e, app_obj=current_app)
+                                   thrown_exception=e, app_obj=flask.current_app)
 
     if form.validate_on_submit():
         try:
@@ -71,6 +72,20 @@ def change_config_settings():
 
         except Exception as e:
             return exception_handling_pattern(flash_message="Error processing form responses into json config file: ",
-                                       thrown_exception=e, app_obj=current_app)
+                                       thrown_exception=e, app_obj=flask.current_app)
 
     return flask.render_template('change_config_settings.html', title='Change Config File', form=form, settings_dict=config_dict)
+
+
+@main.route("/test_error", methods=['GET', 'POST'])
+@roles_required(['ADMIN'])
+def test_logging():
+    """
+    endpoint for seeing how the system responds to errors
+    @return:
+    """
+    flask.current_app.logger.debug("I'm a DEBUG message")
+    flask.current_app.logger.info("I'm an INFO message")
+    flask.current_app.logger.warning("I'm a WARNING message")
+    flask.current_app.logger.error("I'm a ERROR message")
+    flask.current_app.logger.critical("I'm a CRITICAL message")

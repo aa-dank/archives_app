@@ -23,6 +23,10 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     defaultFormatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
     app = flask.Flask(__name__)
 
+    #if the app is not being debugged, then we need to use the gunicorn logger handlers when in production
+    if not app.debug:
+        app.logger.handlers = logging.getLogger('gunicorn.error').handlers
+
     # set universal format for all logging handlers.
     for handler in app.logger.handlers:
         handler.setFormatter(defaultFormatter)
