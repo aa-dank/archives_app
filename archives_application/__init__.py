@@ -17,12 +17,10 @@ google_creds_json = r'google_client_secret.json'
 config_json = r'test_app_config.json'
 #config_json = r'deploy_app_config.json'
 
-def create_app(config_class=json_to_config_factory(google_creds_path=google_creds_json,config_json_path=config_json)):
 
+def create_app(config_class=json_to_config_factory(google_creds_path=google_creds_json,config_json_path=config_json)):
     # logging format
     defaultFormatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
-
-
     app = flask.Flask(__name__)
 
     # set universal format for all logging handlers.

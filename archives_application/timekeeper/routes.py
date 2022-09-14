@@ -8,7 +8,7 @@ from ..utilities import roles_required
 from ..models import UserModel, TimekeeperEventModel
 from flask import current_app
 from flask_login import login_required, current_user
-from .forms import TimekeepingForm, TimeSheetForm
+from .forms import TimekeepingForm, TimeSheetForm, TimeSheetAdminForm
 
 
 timekeeper = flask.Blueprint('timekeeper', __name__)
@@ -272,7 +272,25 @@ def user_timesheet(employee_id):
 
     return flask.render_template('timesheet.html', form=form, table=html_table)
 
-            
-            
 
+@timekeeper.route("/timekeeper/admin", methods=['GET', 'POST'])
+@login_required
+@roles_required(['ADMIN'])
+def choose_employee():
+    try: #TODO lazy try-except should be broken into two
+        form = TimeSheetAdminForm()
 
+        # Get employee emails to use in dropdown choices
+        is_archivist = lambda user: 'ARCHIVIST' in user.roles.split(",")
+        employee_emails = [emp.email for emp in UserModel.query.all() if is_archivist(emp)]
+        form.employee_email.choices = employee_emails
+
+        if form.validate_on_submit():
+            # get selected employee id and use it to redirect to correct timesheet endpoint
+            employee_email = form.employee_email.data
+            employee_id = UserModel.query.filter_by(email=employee_email).first().id
+            return flask.redirect(flask.url_for('timekeeper.user_timesheet', employee_id=employee_id))
+    except Exception as e:
+        return exception_handling_pattern(flash_message="Error trying elicit or process employee email for making a timesheet :",
+                                          thrown_exception=e, app_obj=flask.current_app)
+    return flask.render_template('timekeeper_admin.html', form=form)

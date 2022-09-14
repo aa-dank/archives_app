@@ -1,7 +1,7 @@
 import flask
 from flask_wtf import FlaskForm
 from archives_application.models import *
-from wtforms import StringField, SubmitField, TextAreaField, DateField
+from wtforms import SubmitField, TextAreaField, DateField, SelectField
 from wtforms.validators import DataRequired, Email, EqualTo, ValidationError
 
 
@@ -20,3 +20,7 @@ class TimeSheetForm(FlaskForm):
         if not timesheet_end.data > self.timesheet_begin.data:
             raise ValidationError("Must pick a timesheet start that occurs before the timesheet end.")
 
+
+class TimeSheetAdminForm(FlaskForm):
+    employee_email = SelectField('Employee Email', validators=[DataRequired()])
+    submit = SubmitField('Submit')
