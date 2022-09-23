@@ -271,6 +271,7 @@ def logout():
     flask.flash(f'You have logged out. Good-bye.', 'success')
     return flask.redirect(flask.url_for('main.home'))
 
+
 @users.route("/account")
 @login_required
 def account():

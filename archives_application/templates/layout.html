@@ -59,13 +59,28 @@
         </div>
         <div class="col-md-4">
           <div class="content-section">
-            <h3>Our Sidebar</h3>
+            <h3>Quick Navigation</h3>
             <p class='text-muted'>This is just a placeholder for future feature.
               <ul class="list-group">
-                <li class="list-group-item list-group-item-light">Latest Posts</li>
-                <li class="list-group-item list-group-item-light">Announcements</li>
-                <li class="list-group-item list-group-item-light">Calendars</li>
-                <li class="list-group-item list-group-item-light">etc</li>
+                {% if current_user.is_authenticated %}
+                    {% if 'ADMIN' in current_user.roles %}
+                        <li class="list-group-item list-group-item-light"><a href={{url_for('main.change_config_settings')}}>Change App Config</a></li>
+                        <li class="list-group-item list-group-item-light"><a href={{url_for('timekeeper.choose_employee')}}>See Timesheets</a></li>
+                    {% endif %}
+                    {% if 'ARCHIVIST' in current_user.roles %}
+                        <li class="list-group-item list-group-item-light"><a href={{url_for('timekeeper.timekeeper_event')}}>Timekeeper</a></li>
+                        <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.server_change')}}>Make Server Changes</a></li>
+                        <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.inbox_item')}}>Archiving Inbox</a></li>
+
+                    {% endif %}
+                    <li class="list-group-item list-group-item-light"><a href={{url_for('users.account')}}>Account Info</a></li>
+
+                {% else %}
+                    <li class="list-group-item list-group-item-light"><a href={{url_for('users.register')}}>Registration</a></li>
+                    <li class="list-group-item list-group-item-light"><a href={{url_for('users.choose_login')}}>Account Info</a></li>
+                    <li class="list-group-item list-group-item-light"><a href={{url_for('users.choose_login')}}>Documentationo</a></li>
+                    <li class="list-group-item list-group-item-light">etc</li>
+                {% endif %}
               </ul>
             </p>
           </div>

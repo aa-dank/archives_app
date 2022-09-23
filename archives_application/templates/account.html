@@ -1,4 +1,5 @@
 {% extends "layout.html" %}
 {% block content %}
     <h1>{{ current_user.email }}</h1>
+    <p>Roles: {{ current_user.roles }}</p>
 {% endblock content %}

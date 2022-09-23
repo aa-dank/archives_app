@@ -1,6 +1,7 @@
 import flask
 import json
 import logging
+from flask_login import current_user
 from . import forms
 from .. utilities import roles_required
 
@@ -19,6 +20,7 @@ def exception_handling_pattern(flash_message, thrown_exception, app_obj):
     flask.flash(flash_message, 'error')
     app_obj.logger.error(thrown_exception, exc_info=True)
     return flask.redirect(flask.url_for('main.home'))
+
 
 
 @main.route("/")
@@ -77,15 +79,21 @@ def change_config_settings():
     return flask.render_template('change_config_settings.html', title='Change Config File', form=form, settings_dict=config_dict)
 
 
-@main.route("/test_error", methods=['GET', 'POST'])
+@main.route("/test/logging", methods=['GET', 'POST'])
 @roles_required(['ADMIN'])
 def test_logging():
     """
     endpoint for seeing how the system responds to errors
     @return:
     """
-    flask.current_app.logger.debug("I'm a DEBUG message")
-    flask.current_app.logger.info("I'm an INFO message")
-    flask.current_app.logger.warning("I'm a WARNING message")
-    flask.current_app.logger.error("I'm a ERROR message")
-    flask.current_app.logger.critical("I'm a CRITICAL message")
+    flask.current_app.logger.debug("I'm a test DEBUG message")
+    flask.current_app.logger.info("I'm an test INFO message")
+    flask.current_app.logger.warning("I'm a test WARNING message")
+    flask.current_app.logger.error("I'm a test ERROR message")
+    flask.current_app.logger.critical("I'm a test CRITICAL message")
+    flask.flash("A series of test logging events have been logged.", 'info')
+    return flask.redirect(flask.url_for('main.home'))
+
+@main.route("/test/database_uri")
+def get_db_uri():
+    return flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
