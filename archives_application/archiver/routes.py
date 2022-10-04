@@ -95,7 +95,7 @@ def upload_file():
     form = UploadFileForm()
     # set filing code choices from app config
     form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
-    temp_files_directory = os.path.join(os.getcwd(), r"archives_application\static\temp_files")
+    temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
     if form.validate_on_submit():
         try:
             temp_path = os.path.join(temp_files_directory, form.upload.data.filename)
@@ -160,7 +160,7 @@ def inbox_item():
     # create the file preview image if it is a pdf
     arch_file_preview_image_path = None
     if arch_file_filename.split(".")[-1].lower() in ['pdf']:
-        temp_files_directory = os.path.join(os.getcwd(), r"archives_application\static\temp_files")
+        temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
         arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
         arch_file_preview_image_path = utilities.pdf_preview_image(arch_file_path, temp_files_directory)
         preview_image_url = flask.url_for(r"static", filename = "temp_files/" + utilities.split_path(arch_file_preview_image_path)[-1])

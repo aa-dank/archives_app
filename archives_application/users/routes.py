@@ -260,7 +260,7 @@ def login():
 def logout():
     # before logging out we will delete their temporary files and remove their dict from the session
     if flask.session.get(current_user.email):
-        temp_files = flask.session.get(current_user.email).get('temporary files')
+        temp_files = flask.session.get(current_user.email).get('temporary files') #TODO DELETE old files
         for file_path in temp_files:
             try:
                 os.remove(file_path)

@@ -77,7 +77,10 @@ def establish_location_path(location, sqlite_url=False):
 
     if bck_slsh:
         location = r"\\" + location
+        if sqlite_url and not has_sqlite_prefix:
+            location = sqlite_prefix + location
         return location
+
     return location
 
 def json_to_config_factory(google_creds_path: str, config_json_path: str):
