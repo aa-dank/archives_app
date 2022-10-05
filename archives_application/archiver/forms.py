@@ -46,29 +46,30 @@ class ServerChangeForm(FlaskForm):
 
     def validate_path_delete(self, path_delete):
         if path_delete.data:
-            network_path = utilities.mounted_path_to_networked_path(mounted_path=path_delete.data,
-                                                                    network_location=flask.current_app.config["ARCHIVES_LOCATION"])
+            network_path = utilities.user_path_to_server_path(path_from_user=path_delete.data,
+                                                              location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
             if not os.path.exists(network_path):
                 raise ValidationError(f"Destination location doesn't exist: \n{path_delete.data}")
 
     def validate_new_directory(self, new_directory):
         if new_directory.data:
-            network_directory = utilities.mounted_path_to_networked_path(mounted_path=new_directory.data,
-                                                                         network_location=flask.current_app.config["ARCHIVES_LOCATION"])
+            network_directory = utilities.user_path_to_server_path(path_from_user=new_directory.data,
+                                                                   location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
             if os.path.exists(os.path.join(network_directory)):
                 raise ValidationError(f"Directory already exists:\n{new_directory.data}")
+            #TODO check that the parent directory for new directory exists
 
     def validate_current_path(self, current_path):
         if current_path.data:
-            network_path = utilities.mounted_path_to_networked_path(mounted_path=current_path.data,
-                                                                    network_location=flask.current_app.config["ARCHIVES_LOCATION"])
+            network_path = utilities.user_path_to_server_path(path_from_user=current_path.data,
+                                                              location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
             if not os.path.exists(network_path):
                 raise ValidationError(f"Destination location doesn't exist: \n{current_path.data}")
 
     def validate_destination_path(self, destination_path):
         if destination_path.data:
-            network_path = utilities.mounted_path_to_networked_path(mounted_path=destination_path.data,
-                                                                    network_location=flask.current_app.config["ARCHIVES_LOCATION"])
+            network_path = utilities.user_path_to_server_path(path_from_user=destination_path.data,
+                                                              location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
             if not os.path.exists(network_path):
                 raise ValidationError(f"Destination location doesn't exist: \n{destination_path.data}")
 
@@ -77,8 +78,8 @@ class ServerChangeForm(FlaskForm):
 
     def validate_asset_path(self, asset_path):
         if asset_path.data:
-            network_path = utilities.mounted_path_to_networked_path(mounted_path=asset_path.data,
-                                                                    network_location=flask.current_app.config["ARCHIVES_LOCATION"])
+            network_path = utilities.user_path_to_server_path(path_from_user=asset_path.data,
+                                                              location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
             if not os.path.exists(network_path):
                 raise ValidationError(f"Asset doesn't exist to move: \n{asset_path.data}")
 

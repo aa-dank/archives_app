@@ -145,12 +145,48 @@ def mounted_path_to_networked_path(mounted_path, network_location):
         return mounted_path
 
     mounted_path = Path(mounted_path)
-    network_loc_as_path = Path(network_location)
-    new_path_list = list(network_loc_as_path.parts) + list(mounted_path.parts[1:])
+    new_path_list = [network_location] + list(mounted_path.parts[1:])
     new_network_path = os.path.join(*new_path_list)
-    if not new_network_path.startswith(r"//"):
+    if not new_network_path.startswith(r"//") and not new_network_path.startswith(r"\\"):
         new_network_path = "//" + new_network_path
     return new_network_path
+
+
+def user_path_to_server_path(path_from_user, location_path_prefix):
+    '''
+    Converts the location entered by the user to a path that can be used by the application server.
+    Possible user paths could be network paths and
+    @param path_from_user: path of asset from the user
+    @param location_path_prefix: Base location where the path_from_user can be found.
+    @return:
+    '''
+
+    # regex pattern for a domain url. eg matches ppcou.ucsc.edu
+    regex_domain_url = r"([\w]{1,}[.]{1}[\w]{1,}[.]{1}[\w]{1,})"
+    # add more regex strings to this list to make this match more url patterns
+    network_url_patterns = [regex_domain_url]
+    matches_network_url = lambda possible_url: any(
+        [bool(re.search(regx, possible_url)) for regx in network_url_patterns])
+
+    if not matches_network_url(location_path_prefix):
+
+        if not matches_network_url(path_from_user):
+            pass #TODO what if the user uses network url
+
+        user_path_list = split_path(path_from_user)
+        server_mount_path_list = split_path(location_path_prefix)
+        local_path_list = server_mount_path_list + user_path_list[1:]
+        local_path = os.path.join(*local_path_list)
+        return local_path
+
+    if not matches_network_url(path_from_user):
+        pass  # TODO what if the user uses network url
+
+    local_path = mounted_path_to_networked_path(mounted_path=path_from_user, network_location=location_path_prefix)
+    return local_path
+
+
+
 
 
 def cleanse_filename(proposed_filename: str):

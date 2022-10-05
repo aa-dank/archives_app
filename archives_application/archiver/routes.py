@@ -1,5 +1,6 @@
 import flask
 import shutil
+from .. import utilities
 from .archival_file import ArchivalFile
 from .server_edit import ServerEdit
 from .forms import *
@@ -53,34 +54,38 @@ def server_change():
     if form.validate_on_submit():
         try:
             user_email = current_user.email
+            archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
 
             # if the user entered a path to delete
             if form.path_delete.data:
-                deletion = ServerEdit(change_type='DELETE', user=user_email, old_path=form.path_delete.data)
+                deletion = ServerEdit(server_location=archives_location, change_type='DELETE', user=user_email,
+                                      old_path=form.path_delete.data)
                 deletion.execute()
                 save_server_change(deletion)
 
             # if the user entered a path to change and the desired path change
             if form.current_path.data and form.new_path.data:
-                renaming = ServerEdit(change_type='RENAME', user=user_email, old_path=form.current_path.data,
+                renaming = ServerEdit(server_location=archives_location, change_type='RENAME', user=user_email,
+                                      old_path=form.current_path.data,
                                       new_path=form.new_path.data)
                 renaming.execute()
                 save_server_change(renaming)
 
             # if the user entered a path to an asset to move and a location to move it to
             if form.asset_path.data and form.destination_path.data:
-                move = ServerEdit(change_type='MOVE', user=user_email, old_path=form.asset_path.data,
+                move = ServerEdit(server_location=archives_location, change_type='MOVE', user=user_email,
+                                  old_path=form.asset_path.data,
                                   new_path=form.destination_path.data)
                 move.execute()
                 save_server_change(move)
 
             # if user entered a path for a new directory to be made
             if form.new_directory.data:
-                creation = ServerEdit(change_type='CREATE', user=user_email, new_path=form.new_directory.data)
+                creation = ServerEdit(server_location=archives_location, change_type='CREATE', user=user_email, new_path=form.new_directory.data)
                 creation.execute()
                 save_server_change(creation)
 
-            flask.flash(f'Server oprerating system call executed to make requested change.', 'success')
+            flask.flash(f'Requested change executed and recorded.', 'success')
             return flask.redirect(flask.url_for('archiver.server_change'))
 
         except Exception as e:
