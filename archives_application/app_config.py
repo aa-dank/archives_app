@@ -83,6 +83,15 @@ def establish_location_path(location, sqlite_url=False):
 
     return location
 
+def assemble_postgresql_url(host, db_name, username, password=None, port=None):
+    if port:
+        port = ":" + port
+
+    if password:
+        password = ":" + password
+    uri = f"postgresql://{username}{password}@{host}{port}/{db_name}"
+    return uri
+
 def json_to_config_factory(google_creds_path: str, config_json_path: str):
     """
     THis function turns a json file of config info and a google credentials json file into a flask app config class.
@@ -103,8 +112,21 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
     config_dict['GOOGLE_CLIENT_ID'], config_dict['GOOGLE_CLIENT_SECRET'] = google_creds_from_creds_json(google_creds_path)
     config_dict['OAUTHLIB_INSECURE_TRANSPORT'] = True
     config_dict['GOOGLE_DISCOVERY_URL'] = (r"https://accounts.google.com/.well-known/openid-configuration")
-    # test value fo SQLALCHEMY_DATABASE_URI should be r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
-    config_dict['SQLALCHEMY_DATABASE_URI'] = establish_location_path(location=config_dict['Sqalchemy_Database_Location'],sqlite_url=True)
+
+    # If the database type is sqlite, just use the url. Otherwise, we process the config into a postgresql url
+    if config_dict.get("POSTGRESQL_DATABASE"):
+        config_dict['SQLALCHEMY_DATABASE_URI'] = assemble_postgresql_url(host=config_dict["Sqalchemy_Database_Location"],
+                                                                         db_name=config_dict["POSTGRESQL_DATABASE"],
+                                                                         username=config_dict["POSTGRESQL_USERNAME"],
+                                                                         password=config_dict["POSTGRESQL_PASSWORD"],
+                                                                         port=config_dict["POSTGRESQL_PORT"])
+
+    else:
+
+        # test value for SQLALCHEMY_DATABASE_URI should be r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
+        config_dict['SQLALCHEMY_DATABASE_URI'] = establish_location_path(
+            location=config_dict['Sqalchemy_Database_Location'], sqlite_url=True)
+
     config_dict['ARCHIVES_LOCATION'] = establish_location_path(location=config_dict['ARCHIVES_LOCATION'])
     config_dict["ARCHIVIST_INBOX_LOCATION"] = establish_location_path(location=config_dict["ARCHIVIST_INBOX_LOCATION"])
     config_dict['CONFIG_JSON_PATH'] = config_json_path
