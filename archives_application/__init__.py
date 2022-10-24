@@ -41,7 +41,7 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '0.3.0'
+    app.config['VERSION'] = '0.3.1'
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add blueprints
@@ -57,5 +57,9 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     # This sets an environmental variable to allow oauth authentication flow to use http requests (vs https)
     if hasattr(config_class, 'OAUTHLIB_INSECURE_TRANSPORT'):
         os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+    # Useful for creating the database tables
+    #with app.app_context():
+    #    db.create_all()
 
     return app

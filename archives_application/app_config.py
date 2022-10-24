@@ -11,7 +11,7 @@ DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 
                      'B6 - State Fire Marshal', 'B7 - Office of State Architect  (DSA)', 'B8 -  General Counsel',
                      'B8.1 - General Counsel - Confidential', 'B10 - Storm Water Pollution Prevention Plan (SWPPP)',
                      'B11 - Leadership in Energy & Environmental Design (LEED)', 'B12 - Outside Regulatory Agencies',
-                     'B13 - Coastal Commission Approval', 'C1 - Executive Architect', 'C1.1 - Selection',
+                     'B13 - Coastal Commission Approval',  'C1 - Executive Architect', 'C1.1 - Selection',
                      'C1.2 - Correspondence', 'C1.3 - Agreement', 'C2 - Other Consultants', 'C2.1 - Selection',
                      'C2.2 - Correspondence', 'C2.3 - Agreement', 'D1 - Environmental Correspondences',
                      'D2 - EIC Forms', 'D3 - CEQA Documentation', 'D4 - Mitigation Monitoring Program', 'E1 - DPP',
@@ -22,17 +22,17 @@ DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 
                      'E5.7 - Other', 'E5.8 - Office of General Counsel', 'E6 - Reports (soils, structural, calcs)',
                      'E7 - Value Engineering', 'E7.1 - Value Engineering Correspondence',
                      'E7.2 - VE Workshop Minutes, Summaries, Final Reports', 'E8 - Program and Design Meeting Minutes',
-                     'F1 - Bid and Contract Award Correspondence', 'F1.1 - Executive Architect Correspondences',
-                     'F1.2 - Special Consultants Correspondences', 'F1.4 - PPC and PP',
-                     'F1.5 - Office of the President Correspondences', 'F1.6 - General Counsel Correspondences',
-                     'F1.7 - Pre-Qualification', 'F1.8 - Other', 'F10 - Escrow Agreement',
-                     'F2 - Reviews', 'F2.1 - Constructibility, Code Reviews', 'F2.2 - In-house. PP reviews',
-                     'F3 - Structural, Title 24, Mech Calculations', 'F4 - Plan Deposits, Planholders, Ads for Bid',
-                     'F2.3 - Independent Cost Review', 'F2.4 - Independent Seismic Review', 'F2.5 - Other',
-                     'F5 - Drawings and Spec', 'F6 - Affirmative Action', 'F7 - Bid Summary Forms',
-                     'F7.1 - Bid Protest', 'F8 - Contract', 'F9 - Builders Risk Insurance',
-                     'G1 - Construction Correspondence', 'G1.1 - Contractor Correspondences',
-                     'G1.2 - Executive Architect Correspondences',
+                     'E9 - Sustainability Measures', 'F1 - Bid and Contract Award Correspondence',
+                     'F1.1 - Executive Architect Correspondences', 'F1.2 - Special Consultants Correspondences',
+                     'F1.4 - PPC and PP', 'F1.5 - Office of the President Correspondences',
+                     'F1.6 - General Counsel Correspondences', 'F1.7 - Pre-Qualification', 'F1.8 - Other',
+                     'F10 - Escrow Agreement', 'F2 - Reviews', 'F2.1 - Constructibility, Code Reviews',
+                     'F2.2 - In-house. PP reviews', 'F3 - Structural, Title 24, Mech Calculations',
+                     'F4 - Plan Deposits, Planholders, Ads for Bid', 'F2.3 - Independent Cost Review',
+                     'F2.4 - Independent Seismic Review', 'F2.5 - Other', 'F5 - Drawings and Spec',
+                     'F6 - Affirmative Action', 'F7 - Bid Summary Forms', 'F7.1 - Bid Protest', 'F8 - Contract',
+                     'F9 - Builders Risk Insurance', 'G1 - Construction Correspondence',
+                     'G1.1 - Contractor Correspondences', 'G1.2 - Executive Architect Correspondences',
                      'G1.3 - Users.Building Committee.Campus Correspondences', 'G1.4 - PPC and PP. Certified Payroll',
                      'G1.5 - Geotechnical Engineer Correspondences',
                      'G1.6 - Testing and Inspection to Laboratory Correspondences',
@@ -83,13 +83,27 @@ def establish_location_path(location, sqlite_url=False):
 
     return location
 
-def assemble_postgresql_url(host, db_name, username, password=None, port=None):
+def assemble_postgresql_url(host, db_name, username, password="", port="", dialect=""):
+    '''
+    Assembles a postgresql url from the component parameters.
+    @param host: Host location
+    @param db_name: database name on psql server
+    @param username:
+    @param password:
+    @param port:
+    @param dialect: Which dialect to use. Options are psycopg2, pg8000, asyncpg, or None. https://docs.sqlalchemy.org/en/14/core/engines.html
+    @return: string url
+    '''
     if port:
         port = ":" + port
 
     if password:
         password = ":" + password
-    uri = f"postgresql://{username}{password}@{host}{port}/{db_name}"
+
+    if dialect:
+        dialect = "+" + dialect
+
+    uri = f"postgresql{dialect}://{username}{password}@{host}{port}/{db_name}"
     return uri
 
 def json_to_config_factory(google_creds_path: str, config_json_path: str):

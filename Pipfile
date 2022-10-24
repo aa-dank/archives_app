@@ -18,6 +18,9 @@ notebook = "*"
 oauthlib = "*"
 requests = "*"
 pandas = "*"
+psycopg2 = "*"
+matplotlib = "*"
+seaborn = "*"
 
 [dev-packages]
 
