@@ -58,7 +58,7 @@ def google_creds_from_creds_json(creds_path):
 
     return client_id, client_secret
 
-def establish_location_path(location, sqlite_url=False):
+def assemble_location(location, sqlite_url=False):
     """
     This takes paths and modifies them to work on either windows or linux systems
     @param location:
@@ -144,11 +144,11 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
     else:
 
         # test value for SQLALCHEMY_DATABASE_URI should be r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
-        config_dict['SQLALCHEMY_DATABASE_URI'] = establish_location_path(
+        config_dict['SQLALCHEMY_DATABASE_URI'] = assemble_location(
             location=config_dict['Sqalchemy_Database_Location'], sqlite_url=True)
 
-    config_dict['ARCHIVES_LOCATION'] = establish_location_path(location=config_dict['ARCHIVES_LOCATION'])
-    config_dict["ARCHIVIST_INBOX_LOCATION"] = establish_location_path(location=config_dict["ARCHIVIST_INBOX_LOCATION"])
+    config_dict['ARCHIVES_LOCATION'] = assemble_location(location=config_dict['ARCHIVES_LOCATION'])
+    config_dict["ARCHIVIST_INBOX_LOCATION"] = assemble_location(location=config_dict["ARCHIVIST_INBOX_LOCATION"])
     config_dict['CONFIG_JSON_PATH'] = config_json_path
     return type("DynamicServerConfig", (), config_dict)
 
