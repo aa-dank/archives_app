@@ -59,6 +59,12 @@ def google_creds_from_creds_json(creds_path):
     return client_id, client_secret
 
 def establish_location_path(location, sqlite_url=False):
+    """
+    This takes paths and modifies them to work on either windows or linux systems
+    @param location:
+    @param sqlite_url:
+    @return:
+    """
     # TODO the logic of this function is poorly tested.
     # example of working test config url: r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
     sqlite_prefix = r"sqlite://"

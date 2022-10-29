@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import logging
+import shutil
 from flask_login import current_user
 from datetime import datetime
 from . import forms
@@ -75,10 +76,32 @@ def backup_database():
         return cmd_result.stdout, cmd_result.stderr
 
     def make_sqlite_backup():
+        def clean_url(u: str):
+            """
+            Turns the sqlite url into a path for shutil.copy
+            @param u: sqlite url
+            @return:  sqlite path
+            """
+            u = u[7:]
+            for idx, c in enumerate(u):
+                if c not in [r"\\",r"/"]:
+                    u = u[idx:]
+            return u
+
         db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
         db_backup_destination = flask.current_app.config.get("DATABASE_BACKUP_LOCATION")
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        db_backup_destination = db_backup_destination + f"/db_backup_{timestamp}.sql"
+        db_backup_destination = os.path.join(db_backup_destination, f"db_backup_{timestamp}.sql")
+        db_url = clean_url(db_url)
+        if not os.path.exists(db_url):
+            raise Exception("Cannot use sqlite db location to create a backup; os.path.exists failed. ")
+
+        try:
+            shutil.copyfile(db_url, db_backup_destination)
+        except Exception as e:
+            raise Exception(f"Shutil.copyfile failed to copy the database and threw this error:\n{e}")
+
+
 
     has_admin_role = lambda usr: any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
 
@@ -89,9 +112,17 @@ def backup_database():
 
         # If there is a matching user to the request parameter, the password matches and that account has admin role...
         if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
+            # if using a postgresql database
             if flask.current_app.config.get("POSTGRESQL_DATABASE"):
                 try:
                     make_postgresql_backup()
+                except Exception as e:
+                    msg = "Error during function to backup the database:\n"
+                    exception_handling_pattern(flash_message=msg, thrown_exception=e, app_obj=flask.current_app)
+            # if using a sqlite database
+            else:
+                try:
+                    make_sqlite_backup()
                 except Exception as e:
                     msg = "Error during function to backup the database:\n"
                     exception_handling_pattern(flash_message=msg, thrown_exception=e, app_obj=flask.current_app)
@@ -118,8 +149,6 @@ def backup_database():
 @main.route("/admin/config", methods=['GET', 'POST'])
 @roles_required(['ADMIN'])
 def change_config_settings():
-
-
 
     config_dict = {}
     config_filepath = flask.current_app.config.get('CONFIG_JSON_PATH')
