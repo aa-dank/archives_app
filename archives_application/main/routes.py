@@ -2,10 +2,8 @@ import flask
 import json
 import os
 import subprocess
-import logging
 import shutil
 from flask_login import current_user
-from datetime import datetime
 from . import forms
 from .. utilities import roles_required
 from archives_application import db, bcrypt
@@ -38,7 +36,8 @@ def home():
 @main.route("/admin")
 def main_admin():
     #TODO add page of links to admin pages
-    pass
+    flask.flash("Admin enpoint hit.")
+    return flask.redirect(flask.url_for('main.home'))
 
 @main.route("/admin/db_backup", methods=['GET', 'POST'])
 def backup_database():
@@ -101,7 +100,15 @@ def backup_database():
         except Exception as e:
             raise Exception(f"Shutil.copyfile failed to copy the database and threw this error:\n{e}")
 
-
+    def api_exception_subroutine(response_message, thrown_exception):
+        """
+        Subroutine for handling an exception and returning response code to api call
+        @param response_message: message sent with response code
+        @param thrown_exception: exception that broke the 'try' conditional
+        @return:
+        """
+        flask.current_app.logger.error(thrown_exception, exc_info=True)
+        return flask.Response(response_message, status=500)
 
     has_admin_role = lambda usr: any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
 
@@ -118,14 +125,17 @@ def backup_database():
                     make_postgresql_backup()
                 except Exception as e:
                     msg = "Error during function to backup the database:\n"
-                    exception_handling_pattern(flash_message=msg, thrown_exception=e, app_obj=flask.current_app)
+                    return api_exception_subroutine(msg, e)
+
             # if using a sqlite database
             else:
                 try:
                     make_sqlite_backup()
                 except Exception as e:
                     msg = "Error during function to backup the database:\n"
-                    exception_handling_pattern(flash_message=msg, thrown_exception=e, app_obj=flask.current_app)
+                    return api_exception_subroutine(msg, e)
+
+            return flask.Response("Database Back Up Successful", status=200)
 
     elif current_user:
         if current_user.is_authenticated and has_admin_role(current_user):
@@ -134,13 +144,13 @@ def backup_database():
                     make_postgresql_backup()
                 except Exception as e:
                     msg = "Error during function to backup the database:\n"
-                    exception_handling_pattern(flash_message=msg, thrown_exception=e, app_obj=flask.current_app)
+                    return api_exception_subroutine(msg, e)
             else:
                 try:
                     make_sqlite_backup()
                 except Exception as e:
                     msg = "Error during function to backup the database:\n"
-                    exception_handling_pattern(flash_message=msg, thrown_exception=e, app_obj=flask.current_app)
+                    return api_exception_subroutine(msg, e)
 
             flask.flash("Database backup successs.", 'info')
             return flask.redirect(flask.url_for('main.home'))
