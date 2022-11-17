@@ -350,9 +350,9 @@ def archived_metrics_dashboard():
 
         return data_by_day_df
 
-    def archiving_production_barchart(df:pd.DataFrame, n_days:int):
+    def archiving_production_barchart(df:pd.DataFrame):
         # Function for formatting datetimes for disp[lay on the plot
-        reformat_dt_str = lambda x: parser.parse(x.get_text()).strftime("%m/%d/%Y")
+        reformat_dt_str = lambda x: parser.parse(x).strftime("%m/%d/%Y")
 
         # retrieve plot title dates
         first_date_str = str(df.loc[0]['date_archived'])
@@ -387,7 +387,7 @@ def archived_metrics_dashboard():
             bar.set_width(bar_w * width_scale)
 
         # reformat datetimes into smaller, more readable strings
-        bytes_axis.set_xticklabels([reformat_dt_str(x) for x in bytes_axis.get_xticklabels()], rotation=30)
+        bytes_axis.set_xticklabels([reformat_dt_str(x.get_text()) for x in bytes_axis.get_xticklabels()], rotation=30)
 
         a_val = 0.6
         colors = ['#EA5739', '#FEFFBE', '#4BB05C']
