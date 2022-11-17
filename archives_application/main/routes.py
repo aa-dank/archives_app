@@ -108,7 +108,7 @@ def backup_database():
         @return:
         """
         flask.current_app.logger.error(thrown_exception, exc_info=True)
-        return flask.Response(response_message, status=500)
+        return flask.Response(response_message + "\n" + thrown_exception, status=500)
 
     has_admin_role = lambda usr: any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
 

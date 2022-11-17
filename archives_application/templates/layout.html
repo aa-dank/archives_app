@@ -60,7 +60,7 @@
         <div class="col-md-4">
           <div class="content-section">
             <h3>Quick Navigation</h3>
-            <p class='text-muted'>This is just a placeholder for future feature.
+            <p class='text-muted'>Most Commonly Used Features
               <ul class="list-group">
                 {% if current_user.is_authenticated %}
                     {% if 'ADMIN' in current_user.roles %}
@@ -77,9 +77,9 @@
 
                 {% else %}
                     <li class="list-group-item list-group-item-light"><a href={{url_for('users.register')}}>Registration</a></li>
-                    <li class="list-group-item list-group-item-light"><a href={{url_for('users.choose_login')}}>Account Info</a></li>
-                    <li class="list-group-item list-group-item-light"><a href={{url_for('users.choose_login')}}>Documentationo</a></li>
-                    <li class="list-group-item list-group-item-light">etc</li>
+                    <li class="list-group-item list-group-item-light"><a href={{url_for('users.account')}}>Account Info</a></li>
+                    <li class="list-group-item list-group-item-light"><a href="https://docs.google.com/document/d/1yy3XgJllCiNdm8FGLWMLWUPVgEc9Ph-WgH7-CufENyk/edit?usp=sharing">Documentation</a></li>
+                    <li class="list-group-item list-group-item-light">...more coming soon.</li>
                 {% endif %}
               </ul>
             </p>

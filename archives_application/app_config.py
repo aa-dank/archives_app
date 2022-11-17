@@ -50,6 +50,18 @@ DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 
                      'G9 - Testing and Inspection Reports. Testing Laboratory']
 
 
+def get_test_config_path(prefix: str = "test_config"):
+    """
+    Function that allows to switch out config files without having to update the config filename as long as the filename
+    starts with the prefix.
+    For example might have a config for use with sqlite, 'test_config_sqlite3.json' and one for postgresql,
+    'test_config_postgres.json'. If the prefix is set to "test_config" then any confid that starts with that prefix.
+    @param prefix: prefix string that identifies a test config
+    @return:
+    """
+    filename = [filename for filename in os.listdir(os.getcwd()) if filename.startswith(prefix)][0]
+    return filename
+
 def google_creds_from_creds_json(creds_path):
     with open(creds_path) as creds_json:
         creds_dict = json.load(creds_json)['web']
@@ -131,6 +143,7 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
     config_dict = {k: config_dict[k]['VALUE'] for k in list(config_dict.keys())}
     config_dict['GOOGLE_CLIENT_ID'], config_dict['GOOGLE_CLIENT_SECRET'] = google_creds_from_creds_json(google_creds_path)
     config_dict['OAUTHLIB_INSECURE_TRANSPORT'] = True
+    # this url is where other api endpoints in the google ecosystem are indexed
     config_dict['GOOGLE_DISCOVERY_URL'] = (r"https://accounts.google.com/.well-known/openid-configuration")
 
     # If the database type is sqlite, just use the url. Otherwise, we process the config into a postgresql url

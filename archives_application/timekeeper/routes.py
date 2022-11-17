@@ -1,11 +1,17 @@
 import flask
+import os
 import sys
 import pandas as pd
-from datetime import date, datetime, timedelta
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import seaborn as sns
+from datetime import datetime, timedelta
+from dateutil import parser
 
 from .. import db
-from ..utilities import roles_required
-from ..models import UserModel, TimekeeperEventModel
+from .. import utilities
+from ..models import UserModel, TimekeeperEventModel, ArchivedFileModel
 from flask import current_app
 from flask_login import login_required, current_user
 from .forms import TimekeepingForm, TimeSheetForm, TimeSheetAdminForm
@@ -114,7 +120,7 @@ def hours_worked_in_day(day, user_id):
 
 @timekeeper.route("/timekeeper", methods=['GET', 'POST'])
 @login_required
-@roles_required(['ADMIN', 'ARCHIVIST'])
+@utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def timekeeper_event():
     """
     Main timekeeper endpoint that spits out html form for clocking in and clocking out. Clocking events
@@ -137,7 +143,13 @@ def timekeeper_event():
         db.session.commit()
         todays_events_query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == user_id,
                                                                 TimekeeperEventModel.datetime > start_of_today)
-        todays_events_df = pd.read_sql(todays_events_query.statement, todays_events_query.session.bind)
+
+        # sometimes the bind was none, so this hopefully resolves this.
+        eng = todays_events_query.session.bind
+        if not eng:
+            eng = db.engine
+
+        todays_events_df = pd.read_sql(todays_events_query.statement, eng)
 
         # if there are no records for the user, they are not clocked in
         if todays_events_df.shape[0] == 0:
@@ -196,7 +208,7 @@ def timekeeper_event():
 
 @timekeeper.route("/timekeeper/<employee_id>", methods=['GET', 'POST'])
 @login_required
-@roles_required(['ADMIN', 'ARCHIVIST'])
+@utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def user_timesheet(employee_id):
 
     def daterange(start_date, end_date):
@@ -276,7 +288,7 @@ def user_timesheet(employee_id):
 
 @timekeeper.route("/timekeeper/admin", methods=['GET', 'POST'])
 @login_required
-@roles_required(['ADMIN'])
+@utilities.roles_required(['ADMIN'])
 def choose_employee():
     try: #TODO lazy try-except should be broken into two
         form = TimeSheetAdminForm()
@@ -295,3 +307,145 @@ def choose_employee():
         return exception_handling_pattern(flash_message="Error trying elicit or process employee email for making a timesheet :",
                                           thrown_exception=e, app_obj=flask.current_app)
     return flask.render_template('timekeeper_admin.html', form=form)
+
+@timekeeper.route("/timekeeper/aggregate_metrics")
+@login_required
+@utilities.roles_required(['ADMIN'])
+def archived_metrics_dashboard():
+
+    def generate_daily_chart_stats_df(start_date:datetime=None, end_date:datetime=None):
+        """
+
+        @param start_date:
+        @param end_date:
+        @return:
+        """
+        if not end_date:
+            end_date = datetime.now()
+
+        if not start_date:
+            start_date = end_date - timedelta(days=28)
+
+
+        start_date_str = start_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT'))
+        end_date_str = end_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT'))
+        query = ArchivedFileModel.query.filter(ArchivedFileModel.date_archived.between(start_date_str, end_date_str))
+
+        eng = query.session.bind
+        if not eng:
+            eng = db.engine
+        df = pd.read_sql(query.statement, eng)
+
+        #groupby date to calculate sum of bytes archived and number of files archived on each day
+        day_groups = df.groupby('date_archived')
+        volume_sum_by_day = day_groups['file_size'].agg(np.sum)
+        docs_by_day = day_groups.size()
+        docs_by_day.name = "files_archived"
+        data_by_day_df = pd.concat([volume_sum_by_day, docs_by_day], axis=1)
+
+        bytes_to_megabytes = lambda b: b / 10000000
+        data_by_day_df["megabytes_archived"] = data_by_day_df["file_size"].map(bytes_to_megabytes)
+        data_by_day_df.drop(["file_size"], axis=1, inplace=True)
+        data_by_day_df.reset_index(level=0, inplace=True)
+
+        return data_by_day_df
+
+    def archiving_production_barchart(df:pd.DataFrame, n_days:int):
+        # Function for formatting datetimes for disp[lay on the plot
+        reformat_dt_str = lambda x: parser.parse(x.get_text()).strftime("%m/%d/%Y")
+
+        # retrieve plot title dates
+        first_date_str = str(df.loc[0]['date_archived'])
+        plot_start_str = reformat_dt_str(first_date_str)
+        last_date_str = str(df.loc[df.shape[0] - 1]['date_archived'])
+        plot_end_str = reformat_dt_str(last_date_str)
+
+
+        # plot settings
+        sns.set(font_scale=1.3)
+        sns.set_style("ticks")
+        fig = plt.figure(figsize=(15, 8))
+        width_scale = .45
+
+        # create bytes charts
+        bytes_axis = sns.barplot(x="date_archived", y="megabytes_archived", data=df)
+        bytes_axis.set(title=f"Files and Megabytes Archived from {plot_start_str} to {plot_end_str}",
+                       xlabel="Date",
+                       ylabel="MegaBytes")
+        for bar in bytes_axis.containers[0]:
+            bar.set_width(bar.get_width() * width_scale)
+
+        # create files axis
+        file_num_axis = bytes_axis.twinx()
+        files_axis = sns.barplot(x="date_archived", y="files_archived", data=df, hatch='xx',
+                                 ax=file_num_axis)
+        files_axis.set(ylabel="Files")
+        for bar in files_axis.containers[0]:
+            bar_x = bar.get_x()
+            bar_w = bar.get_width()
+            bar.set_x(bar_x + bar_w * (1 - width_scale))
+            bar.set_width(bar_w * width_scale)
+
+        # reformat datetimes into smaller, more readable strings
+        bytes_axis.set_xticklabels([reformat_dt_str(x) for x in bytes_axis.get_xticklabels()], rotation=30)
+
+        a_val = 0.6
+        colors = ['#EA5739', '#FEFFBE', '#4BB05C']
+        legend_patch_files = mpatches.Patch(facecolor=colors[0], alpha=a_val, hatch=r'xx', label='Files')
+        legend_patch_bytes = mpatches.Patch(facecolor=colors[0], alpha=a_val, label='Megabytes')
+
+        plt.legend(handles=[legend_patch_files, legend_patch_bytes])
+        return fig
+
+    df = pd.DataFrame()
+    production_plot = plt.figure()
+    try:
+        df = generate_daily_chart_stats_df()
+    except Exception as e:
+        exception_handling_pattern(flash_message="Error trying to generate aggregate daily data for plot:",
+                                   thrown_exception=e,
+                                   app_obj=current_app)
+
+    if df.shape[0] == 0:
+        #TODO
+        pass
+
+    try:
+        production_plot = archiving_production_barchart(df=df)
+    except Exception as e:
+        exception_handling_pattern(flash_message="Error making the plot object:",
+                                   thrown_exception=e,
+                                   app_obj=current_app)
+
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    plot_jpg_filename = "total_prod_" + timestamp + ".jpg"
+    plot_jpg_path = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", plot_jpg_filename])
+    production_plot.savefig(plot_jpg_path)
+
+    plot_jpg_url = flask.url_for(r"static",
+                                      filename="temp_files/" + utilities.split_path(plot_jpg_path)[-1])
+
+    # Record image path to session so it can be deleted upon logout
+    if not flask.session[current_user.email].get('temporary files'):
+        flask.session[current_user.email]['temporary files'] = []
+
+    # if we made a preview image, record the path in the session so it can be removed upon logout
+    flask.session[current_user.email]['temporary files'].append(plot_jpg_path)
+
+    return flask.render_template('archiving_metrics.html', title='Archiving Metrics', plot_image=plot_jpg_url)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

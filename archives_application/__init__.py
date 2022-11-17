@@ -4,7 +4,7 @@ import logging # example usage: https://github.com/tenable/flask-logging-demo
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
-from archives_application.app_config import json_to_config_factory
+from archives_application.app_config import json_to_config_factory, get_test_config_path
 from oauthlib.oauth2 import WebApplicationClient
 
 
@@ -16,8 +16,8 @@ login_manager.login_message_category = 'info'
 google_creds_json = r'google_client_secret.json'
 
 # use pound to choose between config json files
-config_json = r'test_app_config.json'
-#config_json = r'deploy_app_config.json'
+config_json = get_test_config_path()
+#config_json = r'deploy_config.json'
 
 
 def create_app(config_class=json_to_config_factory(google_creds_path=google_creds_json, config_json_path=config_json)):
@@ -41,7 +41,7 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '0.3.1'
+    app.config['VERSION'] = '0.4.0'
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add blueprints
@@ -58,7 +58,7 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     if hasattr(config_class, 'OAUTHLIB_INSECURE_TRANSPORT'):
         os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-    # Useful for creating the database tables
+    # Useful for creating the database tables during development
     #with app.app_context():
     #    db.create_all()
 
