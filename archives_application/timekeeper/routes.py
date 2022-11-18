@@ -56,6 +56,18 @@ def pop_dialect_from_sqlite_uri(sql_uri:str):
     return new_url
 
 
+def daterange(start_date: datetime, end_date: datetime):
+    """
+    Generator for iterating through dates
+    https://stackoverflow.com/questions/1060279/iterating-through-a-range-of-dates-in-pythonz
+    @param start_date:
+    @param end_date:
+    @return:
+    """
+    for n in range(int((end_date - start_date).days)):
+        yield start_date + timedelta(n)
+
+
 def hours_worked_in_day(day, user_id):
 
     def clocked_out_everytime(event_type_col: pd.Series):
@@ -211,17 +223,6 @@ def timekeeper_event():
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def user_timesheet(employee_id):
 
-    def daterange(start_date, end_date):
-        """
-        Based on:
-        https://stackoverflow.com/questions/1060279/iterating-through-a-range-of-dates-in-python
-        :param start_date:
-        :param end_date:
-        :return:
-        """
-        for n in range(int((end_date - start_date).days)):
-            yield start_date + timedelta(days=n)
-
     def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str:str):
         """
         Combines journalcolumn into a single str
@@ -236,6 +237,7 @@ def user_timesheet(employee_id):
         return compiled_journal
 
     form = TimeSheetForm()
+    timesheet_df = None
     try:
 
         query_start_date = datetime.now() - timedelta(days = 14)
@@ -320,6 +322,7 @@ def archived_metrics_dashboard():
         @param end_date:
         @return:
         """
+
         if not end_date:
             end_date = datetime.now()
 
@@ -336,6 +339,10 @@ def archived_metrics_dashboard():
             eng = db.engine
         df = pd.read_sql(query.statement, eng)
 
+        #replace datetime timestamp with just the date
+        get_date = lambda dt: dt.date()
+        df["date_archived"] = df["date_archived"].map(get_date)
+
         #groupby date to calculate sum of bytes archived and number of files archived on each day
         day_groups = df.groupby('date_archived')
         volume_sum_by_day = day_groups['file_size'].agg(np.sum)
@@ -348,6 +355,15 @@ def archived_metrics_dashboard():
         data_by_day_df.drop(["file_size"], axis=1, inplace=True)
         data_by_day_df.reset_index(level=0, inplace=True)
 
+        for date in daterange(start_date=start_date, end_date=end_date):
+            if date.weekday() in [5,6]:
+                continue
+
+            if not date in data_by_day_df["date_archived"]:
+                new_row_df = pd.DataFrame({"date_archived":[date.date()], "files_archived":[0], "megabytes_archived":[0]})
+                data_by_day_df = pd.concat([data_by_day_df, new_row_df])
+
+        data_by_day_df = data_by_day_df.sort_values(by=["date_archived"]).reset_index(drop=True)
         return data_by_day_df
 
     def archiving_production_barchart(df:pd.DataFrame):
@@ -399,6 +415,7 @@ def archived_metrics_dashboard():
 
     df = pd.DataFrame()
     production_plot = plt.figure()
+    jpg_path: str = None
     try:
         df = generate_daily_chart_stats_df()
     except Exception as e:
@@ -409,18 +426,18 @@ def archived_metrics_dashboard():
     if df.shape[0] == 0:
         #TODO
         pass
+    else:
+        try:
+            production_plot = archiving_production_barchart(df=df)
+        except Exception as e:
+            exception_handling_pattern(flash_message="Error making the plot object:",
+                                       thrown_exception=e,
+                                       app_obj=current_app)
 
-    try:
-        production_plot = archiving_production_barchart(df=df)
-    except Exception as e:
-        exception_handling_pattern(flash_message="Error making the plot object:",
-                                   thrown_exception=e,
-                                   app_obj=current_app)
-
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    plot_jpg_filename = "total_prod_" + timestamp + ".jpg"
-    plot_jpg_path = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", plot_jpg_filename])
-    production_plot.savefig(plot_jpg_path)
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        plot_jpg_filename = "total_prod_" + timestamp + ".jpg"
+        plot_jpg_path = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", plot_jpg_filename])
+        production_plot.savefig(plot_jpg_path)
 
     plot_jpg_url = flask.url_for(r"static",
                                       filename="temp_files/" + utilities.split_path(plot_jpg_path)[-1])
