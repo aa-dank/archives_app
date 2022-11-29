@@ -136,10 +136,24 @@ def upload_file():
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def inbox_item():
 
+    def ignore_file(filepath):
+        """Determines if the file at the path is not one we should be processing."""
+        filenames_to_ignore = ["thumbs.db"]
+        file_extensions_to_ignore = ["git", "ini"]
+        filename = utilities.split_path(filepath)[-1]
+        file_ext = filename.split(".")[-1]
+        if filename.lower() in filenames_to_ignore:
+            return True
+
+        if file_ext in file_extensions_to_ignore:
+            return True
+
+        return False
+
     inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
     user_inbox_path = os.path.join(inbox_path, get_user_handle())
     user_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
-                                os.path.isfile(os.path.join(user_inbox_path, thing))]
+                                os.path.isfile(os.path.join(user_inbox_path, thing)) and not ignore_file(thing)]
     if not os.path.exists(user_inbox_path):
         os.makedirs(user_inbox_path)
 
@@ -147,7 +161,7 @@ def inbox_item():
     # This avoids other users from processing the same file, creating errors.
     if not user_inbox_files():
         general_inbox_files = [t for t in os.listdir(inbox_path) if
-                               os.path.isfile(os.path.join(inbox_path, t))]
+                               os.path.isfile(os.path.join(inbox_path, t)) and not ignore_file(t)]
 
         # if there are no files to archive in either the user inbox or the archivist inbox we will send the user to
         # the homepage.
@@ -161,14 +175,21 @@ def inbox_item():
 
     arch_file_filename = user_inbox_files()[0]
     preview_image_url = flask.url_for(r"static", filename="temp_files/" + DEFAULT_PREVIEW_IMAGE)
+    temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
 
     # create the file preview image if it is a pdf
     arch_file_preview_image_path = None
+    arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
     if arch_file_filename.split(".")[-1].lower() in ['pdf']:
-        temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
-        arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
         arch_file_preview_image_path = utilities.pdf_preview_image(arch_file_path, temp_files_directory)
         preview_image_url = flask.url_for(r"static", filename = "temp_files/" + utilities.split_path(arch_file_preview_image_path)[-1])
+
+    # copy file as preview of itself if the file is a photo
+    if arch_file_filename.split(".")[-1].lower() in ['jpg', 'tiff', 'jpeg']:
+        preview_path = os.path.join(temp_files_directory, arch_file_filename)
+        shutil.copy2(arch_file_path, preview_path)
+        preview_image_url = flask.url_for(r"static",
+                                          filename="temp_files/" + utilities.split_path(preview_path)[-1])
 
     # Record image path to session so it can be deleted upon logout
     if not flask.session[current_user.email].get('temporary files'):

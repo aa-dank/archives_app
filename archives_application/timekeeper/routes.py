@@ -424,7 +424,7 @@ def archived_metrics_dashboard():
                                    app_obj=current_app)
 
     if df.shape[0] == 0:
-        #TODO
+        #TODO default image
         pass
     else:
         try:
