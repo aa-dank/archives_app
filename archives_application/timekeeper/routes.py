@@ -297,7 +297,7 @@ def choose_employee():
 
         # Get employee emails to use in dropdown choices
         is_archivist = lambda user: 'ARCHIVIST' in user.roles.split(",")
-        employee_emails = [emp.email for emp in UserModel.query.all() if is_archivist(emp)]
+        employee_emails = [employee.email for employee in UserModel.query.all() if is_archivist(employee) and employee.active]
         form.employee_email.choices = employee_emails
 
         if form.validate_on_submit():

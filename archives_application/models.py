@@ -16,6 +16,7 @@ class UserModel(db.Model, UserMixin):
     last_name = db.Column(db.String)
     roles = db.Column(db.String)
     password = db.Column(db.String(60))
+    active = db.Column(db.Boolean, default=True, nullable=False)
     archived_files = db.relationship('ArchivedFileModel', backref='archivist', lazy=True)
 
     def __repr__(self):

@@ -168,7 +168,7 @@ def google_register():
     if form.validate_on_submit():
         try:
             user_roles = ",".join(form.roles.data)
-            user = UserModel(email=new_user_email, first_name=form.first_name.data,
+            user = UserModel(email=new_user_email, first_name=form.first_name.data, active=True,
                              last_name=form.last_name.data, roles=user_roles)
             db.session.add(user)
             db.session.commit()
@@ -216,7 +216,7 @@ def new_account_registeration():
                 return flask.redirect(flask.url_for('main.home'))
             user_roles = ",".join(form.roles.data)
             user = UserModel(email=form.email.data, first_name=form.first_name.data, last_name=form.last_name.data,
-                             roles=user_roles, password=hashed_password)
+                             roles=user_roles, active=True, password=hashed_password)
             db.session.add(user)
             db.session.commit()
             flask.flash(f'Account created for {form.email.data}!', 'success')
