@@ -1,4 +1,5 @@
 import flask
+import random
 import shutil
 from .. import utilities
 from .archival_file import ArchivalFile
@@ -9,8 +10,6 @@ from archives_application.models import *
 
 
 archiver = flask.Blueprint('archiver', __name__)
-
-DEFAULT_PREVIEW_IMAGE = "default_preview.png" #TODO make this image
 
 
 def exception_handling_pattern(flash_message, thrown_exception, app_obj):
@@ -136,12 +135,24 @@ def upload_file():
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def inbox_item():
 
+    def get_no_preview_placeholder_url():
+        """
+        Selects a no_preview_image from ./static/default to use if no preview image can be generated for the inbox file.
+        @return:
+        """
+        default_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "default"])
+        placeholder_files = [x for x in os.listdir(default_files_directory) if x.lower().startswith("no_preview_image")]
+        random_placeholder = random.choice(placeholder_files)
+        return flask.url_for(r"static", filename="default/" + random_placeholder)
+
     def ignore_file(filepath):
         """Determines if the file at the path is not one we should be processing."""
+        # file types that might end up in the INBOX directory but do not need to be archived
         filenames_to_ignore = ["thumbs.db"]
         file_extensions_to_ignore = ["git", "ini"]
         filename = utilities.split_path(filepath)[-1]
         file_ext = filename.split(".")[-1]
+
         if filename.lower() in filenames_to_ignore:
             return True
 
@@ -150,6 +161,7 @@ def inbox_item():
 
         return False
 
+    # Setup User inbox
     inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
     user_inbox_path = os.path.join(inbox_path, get_user_handle())
     user_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
@@ -172,9 +184,8 @@ def inbox_item():
         item_path = os.path.join(inbox_path, general_inbox_files[0])
         shutil.move(item_path, os.path.join(user_inbox_path, general_inbox_files[0]))
 
-
     arch_file_filename = user_inbox_files()[0]
-    preview_image_url = flask.url_for(r"static", filename="temp_files/" + DEFAULT_PREVIEW_IMAGE)
+    preview_image_url = get_no_preview_placeholder_url()
     temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
 
     # create the file preview image if it is a pdf
@@ -184,19 +195,18 @@ def inbox_item():
         arch_file_preview_image_path = utilities.pdf_preview_image(arch_file_path, temp_files_directory)
         preview_image_url = flask.url_for(r"static", filename = "temp_files/" + utilities.split_path(arch_file_preview_image_path)[-1])
 
-    # copy file as preview of itself if the file is a photo
-    if arch_file_filename.split(".")[-1].lower() in ['jpg', 'tiff', 'jpeg']:
+    # copy file as preview of itself if the file is an image
+    image_file_extensions = ['jpg', 'tiff', 'jpeg', 'tif']
+    if arch_file_filename.split(".")[-1].lower() in image_file_extensions:
         preview_path = os.path.join(temp_files_directory, arch_file_filename)
         shutil.copy2(arch_file_path, preview_path)
         preview_image_url = flask.url_for(r"static",
                                           filename="temp_files/" + utilities.split_path(preview_path)[-1])
 
-    # Record image path to session so it can be deleted upon logout
-    if not flask.session[current_user.email].get('temporary files'):
-        flask.session[current_user.email]['temporary files'] = []
-
     # if we made a preview image, record the path in the session so it can be removed upon logout
     if arch_file_preview_image_path:
+        if not flask.session[current_user.email].get('temporary files'):
+            flask.session[current_user.email]['temporary files'] = []
         flask.session[current_user.email]['temporary files'].append(arch_file_preview_image_path)
 
     form = InboxItemForm()
@@ -266,5 +276,6 @@ def inbox_item():
                 f'Failed to archive file:{arch_file.current_path} Destination: {arch_file.get_destination_path()} Error: {archiving_exception}',
                 'warning')
             return flask.redirect(flask.url_for('archiver.inbox_item'))
+
     return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename,
                                  preview_image=preview_image_url)
