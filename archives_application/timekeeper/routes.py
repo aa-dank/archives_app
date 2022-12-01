@@ -251,7 +251,11 @@ def user_timesheet(employee_id):
 
         query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == employee_id,
                                               TimekeeperEventModel.datetime > query_start_date)
-        timesheet_df = pd.read_sql(query.statement, query.session.bind)
+        eng = query.session.bind
+        if not eng:
+            eng = db.engine
+
+        timesheet_df = pd.read_sql(query.statement, eng)
     except Exception as e:
         exception_handling_pattern(flash_message="Error getting user timekeeper events from database: ",
                                    thrown_exception=e, app_obj=flask.current_app)
