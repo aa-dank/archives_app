@@ -145,6 +145,11 @@ def callback():
             flask.session['new user'] = {"email": users_email}
             return flask.redirect(flask.url_for('users.google_register'))
 
+        # if there is already an account but it is not an active account...
+        if user and not user.active:
+            flask.flash(f'Account is inactive. Contact application admin.', 'danger')
+            return flask.redirect(flask.url_for('main.home'))
+
         user_login_flow(user)
         flask.flash("Login Successful.", 'success')
         return flask.redirect(flask.url_for('main.home'))
@@ -239,14 +244,22 @@ def login():
     if form.validate_on_submit():
         try:
             user = UserModel.query.filter_by(email=form.email.data).first()
+
+            # if the user account already exists but is not active...
+            if user and not user.active:
+                flask.flash(f'Account is inactive. Contact application admin.', 'danger')
+                return flask.redirect(flask.url_for('main.home'))
+
             if user and bcrypt.check_password_hash(user.password, form.password.data):
                 user_login_flow(user=user)
                 next_page = flask.request.args.get('next')
+
                 # after successful login it will attempt to send user to the previous page they were trying to access.
                 # If that is not available, it will flask.redirect to the home page
                 return flask.redirect(next_page) if next_page else flask.redirect(flask.url_for('main.home'))
             else:
                 flask.flash(f'Login Unsuccessful! Check credentials.', 'danger')
+                return flask.redirect(flask.url_for('main.home'))
 
         except Exception as e:
             return exception_handling_pattern(flash_message="Error while processing user login: ",
