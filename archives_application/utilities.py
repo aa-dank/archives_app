@@ -32,6 +32,15 @@ def split_path(path):
 
 def roles_required(roles: list[str]):
     """
+    This function is a Flask decorator that restricts access to a route to only users with certain roles. The roles
+    parameter is a list of allowed roles. The decorator takes a function func as an argument and returns a new function
+    that wraps the original function.
+
+    When the wrapped function is called, the user's roles are retrieved and split into a list of individual roles. If
+    the user has at least one role and at least one of those roles is in the roles list, the original function func is
+    called with the original arguments and keyword arguments. Otherwise, the user is shown a warning message and
+    redirected to the home page.
+
     :param roles: list of the roles that can access the endpoint
     :return: actual decorator function
     """

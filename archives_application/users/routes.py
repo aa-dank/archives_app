@@ -289,4 +289,3 @@ def logout():
 @login_required
 def account():
     return flask.render_template('account.html', title='Account')
-

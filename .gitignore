@@ -28,6 +28,7 @@
 *.json
 *.pickle
 *.csv
+*.db
 
 # OS generated files #
 ######################
