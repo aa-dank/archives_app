@@ -57,7 +57,7 @@ def choose_login():
         flask.flash(f'Already logged in.', 'message')
         return flask.redirect(flask.url_for('main.home'))
 
-    return flask.render_template('choose_login.html', title='Register') #TODO add google login link to template
+    return flask.render_template('choose_login.html', title='Register')
 
 
 @users.route("/google_auth")
@@ -93,9 +93,6 @@ def callback():
     When Google sends back the unique login code, it’ll be sending it to this login callback endpoint on your application
     :return:
     """
-    def parse_given_name(given_name:str):
-        #TODO
-        return "", ""
 
     client = flask.current_app.config['google_auth_client']
     # Get authorization code Google sent back to you

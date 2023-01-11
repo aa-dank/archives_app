@@ -17,7 +17,7 @@ google_creds_json = r'google_client_secret.json'
 
 # use pound to choose between config json files
 config_json = get_test_config_path()
-#config_json = r'deploy_config.json'
+#config_json = r'deploy_app_config.json'
 
 
 def create_app(config_class=json_to_config_factory(google_creds_path=google_creds_json, config_json_path=config_json)):
@@ -41,7 +41,7 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '0.4.7'
+    app.config['VERSION'] = '0.4.8'
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add blueprints

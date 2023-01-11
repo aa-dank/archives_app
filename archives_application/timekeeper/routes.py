@@ -97,7 +97,10 @@ def hours_worked_in_day(day, user_id):
     query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == user_id,
                                               TimekeeperEventModel.datetime >= day.strftime("%Y-%m-%d"),
                                               TimekeeperEventModel.datetime < days_end.strftime("%Y-%m-%d"))
-    timesheet_df = pd.read_sql(query.statement, query.session.bind)
+    eng = query.session.bind
+    if not eng:
+        eng = db.engine
+    timesheet_df = pd.read_sql(query.statement, eng)
     timesheet_df.sort_values(by='datetime', inplace=True)
     if timesheet_df.shape[0] == 0:
         clock_ins_have_clock_outs = True #
