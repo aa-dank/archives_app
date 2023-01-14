@@ -172,6 +172,7 @@ def user_path_to_server_path(path_from_user, location_path_prefix):
 
     # regex pattern for a domain url. eg matches ppcou.ucsc.edu
     regex_domain_url = r"([\w]{1,}[.]{1}[\w]{1,}[.]{1}[\w]{1,})"
+
     # add more regex strings to this list to make this match more url patterns
     network_url_patterns = [regex_domain_url]
     matches_network_url = lambda possible_url: any(
@@ -193,9 +194,6 @@ def user_path_to_server_path(path_from_user, location_path_prefix):
 
     local_path = mounted_path_to_networked_path(mounted_path=path_from_user, network_location=location_path_prefix)
     return local_path
-
-
-
 
 
 def cleanse_filename(proposed_filename: str):

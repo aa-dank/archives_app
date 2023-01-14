@@ -6,6 +6,7 @@ from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
 from archives_application.app_config import json_to_config_factory, get_test_config_path
 from oauthlib.oauth2 import WebApplicationClient
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 db = SQLAlchemy()
@@ -30,6 +31,9 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     # if the app is not being debugged, then we need to use the gunicorn logger handlers when in production
     if not app.debug:
         app.logger.handlers = logging.getLogger('gunicorn.error').handlers
+        # https://flask-dance.readthedocs.io/en/v0.13.0/proxies.html
+        # https://werkzeug.palletsprojects.com/en/1.0.x/middleware/proxy_fix/
+        app.wsgi_app = ProxyFix(app.wsgi_app)
 
     # set universal format for all logging handlers.
     for handler in app.logger.handlers:
@@ -41,7 +45,7 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '0.4.8'
+    app.config['VERSION'] = '0.4.9'
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add blueprints

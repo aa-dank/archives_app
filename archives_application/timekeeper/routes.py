@@ -133,6 +133,19 @@ def hours_worked_in_day(day, user_id):
     return hours_worked, clock_ins_have_clock_outs
 
 
+def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str:str):
+    """
+    Combines journalcolumn into a single str
+    @param date:
+    @param timecard_df:
+    @param delimiter_str:
+    @return:
+    """
+    strftime_dt = lambda dt: dt.strftime("%Y-%m-%d")
+    timecard_df = timecard_df[timecard_df["datetime"].map(strftime_dt) == date.strftime("%Y-%m-%d")]
+    compiled_journal = delimiter_str.join([journal for journal in timecard_df["journal"].tolist() if journal])
+    return compiled_journal
+
 @timekeeper.route("/timekeeper", methods=['GET', 'POST'])
 @login_required
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
@@ -226,19 +239,6 @@ def timekeeper_event():
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def user_timesheet(employee_id):
 
-    def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str:str):
-        """
-        Combines journalcolumn into a single str
-        @param date:
-        @param timecard_df:
-        @param delimiter_str:
-        @return:
-        """
-        strftime_dt = lambda dt: dt.strftime("%Y-%m-%d")
-        timecard_df = timecard_df[timecard_df["datetime"].map(strftime_dt) == date.strftime("%Y-%m-%d")]
-        compiled_journal = delimiter_str.join([journal for journal in timecard_df["journal"].tolist() if journal])
-        return compiled_journal
-
     form = TimeSheetForm()
     timesheet_df = None
     try:
@@ -253,7 +253,8 @@ def user_timesheet(employee_id):
             query_end_date = datetime(year=user_end_date.year, month=user_end_date.month, day=user_end_date.day)
 
         query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == employee_id,
-                                              TimekeeperEventModel.datetime > query_start_date)
+                                                  TimekeeperEventModel.datetime >= query_start_date,
+                                                  TimekeeperEventModel.datetime <= query_end_date)
         eng = query.session.bind
         if not eng:
             eng = db.engine
@@ -295,6 +296,83 @@ def user_timesheet(employee_id):
     return flask.render_template('timesheet.html', title="Timesheet", form=form, table=html_table)
 
 
+@timekeeper.route("/timekeeper/all", methods=['GET', 'POST'])
+@login_required
+@utilities.roles_required(['ADMIN', 'ARCHIVIST'])
+def all_timesheets():
+    form = TimeSheetForm()
+    try:
+        # Get 'active' employee emails to use in dropdown choices
+        is_archivist = lambda user: 'ARCHIVIST' in user.roles.split(",")
+        archivists = [{'email': employee.email, 'id': employee.id} for employee in UserModel.query.all() if
+                     is_archivist(employee) and employee.active]
+
+    except Exception as e:
+        return exception_handling_pattern(
+            flash_message="Error retrieving active archivists from database:",
+            thrown_exception=e, app_obj=flask.current_app)
+
+    try:
+
+        query_start_date = datetime.now() - timedelta(days = 90)
+        query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        query_end_date = datetime.now()
+        query_end_date.replace(hour=23, minute=0, second=0, microsecond=0)
+        if form.validate_on_submit():
+            user_start_date = form.timesheet_begin.data
+            user_end_date = form.timesheet_end.data
+            query_start_date = datetime(year=user_start_date.year, month=user_start_date.month, day=user_start_date.day)
+            query_end_date = datetime(year=user_end_date.year, month=user_end_date.month, day=user_end_date.day)
+
+        archivist_ids = [a['id'] for a in archivists]
+        query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id in archivist_ids,
+                                                  TimekeeperEventModel.datetime >= query_start_date,
+                                                  TimekeeperEventModel.datetime <= query_end_date)
+        eng = query.session.bind
+        if not eng:
+            eng = db.engine
+
+        timesheet_df = pd.read_sql(query.statement, eng)
+
+    except Exception as e:
+        exception_handling_pattern(flash_message="Error creating dataframe for all archivists: ",
+                                   thrown_exception=e, app_obj=flask.current_app)
+
+    try:
+        users_timesheet_dict = dict(list(timesheet_df.groupby('user_id')))
+        for archivist_dict in archivists:
+            user_timesheet_df = users_timesheet_dict.get(archivist_dict['id'])
+            if user_timesheet_df:
+                archivist_dict["raw_df"] = user_timesheet_df
+
+                # Create a list of dictionaries, where each dictionary is the aggregated data for that day
+                all_days_data = []
+                for range_date in daterange(start_date=query_start_date.date(), end_date=query_end_date.date()):
+                    day_data = {"Date": range_date.strftime('%Y-%m-%d')}
+
+                    # calculate hours and/or determine if entering them is incomplete
+                    hours, timesheet_complete = hours_worked_in_day(range_date, employee_id)
+                    if not timesheet_complete:
+                        day_data["Hours Worked"] = "TIME ENTRY INCOMPLETE"
+                    else:
+                        day_data["Hours Worked"] = str(hours)
+
+                    # Mush all journal entries together into a single journal entry
+                    compiled_journal = compile_journal(range_date, timesheet_df, " \ ")
+                    day_data["journal"] = compiled_journal
+                    all_days_data.append(day_data)
+
+                archivist_dict["timesheet_df"] = pd.DataFrame.from_dict(all_days_data)
+                archivist_dict["html_table"] = archivist_dict["timesheet_df"].to_html(index=False)
+
+    except Exception as e:
+        exception_handling_pattern(flash_message="Error creating individualized timesheet tables: ",
+                                   thrown_exception=e, app_obj=flask.current_app)
+
+    return flask.render_template('timesheet_tables.html', title="Timesheets", form=form, archivist_info_list=archivists)
+
+
+
 @timekeeper.route("/timekeeper/admin", methods=['GET', 'POST'])
 @login_required
 @utilities.roles_required(['ADMIN'])
@@ -302,20 +380,31 @@ def choose_employee():
     try: #TODO lazy try-except should be broken into two
         form = TimeSheetAdminForm()
 
-        # Get employee emails to use in dropdown choices
+        # Get 'active' employee emails to use in dropdown choices
         is_archivist = lambda user: 'ARCHIVIST' in user.roles.split(",")
         employee_emails = [employee.email for employee in UserModel.query.all() if is_archivist(employee) and employee.active]
-        form.employee_email.choices = employee_emails
+
+        # add 'ALL' option to email dropdown
+        form.employee_email.choices = ['ALL'] + employee_emails
 
         if form.validate_on_submit():
             # get selected employee id and use it to redirect to correct timesheet endpoint
             employee_email = form.employee_email.data
-            employee_id = UserModel.query.filter_by(email=employee_email).first().id
-            return flask.redirect(flask.url_for('timekeeper.user_timesheet', employee_id=employee_id))
+
+            # if user has not selected 'ALL', they have selected an email account...
+            if not employee_email == 'ALL':
+                employee_id = UserModel.query.filter_by(email=employee_email).first().id
+                return flask.redirect(flask.url_for('timekeeper.user_timesheet', employee_id=employee_id))
+
+            else:
+                return flask.redirect(flask.url_for('timekeeper.all_timesheets'))
+
+
     except Exception as e:
-        return exception_handling_pattern(flash_message="Error trying elicit or process employee email for making a timesheet :",
+        return exception_handling_pattern(flash_message="Error trying to elicit or process employee email for making a timesheet :",
                                           thrown_exception=e, app_obj=flask.current_app)
     return flask.render_template('timekeeper_admin.html', form=form)
+
 
 @timekeeper.route("/timekeeper/aggregate_metrics")
 @login_required
