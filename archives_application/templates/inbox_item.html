@@ -12,7 +12,9 @@
                     {{ form.download_item(class="btn btn-outline-info") }}
             </div>
                 <h4>Instructions:</h4>
-                <p>Enter a project number and destination directory (filing code). Alternatively, enter a destination path. (Useful if the document is not for a project or doesn't have a filing cde.)</p>
+                <p>Enter a project number and destination directory (filing code). Alternatively, enter a destination path. (Useful if the document is not for a project or doesn't have a filing code.)</p>
+                <p><a href="https://docs.google.com/document/d/1Xub4G7-STdRrQsmfLbzuJsgFqC9Zu42qeYVMNM87JXM/edit?usp=sharing">Large Format Archiving Documentation.</a></p>
+                <p><a href="https://docs.google.com/document/d/1Bu4T71ge-00dWURt_oQHZJZhrLer9Q_bJ-m4xdXcJtI/edit?usp=sharing">Small Format Archiving Documentation.</a></p>
                 <div class="form-group">
                     <h6>{{ form.project_number.label(class="form-control-label") }}</h6>
                     {% if form.project_number.errors %}
@@ -54,6 +56,8 @@
                 </div>
                 <div class="form-group">
                     <h6>{{ form.destination_directory.label(class="form-control-label") }}</h6>
+                    <p>(ie "Filing Code")</p>
+                    <a href="https://docs.google.com/document/d/1d_jiqWVc1ySuVxibfX-QCRPOzY6DB71GAZFrNqBisVo/edit?usp=sharing">Filing Code Documentation</a>
                     {% if form.destination_directory.errors %}
                         {{ form.destination_directory(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">

@@ -161,121 +161,128 @@ def inbox_item():
 
         return False
 
-    # Setup User inbox
-    inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
-    user_inbox_path = os.path.join(inbox_path, get_user_handle())
-    user_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
-                                os.path.isfile(os.path.join(user_inbox_path, thing)) and not ignore_file(thing)]
-    if not os.path.exists(user_inbox_path):
-        os.makedirs(user_inbox_path)
+    try:
+        # Setup User inbox
+        inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
+        user_inbox_path = os.path.join(inbox_path, get_user_handle())
+        user_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
+                                    os.path.isfile(os.path.join(user_inbox_path, thing)) and not ignore_file(thing)]
+        if not os.path.exists(user_inbox_path):
+            os.makedirs(user_inbox_path)
 
-    # if no files in the user inbox, move a file from the INBOX directory to the user inbox to be processed.
-    # This avoids other users from processing the same file, creating errors.
-    if not user_inbox_files():
-        general_inbox_files = [t for t in os.listdir(inbox_path) if
-                               os.path.isfile(os.path.join(inbox_path, t)) and not ignore_file(t)]
+        # if no files in the user inbox, move a file from the INBOX directory to the user inbox to be processed.
+        # This avoids other users from processing the same file, creating errors.
+        if not user_inbox_files():
+            general_inbox_files = [t for t in os.listdir(inbox_path) if
+                                   os.path.isfile(os.path.join(inbox_path, t)) and not ignore_file(t)]
 
-        # if there are no files to archive in either the user inbox or the archivist inbox we will send the user to
-        # the homepage.
-        if not general_inbox_files:
-            flask.flash("The archivist inboxes are empty. Add files to the inbox directories to archive them.", 'info')
-            return flask.redirect(flask.url_for('main.home'))
+            # if there are no files to archive in either the user inbox or the archivist inbox we will send the user to
+            # the homepage.
+            if not general_inbox_files:
+                flask.flash("The archivist inboxes are empty. Add files to the inbox directories to archive them.", 'info')
+                return flask.redirect(flask.url_for('main.home'))
 
-        item_path = os.path.join(inbox_path, general_inbox_files[0])
-        shutil.move(item_path, os.path.join(user_inbox_path, general_inbox_files[0]))
+            item_path = os.path.join(inbox_path, general_inbox_files[0])
+            shutil.move(item_path, os.path.join(user_inbox_path, general_inbox_files[0]))
 
-    arch_file_filename = user_inbox_files()[0]
-    preview_image_url = get_no_preview_placeholder_url()
-    temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
+        arch_file_filename = user_inbox_files()[0]
+        preview_image_url = get_no_preview_placeholder_url()
+        temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
 
-    # create the file preview image if it is a pdf
-    arch_file_preview_image_path = None
-    arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
-    if arch_file_filename.split(".")[-1].lower() in ['pdf']:
-        arch_file_preview_image_path = utilities.pdf_preview_image(arch_file_path, temp_files_directory)
-        preview_image_url = flask.url_for(r"static", filename = "temp_files/" + utilities.split_path(arch_file_preview_image_path)[-1])
+        # create the file preview image if it is a pdf
+        arch_file_preview_image_path = None
+        arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
+        if arch_file_filename.split(".")[-1].lower() in ['pdf']:
+            arch_file_preview_image_path = utilities.pdf_preview_image(arch_file_path, temp_files_directory)
+            preview_image_url = flask.url_for(r"static", filename = "temp_files/" + utilities.split_path(arch_file_preview_image_path)[-1])
 
-    # copy file as preview of itself if the file is an image
-    image_file_extensions = ['jpg', 'tiff', 'jpeg', 'tif']
-    if arch_file_filename.split(".")[-1].lower() in image_file_extensions:
-        preview_path = os.path.join(temp_files_directory, arch_file_filename)
-        shutil.copy2(arch_file_path, preview_path)
-        preview_image_url = flask.url_for(r"static",
-                                          filename="temp_files/" + utilities.split_path(preview_path)[-1])
+        # copy file as preview of itself if the file is an image
+        image_file_extensions = ['jpg', 'tiff', 'jpeg', 'tif']
+        if arch_file_filename.split(".")[-1].lower() in image_file_extensions:
+            preview_path = os.path.join(temp_files_directory, arch_file_filename)
+            shutil.copy2(arch_file_path, preview_path)
+            preview_image_url = flask.url_for(r"static",
+                                              filename="temp_files/" + utilities.split_path(preview_path)[-1])
 
-    # if we made a preview image, record the path in the session so it can be removed upon logout
-    if arch_file_preview_image_path:
-        if not flask.session[current_user.email].get('temporary files'):
-            flask.session[current_user.email]['temporary files'] = []
-        flask.session[current_user.email]['temporary files'].append(arch_file_preview_image_path)
+        # if we made a preview image, record the path in the session so it can be removed upon logout
+        if arch_file_preview_image_path:
+            if not flask.session[current_user.email].get('temporary files'):
+                flask.session[current_user.email]['temporary files'] = []
+            flask.session[current_user.email]['temporary files'].append(arch_file_preview_image_path)
 
-    form = InboxItemForm()
-    form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
+        form = InboxItemForm()
+        form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
 
-    # if the flask.session has data previously entered in this form, then re-enter it into the form before rendering
-    # it in html
-    if flask.session.get(current_user.email) and flask.session.get(current_user.email).get('inbox_form_data'):
-        sesh_data = flask.session.get(current_user.email).get('inbox_form_data')
-        form.project_number.data = sesh_data.get('project_number')
-        form.destination_path.data = sesh_data.get('destination_path')
-        form.notes.data = sesh_data.get('notes')
-        form.document_date.data = sesh_data.get('document_date')
-        form.new_filename.data = sesh_data.get('new_filename')
-        flask.session['inbox_form_data'] = None
+        # if the flask.session has data previously entered in this form, then re-enter it into the form before rendering
+        # it in html
+        if flask.session.get(current_user.email) and flask.session.get(current_user.email).get('inbox_form_data'):
+            sesh_data = flask.session.get(current_user.email).get('inbox_form_data')
+            form.project_number.data = sesh_data.get('project_number')
+            form.destination_path.data = sesh_data.get('destination_path')
+            form.notes.data = sesh_data.get('notes')
+            form.document_date.data = sesh_data.get('document_date')
+            form.new_filename.data = sesh_data.get('new_filename')
+            flask.session['inbox_form_data'] = None
 
-    if form.validate_on_submit():
+    except Exception as e:
+        exception_handling_pattern(flash_message="Issue setting up inbox item for archiving: ", thrown_exception=e,
+                                   app_obj=flask.current_app)
+    try:
+        if form.validate_on_submit():
 
-        # if the user clicked the download button, we send the file to the user, save what data the user has entered,
-        # and rerender the page.
-        if form.download_item.data:
-            # boolean for whether to attempt opening the file in the browser
-            file_can_be_opened_in_browser = arch_file_filename.split(".")[-1].lower() in ['pdf', 'html']
-            flask.session[current_user.email]['inbox_form_data'] = form.data
-            return flask.send_file(arch_file_path, as_attachment=not file_can_be_opened_in_browser)
+            # if the user clicked the download button, we send the file to the user, save what data the user has entered,
+            # and rerender the page.
+            if form.download_item.data:
+                # boolean for whether to attempt opening the file in the browser
+                file_can_be_opened_in_browser = arch_file_filename.split(".")[-1].lower() in ['pdf', 'html']
+                flask.session[current_user.email]['inbox_form_data'] = form.data
+                return flask.send_file(arch_file_path, as_attachment=not file_can_be_opened_in_browser)
 
-        upload_size = os.path.getsize(arch_file_path)
-        archival_filename = arch_file_filename
-        if form.new_filename.data:
-            archival_filename = utilities.cleanse_filename(form.new_filename.data)
-        arch_file = ArchivalFile(current_path=arch_file_path, project=form.project_number.data,
-                                 new_filename=archival_filename, notes=form.notes.data,
-                                 destination_dir=form.destination_directory.data,
-                                 archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'),
-                                 directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
-                                 destination_path=form.destination_path.data)
-        archiving_successful, archiving_exception = arch_file.archive_in_destination()
-        if archiving_successful:
-            try:
-                archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
-                                                  project_number=arch_file.project_number,
-                                                  document_date=form.document_date.data,
-                                                  destination_directory=arch_file.destination_dir,
-                                                  file_code=arch_file.file_code, archivist_id=current_user.id,
-                                                  file_size=upload_size, notes=arch_file.notes,
-                                                  filename=arch_file.assemble_destination_filename())
-                db.session.add(archived_file)
-                db.session.commit()
+            upload_size = os.path.getsize(arch_file_path)
+            archival_filename = arch_file_filename
+            if form.new_filename.data:
+                archival_filename = utilities.cleanse_filename(form.new_filename.data)
+            arch_file = ArchivalFile(current_path=arch_file_path, project=form.project_number.data,
+                                     new_filename=archival_filename, notes=form.notes.data,
+                                     destination_dir=form.destination_directory.data,
+                                     archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'),
+                                     directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
+                                     destination_path=form.destination_path.data)
+            archiving_successful, archiving_exception = arch_file.archive_in_destination()
+            if archiving_successful:
+                try:
+                    archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
+                                                      project_number=arch_file.project_number,
+                                                      document_date=form.document_date.data,
+                                                      destination_directory=arch_file.destination_dir,
+                                                      file_code=arch_file.file_code, archivist_id=current_user.id,
+                                                      file_size=upload_size, notes=arch_file.notes,
+                                                      filename=arch_file.assemble_destination_filename())
+                    db.session.add(archived_file)
+                    db.session.commit()
 
-                # make sure that the old file has been removed
-                if os.path.exists(arch_file_path):
-                    os.remove(arch_file_path) #TODO having problems deleting old files
-                flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
-            except Exception as e:
-                # if the file wasn't deleted...
-                if os.path.exists(arch_file_path):
-                    flask.flash(
-                        f'File archived, but could not remove it from this location:\n{arch_file.current_path}\nException:\n{e.message}',
-                        'warning')
-                else:
-                    flask.current_app.logger.error(e, exc_info = True)
-                    flask.flash(f"An error occured: {e}", 'warning')
-            return flask.redirect(flask.url_for('archiver.inbox_item'))
-        else:
-            flask.current_app.logger.error(archiving_exception, exc_info=True)
-            flask.flash(
-                f'Failed to archive file:{arch_file.current_path} Destination: {arch_file.get_destination_path()} Error: {archiving_exception}',
-                'warning')
-            return flask.redirect(flask.url_for('archiver.inbox_item'))
+                    # make sure that the old file has been removed
+                    if os.path.exists(arch_file_path):
+                        os.remove(arch_file_path) #TODO having problems deleting old files
+                    flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
+                except Exception as e:
+                    # if the file wasn't deleted...
+                    if os.path.exists(arch_file_path):
+                        flask.flash(
+                            f'File archived, but could not remove it from this location:\n{arch_file.current_path}\nException:\n{e.message}',
+                            'warning')
+                    else:
+                        flask.current_app.logger.error(e, exc_info = True)
+                        flask.flash(f"An error occured: {e}", 'warning')
+                return flask.redirect(flask.url_for('archiver.inbox_item'))
+            else:
+                message = f'Failed to archive file:{arch_file.current_path} Destination: {arch_file.get_destination_path()} Error:'
+                exception_handling_pattern(flash_message=message, thrown_exception=archiving_exception,
+                                           app_obj=flask.current_app)
 
-    return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename,
-                                 preview_image=preview_image_url)
+        return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename,
+                                     preview_image=preview_image_url)
+
+    except Exception as e:
+        exception_handling_pattern(flash_message="Issue archiving document: ", thrown_exception=e,
+                                   app_obj=flask.current_app)
