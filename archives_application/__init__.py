@@ -17,8 +17,8 @@ login_manager.login_message_category = 'info'
 google_creds_json = r'google_client_secret.json'
 
 # use pound to choose between config json files
-#config_json = get_test_config_path()
-config_json = r'deploy_app_config.json'
+config_json = get_test_config_path()
+#config_json = r'deploy_app_config.json'
 
 
 def create_app(config_class=json_to_config_factory(google_creds_path=google_creds_json, config_json_path=config_json)):
@@ -31,6 +31,7 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     # if the app is not being debugged, then we need to use the gunicorn logger handlers when in production
     if not app.debug:
         app.logger.handlers = logging.getLogger('gunicorn.error').handlers
+
         # https://flask-dance.readthedocs.io/en/v0.13.0/proxies.html
         # https://werkzeug.palletsprojects.com/en/1.0.x/middleware/proxy_fix/
         app.wsgi_app = ProxyFix(app.wsgi_app)
@@ -45,7 +46,7 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '0.4.10'
+    app.config['VERSION'] = '1.0.0'
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add blueprints

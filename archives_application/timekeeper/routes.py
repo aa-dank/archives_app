@@ -241,6 +241,16 @@ def user_timesheet(employee_id):
 
     form = TimeSheetForm()
     timesheet_df = None
+
+    # get user information from the database
+    try:
+        employee = UserModel.query.filter(UserModel.id == employee_id).first()
+        archivist_dict = {'email': employee.email, 'id': employee.id}
+    except Exception as e:
+        exception_handling_pattern(flash_message=f"Error trying to get user info from the database for user id {employee_id}",
+                                   thrown_exception=e,
+                                   app_obj=flask.current_app)
+
     try:
 
         query_start_date = datetime.now() - timedelta(days = 14)
@@ -291,9 +301,9 @@ def user_timesheet(employee_id):
                                    thrown_exception=e, app_obj=flask.current_app)
 
     aggregate_hours_df = pd.DataFrame.from_dict(all_days_data)
-    html_table = aggregate_hours_df.to_html(index=False)
+    archivist_dict["html_table"] = aggregate_hours_df.to_html(index=False)
 
-    return flask.render_template('timesheet.html', title="Timesheet", form=form, table=html_table)
+    return flask.render_template('timesheet_tables.html', title="Timesheet", form=form, archivist_info_list=[archivist_dict])
 
 
 @timekeeper.route("/timekeeper/all", methods=['GET', 'POST'])
@@ -351,7 +361,7 @@ def all_timesheets():
                     day_data = {"Date": range_date.strftime('%Y-%m-%d')}
 
                     # calculate hours and/or determine if entering them is incomplete
-                    hours, timesheet_complete = hours_worked_in_day(range_date, employee_id)
+                    hours, timesheet_complete = hours_worked_in_day(range_date, archivist_dict['id'])
                     if not timesheet_complete:
                         day_data["Hours Worked"] = "TIME ENTRY INCOMPLETE"
                     else:
@@ -369,7 +379,7 @@ def all_timesheets():
         exception_handling_pattern(flash_message="Error creating individualized timesheet tables: ",
                                    thrown_exception=e, app_obj=flask.current_app)
 
-    return flask.render_template('timesheet_tables.html', title="Timesheets", form=form, archivist_info_list=archivists)
+    return flask.render_template('timesheet_tables.html', title="Timesheets", form=form, archivist_info_list=archivist_dict)
 
 
 
