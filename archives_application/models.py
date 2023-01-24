@@ -27,16 +27,15 @@ class ArchivedFileModel(db.Model):
     __tablename__ = 'archived_files'
     id = db.Column(db.Integer, primary_key=True)
     destination_path = db.Column(db.String, nullable=False)
-    project_number = db.Column(db.String, nullable=False)
+    project_number = db.Column(db.String)
     document_date = db.Column(db.String)
-    destination_directory = db.Column(db.String, nullable=False)
-    file_code = db.Column(db.String, nullable=False)
+    destination_directory = db.Column(db.String)
+    file_code = db.Column(db.String)
     file_size = db.Column(db.Float, nullable=False)
     date_archived = db.Column(db.DateTime, nullable=False, default=datetime.now()) #TODO remove these and fill the datetime columns during api call
     archivist_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     notes = db.Column(db.String)
     filename = db.Column(db.String)
-    extension = db.Column(db.String)
 
     def __repr__(self):
         # TODO does date_archived need to be changed to string
