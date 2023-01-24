@@ -28,7 +28,8 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     # start app
     app = flask.Flask(__name__)
 
-    # if the app is not being debugged, then we need to use the gunicorn logger handlers when in production
+    # if the app is not being debugged, then we need to use the gunicorn logger handlers when in production.
+    # also need to do something so that it can accept proxy calls
     if not app.debug:
         app.logger.handlers = logging.getLogger('gunicorn.error').handlers
 
@@ -46,7 +47,7 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.0.0'
+    app.config['VERSION'] = '1.0.1'
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add blueprints

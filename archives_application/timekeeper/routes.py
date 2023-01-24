@@ -15,6 +15,7 @@ from ..models import UserModel, TimekeeperEventModel, ArchivedFileModel
 from flask import current_app
 from flask_login import login_required, current_user
 from .forms import TimekeepingForm, TimeSheetForm, TimeSheetAdminForm
+from sqlalchemy import and_
 
 
 timekeeper = flask.Blueprint('timekeeper', __name__)
@@ -244,8 +245,9 @@ def user_timesheet(employee_id):
 
     # get user information from the database
     try:
-        employee = UserModel.query.filter(UserModel.id == employee_id).first()
+        employee = UserModel.query.filter(UserModel.id == employee_id).one_or_none()
         archivist_dict = {'email': employee.email, 'id': employee.id}
+
     except Exception as e:
         exception_handling_pattern(flash_message=f"Error trying to get user info from the database for user id {employee_id}",
                                    thrown_exception=e,
@@ -334,10 +336,11 @@ def all_timesheets():
             query_start_date = datetime(year=user_start_date.year, month=user_start_date.month, day=user_start_date.day)
             query_end_date = datetime(year=user_end_date.year, month=user_end_date.month, day=user_end_date.day)
 
-        archivist_ids = [a['id'] for a in archivists]
-        query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id in archivist_ids,
-                                                  TimekeeperEventModel.datetime >= query_start_date,
-                                                  TimekeeperEventModel.datetime <= query_end_date)
+        query = db.session.query(TimekeeperEventModel)\
+            .join(UserModel, TimekeeperEventModel.user_id == UserModel.id)\
+            .filter(and_(UserModel.active == True, UserModel.roles.like("%ARCHIVIST%"),
+                         TimekeeperEventModel.datetime.between(query_start_date, query_end_date)))
+
         eng = query.session.bind
         if not eng:
             eng = db.engine
@@ -352,7 +355,7 @@ def all_timesheets():
         users_timesheet_dict = dict(list(timesheet_df.groupby('user_id')))
         for archivist_dict in archivists:
             user_timesheet_df = users_timesheet_dict.get(archivist_dict['id'])
-            if user_timesheet_df:
+            if type(user_timesheet_df) == type(pd.DataFrame()):
                 archivist_dict["raw_df"] = user_timesheet_df
 
                 # Create a list of dictionaries, where each dictionary is the aggregated data for that day
@@ -387,7 +390,7 @@ def all_timesheets():
 @login_required
 @utilities.roles_required(['ADMIN'])
 def choose_employee():
-    try: #TODO lazy try-except should be broken into two
+    try:
         form = TimeSheetAdminForm()
 
         # Get 'active' employee emails to use in dropdown choices
@@ -556,9 +559,6 @@ def archived_metrics_dashboard():
     flask.session[current_user.email]['temporary files'].append(plot_jpg_path)
 
     return flask.render_template('archiving_metrics.html', title='Archiving Metrics', plot_image=plot_jpg_url)
-
-
-
 
 
 
