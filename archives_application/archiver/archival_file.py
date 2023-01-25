@@ -354,10 +354,6 @@ class ArchivalFile:
 
     def archive_in_destination(self):
 
-        # if the file has already been archived return the destination path
-        if self.datetime_archived:
-            return self.get_destination_path()
-
         destination_path_list = utilities.split_path(self.get_destination_path())
         destination_dir_path = os.path.join(*destination_path_list[:-1])
 

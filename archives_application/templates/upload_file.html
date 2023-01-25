@@ -5,8 +5,10 @@
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Upload File</legend>
+                <h4>Instructions:</h4>
+                <p>Enter a project number and choose destination directory (filing code). Alternatively, enter a "Destination Path" which is a complete path (likely copied from Windows file explorer) to the location for the file to be archived; useful for archiving non-project files and archiving files within additional folder structure. However the file location is entered, all non-existing directories needed to complete the path to the location will be created.</p>
                 <div class="form-group">
-                    {{ form.project_number.label(class="form-control-label") }}
+                    <h6>{{ form.project_number.label(class="form-control-label") }}</h6>
                     {% if form.project_number.errors %}
                         {{ form.project_number(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -19,7 +21,7 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    {{ form.new_filename.label(class="form-control-label") }}
+                    <h6>{{ form.new_filename.label(class="form-control-label") }}</h6>
                     {% if form.new_filename.errors %}
                         {{ form.new_filename(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -32,7 +34,7 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    {{ form.document_date.label(class="form-control-label") }}
+                    <h6>{{ form.document_date.label(class="form-control-label") }}</h6>
                     {% if form.document_date.errors %}
                         {{ form.document_date(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -45,7 +47,7 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    {{ form.destination_directory.label(class="form-control-label") }}
+                    <h6>{{ form.destination_directory.label(class="form-control-label") }} (ie "Filing Code")</h6>
                     {% if form.destination_directory.errors %}
                         {{ form.destination_directory(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -57,8 +59,22 @@
                         {{ form.destination_directory(class="form-control form-control-lg") }}
                     {% endif %}
                 </div>
+                <h4>--OR--</h4>
                 <div class="form-group">
-                    {{ form.notes.label(class="form-control-label") }}
+                    <h6>{{ form.destination_path.label(class="form-control-label") }}</h6>
+                    {% if form.destination_path.errors %}
+                        {{ form.destination_path(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.destination_path.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.destination_path(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    <h6>{{ form.notes.label(class="form-control-label") }}</h6>
                     {% if form.notes.errors %}
                         {{ form.notes(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -71,7 +87,7 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    {{ form.upload.label(class="form-control-file") }}
+                    <h6>{{ form.upload.label(class="form-control-file") }}</h6>
                     {% if form.upload.errors %}
                         {{ form.upload(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">

@@ -12,7 +12,7 @@
                     {{ form.download_item(class="btn btn-outline-info") }}
             </div>
                 <h4>Instructions:</h4>
-                <p>Enter a project number and destination directory (filing code). Alternatively, enter a destination path. (Useful if the document is not for a project or doesn't have a filing code.)</p>
+                <p>Enter a project number and choose destination directory (filing code). Alternatively, enter a "Destination Path" which is a complete path (likely copied from Windows file explorer) to the location for the file to be archived; useful for archiving non-project files and archiving files within additional folder structure. However the file location is entered, all non-existing directories needed to complete the path to the location will be created.</p>
                 <p><a href="https://docs.google.com/document/d/1Xub4G7-STdRrQsmfLbzuJsgFqC9Zu42qeYVMNM87JXM/edit?usp=sharing">Large Format Archiving Documentation.</a></p>
                 <p><a href="https://docs.google.com/document/d/1Bu4T71ge-00dWURt_oQHZJZhrLer9Q_bJ-m4xdXcJtI/edit?usp=sharing">Small Format Archiving Documentation.</a></p>
                 <div class="form-group">
@@ -55,8 +55,7 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    <h6>{{ form.destination_directory.label(class="form-control-label") }}</h6>
-                    <p>(ie "Filing Code")</p>
+                    <h6>{{ form.destination_directory.label(class="form-control-label") }} (ie "Filing Code")</h6>
                     <a href="https://docs.google.com/document/d/1d_jiqWVc1ySuVxibfX-QCRPOzY6DB71GAZFrNqBisVo/edit?usp=sharing">Filing Code Documentation</a>
                     {% if form.destination_directory.errors %}
                         {{ form.destination_directory(class="form-control form-control-lg is-invalid") }}
@@ -69,6 +68,7 @@
                         {{ form.destination_directory(class="form-control form-control-lg") }}
                     {% endif %}
                 </div>
+                <h4>--OR--</h4>
                 <div class="form-group">
                     <h6>{{ form.destination_path.label(class="form-control-label") }}</h6>
                     {% if form.destination_path.errors %}

@@ -12,6 +12,7 @@ class UploadFileForm(FlaskForm):
     new_filename = StringField('New Filename')
     document_date = StringField('Document Date')
     destination_directory = SelectField('Destination Directory', validators=[DataRequired()])
+    destination_path = StringField('Destination Path')
     notes = StringField('Notes')
     upload = FileField('File Upload', validators=[FileRequired()])
     submit = SubmitField('Archive File')

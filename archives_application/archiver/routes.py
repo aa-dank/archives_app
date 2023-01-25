@@ -102,15 +102,31 @@ def upload_file():
     temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
     if form.validate_on_submit():
         try:
-            temp_path = os.path.join(temp_files_directory, form.upload.data.filename)
+            archival_filename = form.upload.data.filename
+            temp_path = os.path.join(temp_files_directory, archival_filename)
             form.upload.data.save(temp_path)
             upload_size = os.path.getsize(temp_path)
+            if form.new_filename.data:
+                archival_filename = utilities.cleanse_filename(form.new_filename.data)
             arch_file = ArchivalFile(current_path=temp_path, project=form.project_number.data,
-                                     new_filename=utilities.cleanse_filename(form.new_filename.data),
-                                     notes=form.notes.data, destination_dir=form.destination_directory.data,
+                                     new_filename=archival_filename, notes=form.notes.data,
+                                     destination_dir=form.destination_directory.data,
                                      directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
                                      archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'))
-            archiving_successful = arch_file.archive_in_destination()
+
+            # If a user enters a path to destination directory instead of File code and project number...
+            if form.destination_path.data:
+                destination_path_list = utilities.split_path(form.destination_path.data)
+                if len(destination_path_list) > 1:
+                    destination_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
+                                                    *destination_path_list[1:],
+                                                    archival_filename)
+                else:
+                    destination_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
+                                                    archival_filename)
+                arch_file.cached_destination_path = destination_path
+
+            archiving_successful, archiving_exception = arch_file.archive_in_destination()
 
             # if the file was successfully moved to its destination, we will save the data to the database
             if archiving_successful:
@@ -125,6 +141,11 @@ def upload_file():
                 db.session.commit()
                 flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
                 return flask.redirect(flask.url_for('archiver.upload_file'))
+
+            else:
+                raise Exception(
+                    f"Following error while trying to archive file, {form.new_filename.data}:\n{archiving_exception}")
+
         except Exception as e:
             return exception_handling_pattern(flash_message="Error occurred while trying to move the asset or record asset move info in database: ",
                                               thrown_exception=e, app_obj=flask.current_app)
@@ -227,6 +248,7 @@ def inbox_item():
     except Exception as e:
         exception_handling_pattern(flash_message="Issue setting up inbox item for archiving: ", thrown_exception=e,
                                    app_obj=flask.current_app)
+
     try:
         if form.validate_on_submit():
 
@@ -248,6 +270,19 @@ def inbox_item():
                                      archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'),
                                      directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
                                      destination_path=form.destination_path.data)
+
+            # If a user enters a path to destination directory instead of File code and project number...
+            if form.destination_path.data:
+                destination_path_list = utilities.split_path(form.destination_path.data)
+                if len(destination_path_list) > 1:
+                    destination_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
+                                                    *destination_path_list[1:],
+                                                    archival_filename)
+                else:
+                    destination_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
+                                                    archival_filename)
+                arch_file.cached_destination_path = destination_path
+
             archiving_successful, archiving_exception = arch_file.archive_in_destination()
             if archiving_successful:
                 try:
