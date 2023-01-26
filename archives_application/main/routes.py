@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import shutil
+import sys
 from flask_login import current_user
 from . import forms
 from .. utilities import roles_required
@@ -64,6 +65,11 @@ def backup_database():
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         db_backup_destination = db_backup_destination + f"/db_backup_{timestamp}.sql"
         db_backup_cmd = fr"""sudo pg_dump {db_url} > {db_backup_destination}"""
+
+        # If running on windows, remove sudo from command...
+        if sys.platform.lower() not in ['linux', 'linux2', 'darwin']:
+            db_backup_cmd = db_backup_cmd[5:]
+
         cmd_result = subprocess.run(db_backup_cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE, text=True)
 
