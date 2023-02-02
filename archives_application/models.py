@@ -41,6 +41,7 @@ class ArchivedFileModel(db.Model):
         # TODO does date_archived need to be changed to string
         return f"Archived File('{self.destination_path}', '{self.project_number}', '{self.file_size}')"
 
+
 class ServerChangeModel(db.Model):
     __tablename__ = 'server_changes'
     id = db.Column(db.Integer, primary_key=True)
@@ -55,6 +56,7 @@ class ServerChangeModel(db.Model):
     def __repr__(self):
         return f"Server Change('{self.change_type}', '{self.old_path}', '{self.new_path}')"
 
+
 class TimekeeperEventModel(db.Model):
     __tablename__ = 'timekeeper'
     id = db.Column(db.Integer, primary_key=True)
@@ -65,3 +67,40 @@ class TimekeeperEventModel(db.Model):
 
     def __repr__(self):
         return f"Timekeeper event: ('{self.change_type}', '{self.old_path}', '{self.new_path}')"
+
+
+class FileModel(db.Model):
+    __tablename__ = "files"
+    id = db.Column(db.Integer, primary_key=True)
+    hash = db.Column(db.String, unique=True, index=True, nullable=False)
+    size = db.Column(db.Integer, nullable=False)
+    extension = db.Column(db.String)
+
+    def __repr__(self):
+        return f"file: {self.id}, {self.hash}, {self.size}, {self.extension}"
+
+
+class ProjectModel(db.Model):
+    __tablename__ = "projects"
+    id = db.Column(db.Integer, primary_key=True)
+    number = db.Column(db.String, nullable=False)
+    name = db.Column(db.String, nullable=False)
+    file_server_location = db.Column(db.String)
+
+    def __repr__(self):
+        return f"project: {self.id}, {self.number}, {self.name}, {self.file_server_location}"
+
+
+class FileLocationModel(db.Model):
+
+    __tablename__ = "file_locations"
+    id = db.Column(db.Integer, primary_key=True)
+    file_id = db.Column(db.Integer, db.ForeignKey('files.id'), nullable=False)
+    file_server_directories = db.Column("file_server_directories", db.String)
+    filename = db.Column("filename", db.String)
+    existence_confirmed = db.Column("existence_confirmed", db.DateTime)
+    hash_confirmed = db.Column("hash_confirmed", db.DateTime)
+    project_id = db.Column("project_id", db.Integer, db.ForeignKey('projects.id'))
+
+    def __repr__(self):
+        return f"File Location: {self.id}, {self.file_id}, {self.file_server_directories}, {self.filename}, {self.existence_confirmed}, {self.hash_confirmed}, {self.project_id}"

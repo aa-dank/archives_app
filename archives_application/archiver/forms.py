@@ -8,14 +8,21 @@ from .. import utilities
 
 
 class UploadFileForm(FlaskForm):
-    project_number = StringField('Project Number', validators=[DataRequired()])
+    project_number = StringField('Project Number')
     new_filename = StringField('New Filename')
     document_date = StringField('Document Date')
-    destination_directory = SelectField('Destination Directory', validators=[DataRequired()])
+    destination_directory = SelectField('Destination Directory')
     destination_path = StringField('Destination Path')
     notes = StringField('Notes')
     upload = FileField('File Upload', validators=[FileRequired()])
     submit = SubmitField('Archive File')
+
+
+class ArchivedOrNotForm(FlaskForm):
+    project_number = StringField('Project Number')
+    search_path = StringField('Search Location Path')
+    upload = FileField('File Upload', validators=[FileRequired()])
+    submit = SubmitField('Submit')
 
 
 class InboxItemForm(FlaskForm):

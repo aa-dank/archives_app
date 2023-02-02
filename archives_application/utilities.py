@@ -1,9 +1,10 @@
 import fitz
+import flask
+import hashlib
 import subprocess
 import re
 import os
 import sys
-import flask
 from flask_login import current_user
 from functools import wraps
 from PIL import Image
@@ -144,7 +145,7 @@ def mounted_path_to_networked_path(mounted_path, network_location):
     def is_already_network_location(location, some_network_location):
         test_location = "".join(i for i in str(location) if i not in "\/:.")
         test_network_loc = "".join(i for i in str(some_network_location) if i not in "\/:.")
-        if test_location.startswith(test_network_loc):
+        if test_location.lower().startswith(test_network_loc.lower()):
             return True
         return False
 
@@ -189,7 +190,7 @@ def user_path_to_server_path(path_from_user, location_path_prefix):
         local_path = os.path.join(*local_path_list)
         return local_path
 
-    if not matches_network_url(path_from_user):
+    if matches_network_url(path_from_user):
         pass  # TODO what if the user uses network url
 
     local_path = mounted_path_to_networked_path(mounted_path=path_from_user, network_location=location_path_prefix)
@@ -253,3 +254,20 @@ def establish_location_path(location, sqlite_url=False):
         return location
 
     return location
+
+
+def get_hash(filepath, hash_algo=hashlib.sha1):
+    def chunk_reader(fobj, chunk_size=1024):
+        """ Generator that reads a file in chunks of bytes """
+        while True:
+            chunk = fobj.read(chunk_size)
+            if not chunk:
+                return
+            yield chunk
+
+    hashobj = hash_algo()
+    with open(filepath, "rb") as f:
+        for chunk in chunk_reader(f):
+            hashobj.update(chunk)
+
+    return hashobj.hexdigest()
