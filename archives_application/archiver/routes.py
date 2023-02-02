@@ -207,7 +207,14 @@ def inbox_item():
             item_path = os.path.join(inbox_path, general_inbox_files[0])
             shutil.move(item_path, os.path.join(user_inbox_path, general_inbox_files[0]))
 
-        arch_file_filename = user_inbox_files()[0]
+        inbox_files = user_inbox_files()
+        arch_file_filename = None
+        if inbox_files:
+            arch_file_filename = user_inbox_files()[0]
+        else:
+            flask.flash("File has disappeared.", 'info')
+            return flask.redirect(flask.url_for('main.home'))
+
         preview_image_url = get_no_preview_placeholder_url()
         temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
 

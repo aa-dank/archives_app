@@ -90,4 +90,3 @@ class ServerChangeForm(FlaskForm):
                                                               location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
             if not os.path.exists(network_path):
                 raise ValidationError(f"Asset doesn't exist to move: \n{asset_path.data}")
-
