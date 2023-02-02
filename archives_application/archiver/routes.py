@@ -7,6 +7,7 @@ from .server_edit import ServerEdit
 from .forms import *
 from flask_login import login_required, current_user
 from archives_application.models import *
+from archives_application import bcrypt
 from typing import Callable
 
 
@@ -487,11 +488,11 @@ def archived_or_not():
             flask.redirect(flask.url_for('archiver.archived_or_not'))
 
 
-
-
         except Exception as e:
             exception_handling_pattern(flash_message="Error looking for instances of file on Server.",
                                        thrown_exception=e,
                                        app_obj=flask.current_app)
 
     return flask.render_template('archived_or_not.html', title='Determine if File Already Archived', form=form)
+
+

@@ -71,16 +71,19 @@
                         <li class="list-group-item list-group-item-light"><a href={{url_for('timekeeper.timekeeper_event')}}>Timekeeper</a></li>
                         <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.server_change')}}>Make Server Changes</a></li>
                         <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.inbox_item')}}>Archiving Inbox</a></li>
-
                     {% endif %}
                     <li class="list-group-item list-group-item-light"><a href={{url_for('users.account')}}>Account Info</a></li>
-
+                    {% if 'ARCHIVIST' in current_user.roles or 'USER' in current_user.roles %}
+                        <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.upload_file')}}>Upload File</a></li>
+                        <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.server_change')}}>Make Server Changes</a></li>
+                        <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.archived_or_not')}}>Archived already?</a></li>
+                    {% endif %}
                 {% else %}
                     <li class="list-group-item list-group-item-light"><a href={{url_for('users.register')}}>Registration</a></li>
                     <li class="list-group-item list-group-item-light"><a href={{url_for('users.account')}}>Account Info</a></li>
-                    <li class="list-group-item list-group-item-light"><a href="https://docs.google.com/document/d/1yy3XgJllCiNdm8FGLWMLWUPVgEc9Ph-WgH7-CufENyk/edit?usp=sharing">Documentation</a></li>
-                    <li class="list-group-item list-group-item-light">...more coming soon.</li>
                 {% endif %}
+                <li class="list-group-item list-group-item-light"><a href="https://docs.google.com/document/d/1yy3XgJllCiNdm8FGLWMLWUPVgEc9Ph-WgH7-CufENyk/edit?usp=sharing">Documentation</a></li>
+                <li class="list-group-item list-group-item-light">...more coming soon.</li>
               </ul>
             </p>
           </div>
