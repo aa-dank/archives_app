@@ -137,6 +137,14 @@ def callback():
             flask.flash(f'User email not available or not verified by Google.', 'warning')
             return flask.redirect(flask.url_for('main.home'))
 
+        # Check if email is included in unsanctioned accounts...
+        #TODO add unsanctioned accounts to config?
+        unsanctioned_accounts = ["test@ucsc.edu", "archives@ucsc.edu", "constdoc@ucsc.edu"]
+        if users_email.lower() in unsanctioned_accounts:
+            message = f'Account {users_email} is unsanctioned for Google Authentication.  Sign in with application password or contact application admin.'
+            flask.flash(message, 'danger')
+            return flask.redirect(flask.url_for('main.home'))
+
         # Determine if the user is in the database. If not we add them to database
         user = UserModel.query.filter_by(email=users_email).first()
         if not user:
