@@ -326,7 +326,7 @@ def all_timesheets():
 
     try:
 
-        query_start_date = datetime.now() - timedelta(days = 90)
+        query_start_date = datetime.now() - timedelta(days = 14)
         query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
         query_end_date = datetime.now()
         query_end_date.replace(hour=23, minute=0, second=0, microsecond=0)
@@ -382,7 +382,7 @@ def all_timesheets():
         exception_handling_pattern(flash_message="Error creating individualized timesheet tables: ",
                                    thrown_exception=e, app_obj=flask.current_app)
 
-    return flask.render_template('timesheet_tables.html', title="Timesheets", form=form, archivist_info_list=archivist_dict)
+    return flask.render_template('timesheet_tables.html', title="Timesheets", form=form, archivist_info_list=archivists)
 
 
 

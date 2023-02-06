@@ -1,6 +1,10 @@
+import os
+
 import flask
 import random
+import re
 import shutil
+import sys
 from .. import utilities
 from .archival_file import ArchivalFile
 from .server_edit import ServerEdit
@@ -403,6 +407,9 @@ def archived_or_not():
 
     def number_of_new_files(dir_path: str, db_session: db.session, file_server_root_index: int):
         path_list = utilities.split_path(dir_path)
+        #TODO Remove this debug line
+        print(f"This is the dir path: {dir_path}", file=sys.stderr)
+        print(f"file_server_root_index: {file_server_root_index}", file=sys.stderr)
         file_server_dirs = os.path.join(*path_list[file_server_root_index:])
         files_in_db = db_session.query(FileLocationModel) \
             .filter(FileLocationModel.file_server_directories.startswith(file_server_dirs)).count()
@@ -420,6 +427,21 @@ def archived_or_not():
             return list(locations)
         return []
 
+    # define file_exclusion functions which take a filepath and assess whether it is a file that be considered
+    def exclude_extensions(f_path, ext_list=['DS_Store', '.ini']):
+        """
+        checks filepath to see if it using excluded extensions
+        """
+        filename = utilities.split_path(f_path)[-1]
+        return any([filename.endswith(ext) for ext in ext_list])
+
+    def exclude_filenames(f_path, excluded_names=['Thumbs.db', 'thumbs.db', 'desktop.ini']):
+        """
+        excludes files with certain names
+        """
+        filename = utilities.split_path(f_path)[-1]
+        return filename in excluded_names
+
     form = ArchivedOrNotForm()
     temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
     if form.validate_on_submit():
@@ -435,28 +457,20 @@ def archived_or_not():
                 flask.flash(f"Need to specify a search location.", 'warning')
                 flask.redirect(flask.url_for('archiver.archived_or_not'))
 
-            # define file_exclusion functions which take a filepath and assess whether it is a file that be considered
-            def exclude_extensions(f_path, ext_list=['DS_Store', '.ini']):
-                """
-                checks filepath to see if it using excluded extensions
-                """
-                filename = utilities.split_path(f_path)[-1]
-                return any([filename.endswith(ext) for ext in ext_list])
-
-            def exclude_filenames(f_path, excluded_names=['Thumbs.db', 'thumbs.db', 'desktop.ini']):
-                """
-                excludes files with certain names
-                """
-                filename = utilities.split_path(f_path)[-1]
-                return filename in excluded_names
-
-            file_server_root_directory_index = len(
-                utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
-            # TODO how to process entered location to one useful by application
-            # search_path_list = utilities.split_path(search_location)
-            # search_location = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), *search_path_list[1:])
+            # we need to know where the root directory that is common across all urls on file server would be.
+            # we will use the index of the root directory (with ##xx pattern subdirectories) in the path
+            # For linux paths that start with /, we need to remove that first part of the split path because '/' is not
+            # a directory
+            has_any_letters = lambda the_string: re.search('[a-zA-Z]', the_string)
+            file_server_root_dir_list = [d for d in
+                                         utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')) if
+                                         has_any_letters(d)]
+            file_server_root_directory_index = len(file_server_root_dir_list)
             search_location = utilities.user_path_to_server_path(path_from_user=search_location,
                                                                  location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
+            # TODO Remove this debug line
+            print(f"This is the search_location: {search_location}", file=sys.stderr)
+
             new_files = number_of_new_files(dir_path=search_location,
                                             db_session=db.session,
                                             file_server_root_index=file_server_root_directory_index)
@@ -470,7 +484,6 @@ def archived_or_not():
             if len(locations) > 5:
                 locations = locations[:4]
 
-
             make_full_path = lambda server_dirs, filename: os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
                                                               server_dirs, filename)
 
@@ -480,19 +493,19 @@ def archived_or_not():
                                        search_location)]
             locations_str = "\n".join(locations_in_search)
             if not locations_in_search:
-                locations_str = "None found."
+                locations_str = f"Nomatches found for {archival_filename}"
             else:
                 locations_str = "Locations found:\n" + locations_str
 
+            os.remove(temp_path)
             flask.flash(locations_str, 'message')
             flask.redirect(flask.url_for('archiver.archived_or_not'))
 
 
         except Exception as e:
+            os.remove(temp_path)
             exception_handling_pattern(flash_message="Error looking for instances of file on Server.",
                                        thrown_exception=e,
                                        app_obj=flask.current_app)
 
     return flask.render_template('archived_or_not.html', title='Determine if File Already Archived', form=form)
-
-
