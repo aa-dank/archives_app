@@ -112,6 +112,12 @@ def upload_file():
             temp_path = os.path.join(temp_files_directory, archival_filename)
             form.upload.data.save(temp_path)
             upload_size = os.path.getsize(temp_path)
+
+            # raise exception if there is not the requiored fields filled out in the submitted form.
+            if not ((form.project_number.data and form.destination_directory.data) or form.destination_path.data):
+                raise Exception(
+                    "Missing required fields -- either project_number and Destination_directory or destination_path")
+
             if form.new_filename.data:
                 archival_filename = utilities.cleanse_filename(form.new_filename.data)
             arch_file = ArchivalFile(current_path=temp_path, project=form.project_number.data,
@@ -153,8 +159,9 @@ def upload_file():
                     f"Following error while trying to archive file, {form.new_filename.data}:\n{archiving_exception}")
 
         except Exception as e:
-            return exception_handling_pattern(flash_message="Error occurred while trying to move the asset or record asset move info in database: ",
-                                              thrown_exception=e, app_obj=flask.current_app)
+            m = "Error occurred while trying to read form data, move the asset, or record asset info in database: "
+            return exception_handling_pattern(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
+
     return flask.render_template('upload_file.html', title='Upload File to Archive', form=form)
 
 
@@ -273,6 +280,12 @@ def inbox_item():
                 flask.session[current_user.email]['inbox_form_data'] = form.data
                 return flask.send_file(arch_file_path, as_attachment=not file_can_be_opened_in_browser)
 
+
+            # raise exception if there is not the requiored fields filled out in the submitted form.
+            if not ((form.project_number.data and form.destination_directory.data) or form.destination_path.data):
+                raise Exception(
+                    "Missing required fields -- either project_number and destination_directory or just a destination_path")
+
             upload_size = os.path.getsize(arch_file_path)
             archival_filename = arch_file_filename
             if form.new_filename.data:
@@ -313,6 +326,7 @@ def inbox_item():
                     if os.path.exists(arch_file_path):
                         os.remove(arch_file_path) #TODO having problems deleting old files
                     flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
+
                 except Exception as e:
                     # if the file wasn't deleted...
                     if os.path.exists(arch_file_path):
@@ -325,14 +339,14 @@ def inbox_item():
                 return flask.redirect(flask.url_for('archiver.inbox_item'))
             else:
                 message = f'Failed to archive file:{arch_file.current_path} Destination: {arch_file.get_destination_path()} Error:'
-                exception_handling_pattern(flash_message=message, thrown_exception=archiving_exception,
+                return exception_handling_pattern(flash_message=message, thrown_exception=archiving_exception,
                                            app_obj=flask.current_app)
 
         return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename,
                                      preview_image=preview_image_url)
 
     except Exception as e:
-        exception_handling_pattern(flash_message="Issue archiving document: ", thrown_exception=e,
+        return exception_handling_pattern(flash_message="Issue archiving document: ", thrown_exception=e,
                                    app_obj=flask.current_app)
 
 

@@ -42,19 +42,6 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    <h6>{{ form.document_date.label(class="form-control-label") }}</h6>
-                    {% if form.document_date.errors %}
-                        {{ form.document_date(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.document_date.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.document_date(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
-                <div class="form-group">
                     <h6>{{ form.destination_directory.label(class="form-control-label") }} (ie "Filing Code")</h6>
                     <a href="https://docs.google.com/document/d/1d_jiqWVc1ySuVxibfX-QCRPOzY6DB71GAZFrNqBisVo/edit?usp=sharing">Filing Code Documentation</a>
                     {% if form.destination_directory.errors %}

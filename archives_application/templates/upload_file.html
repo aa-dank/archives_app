@@ -34,19 +34,6 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    <h6>{{ form.document_date.label(class="form-control-label") }}</h6>
-                    {% if form.document_date.errors %}
-                        {{ form.document_date(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.document_date.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.document_date(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
-                <div class="form-group">
                     <h6>{{ form.destination_directory.label(class="form-control-label") }} (ie "Filing Code")</h6>
                     {% if form.destination_directory.errors %}
                         {{ form.destination_directory(class="form-control form-control-lg is-invalid") }}
