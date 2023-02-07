@@ -69,7 +69,7 @@ def daterange(start_date: datetime, end_date: datetime):
         yield start_date + timedelta(n)
 
 
-def hours_worked_in_day(day, user_id):
+def hours_worked_in_day(day: datetime.date, user_id: int):
 
     def clocked_out_everytime(event_type_col: pd.Series):
         """
@@ -104,7 +104,7 @@ def hours_worked_in_day(day, user_id):
     timesheet_df = pd.read_sql(query.statement, eng)
     timesheet_df.sort_values(by='datetime', inplace=True)
     if timesheet_df.shape[0] == 0:
-        clock_ins_have_clock_outs = True #
+        clock_ins_have_clock_outs = True
     else:
         clock_ins_have_clock_outs = clocked_out_everytime(timesheet_df["clock_in_event"])
 
@@ -134,7 +134,7 @@ def hours_worked_in_day(day, user_id):
     return hours_worked, clock_ins_have_clock_outs
 
 
-def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str:str):
+def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str: str):
     """
     Combines journalcolumn into a single str
     @param date:
@@ -312,6 +312,39 @@ def user_timesheet(employee_id):
 @login_required
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def all_timesheets():
+    """
+    Endpoint to display all timesheets for archivists.
+
+    Route: '/timekeeper/all'
+    Methods: GET, POST
+    Access: Only accessible to users with 'ADMIN' or 'ARCHIVIST' roles and requires login.
+
+    Form data:
+    * timesheet_begin: Start date of timesheet range to display
+    * timesheet_end: End date of timesheet range to display
+
+    Data retrieval:
+    1. Retrieves 'active' archivist emails from the UserModel database
+    2. Filters timekeeper events between the start and end dates for all active archivists
+    3. Creates a dataframe from the filtered timekeeper events
+    4. Aggregates data for each archivist for each day within the date range
+    5. Generates a table for each archivist with columns for date, hours worked, and journal
+
+    Data processing:
+    * Calculates hours worked and aggregates journal entries for each day in the date range
+    * Adds the calculated data to the archivist's data in a dictionary
+
+    Data return:
+    * Renders the 'timesheet_tables.html' template with the following data:
+    - form: the TimeSheetForm object
+    - title: "Timesheets"
+    - archivist_info_list: A list of dictionaries containing information for each archivist, including:
+    - email: email of the archivist
+    - id: id of the archivist
+    - timesheet_df: a dataframe with the timesheet data
+    - html_table: the timesheet data in HTML format
+    """
+
     form = TimeSheetForm()
     try:
         # Get 'active' employee emails to use in dropdown choices
@@ -325,11 +358,11 @@ def all_timesheets():
             thrown_exception=e, app_obj=flask.current_app)
 
     try:
-
+        # Create datetime objects for start and end dates. Includes end and start dates.
         query_start_date = datetime.now() - timedelta(days = 14)
-        query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        query_start_date = query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
         query_end_date = datetime.now()
-        query_end_date.replace(hour=23, minute=0, second=0, microsecond=0)
+        query_end_date = query_end_date.replace(hour=23, minute=0, second=0, microsecond=0)
         if form.validate_on_submit():
             user_start_date = form.timesheet_begin.data
             user_end_date = form.timesheet_end.data
@@ -364,14 +397,16 @@ def all_timesheets():
                     day_data = {"Date": range_date.strftime('%Y-%m-%d')}
 
                     # calculate hours and/or determine if entering them is incomplete
-                    hours, timesheet_complete = hours_worked_in_day(range_date, archivist_dict['id'])
+                    hours, timesheet_complete = hours_worked_in_day(day=range_date, user_id=archivist_dict['id'])
                     if not timesheet_complete:
                         day_data["Hours Worked"] = "TIME ENTRY INCOMPLETE"
                     else:
                         day_data["Hours Worked"] = str(hours)
 
                     # Mush all journal entries together into a single journal entry
-                    compiled_journal = compile_journal(range_date, timesheet_df, " \ ")
+                    compiled_journal = compile_journal(date=range_date,
+                                                       timecard_df=user_timesheet_df,
+                                                       delimiter_str=" \ ")
                     day_data["journal"] = compiled_journal
                     all_days_data.append(day_data)
 
