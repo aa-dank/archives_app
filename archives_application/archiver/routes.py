@@ -421,9 +421,6 @@ def archived_or_not():
 
     def number_of_new_files(dir_path: str, db_session: db.session, file_server_root_index: int):
         path_list = utilities.split_path(dir_path)
-        #TODO Remove this debug line
-        print(f"This is the dir path: {dir_path}", file=sys.stderr)
-        print(f"file_server_root_index: {file_server_root_index}", file=sys.stderr)
         file_server_dirs = os.path.join(*path_list[file_server_root_index:])
         files_in_db = db_session.query(FileLocationModel) \
             .filter(FileLocationModel.file_server_directories.startswith(file_server_dirs)).count()
@@ -480,10 +477,8 @@ def archived_or_not():
                                          utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')) if
                                          has_any_letters(d)]
             file_server_root_directory_index = len(file_server_root_dir_list)
-            search_location = utilities.user_path_to_server_path(path_from_user=search_location,
-                                                                 location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
-            # TODO Remove this debug line
-            print(f"This is the search_location: {search_location}", file=sys.stderr)
+            search_location = utilities.user_path_to_app_path(path_from_user=search_location,
+                                                              location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
 
             new_files = number_of_new_files(dir_path=search_location,
                                             db_session=db.session,

@@ -18,12 +18,19 @@ class ServerEdit:
         self.change_type = change_type
         self.new_path = None
         if new_path:
-            self.new_path = utilities.user_path_to_server_path(path_from_user=new_path,
-                                                               location_path_prefix=server_location)
+            self.new_path = utilities.user_path_to_app_path(path_from_user=new_path,
+                                                            location_path_prefix=server_location)
+
         self.old_path = None
         if old_path:
-            self.old_path = utilities.user_path_to_server_path(path_from_user=old_path,
-                                                               location_path_prefix=server_location)
+            self.old_path = utilities.user_path_to_app_path(path_from_user=old_path,
+                                                            location_path_prefix=server_location)
+            if not os.path.exists(self.old_path):
+                e_message = f"Path to asset does not exists: {self.new_path}\nEntered path: {old_path}"
+                raise Exception(e_message)
+
+            if self.old_path == server_location:
+                raise Exception("Server root directory chosen")
         self.user = user
         self.change_executed = False
         self.data_effected = 0
@@ -120,4 +127,5 @@ class ServerEdit:
             return self.change_executed
 
         return self.change_executed
+
 

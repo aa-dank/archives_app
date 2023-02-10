@@ -1,3 +1,5 @@
+import datetime
+
 import fitz
 import flask
 import hashlib
@@ -8,7 +10,7 @@ import sys
 from flask_login import current_user
 from functools import wraps
 from PIL import Image
-from pathlib import Path
+from pathlib import Path, PureWindowsPath, PurePosixPath
 
 
 
@@ -111,7 +113,6 @@ def open_file_with_system_application(filepath):
 
 
 
-
 def clean_path(path: str):
     """
     Process a path string such that it can be used regardless of the os and regardless of whether its length
@@ -162,10 +163,11 @@ def mounted_path_to_networked_path(mounted_path, network_location):
     return new_network_path
 
 
-def user_path_to_server_path(path_from_user, location_path_prefix):
+def user_path_to_app_path(path_from_user, location_path_prefix):
     '''
-    Converts the location entered by the user to a path that can be used by the application server.
-    Possible user paths could be network paths and
+    Converts the location entered by the user to a local_path that can be used by the application server.
+    Attempts to handle network paths and mounted windows paths from user.
+    Attempts to handle server location_path_prefix that are either network paths or linux mount paths.
     @param path_from_user: path of asset from the user
     @param location_path_prefix: Base location where the path_from_user can be found.
     @return:
@@ -174,17 +176,25 @@ def user_path_to_server_path(path_from_user, location_path_prefix):
     # regex pattern for a domain url. eg matches ppcou.ucsc.edu
     regex_domain_url = r"([\w]{1,}[.]{1}[\w]{1,}[.]{1}[\w]{1,})"
 
-    # add more regex strings to this list to make this match more url patterns
-    network_url_patterns = [regex_domain_url]
+    # uses regex url patterns to identify url paths
+    network_url_patterns = [regex_domain_url]  #TODO add more regex strings to this list to make this match more url patterns
     matches_network_url = lambda possible_url: any(
         [bool(re.search(regx, possible_url)) for regx in network_url_patterns])
 
+    # If we are not using a network url then the location prefix isthe mount location on either a windows or
+    # linux machine.
     if not matches_network_url(location_path_prefix):
 
-        if not matches_network_url(path_from_user):
-            pass #TODO what if the user uses network url
+        if matches_network_url(path_from_user):
+            # mapping a network url entered by the user to the linux mount location equivalent is a difficult problem.
+            # Probably requires looking at how the server is mounted using linux 'mount' command
+            raise Exception("Application limitation -- Unable to map from a network url location to a mounted location.")
 
-        user_path_list = split_path(path_from_user)
+
+
+        path_from_user = PureWindowsPath(path_from_user)
+        user_path_list = list(path_from_user.parts)
+
         server_mount_path_list = split_path(location_path_prefix)
         local_path_list = server_mount_path_list + user_path_list[1:]
         local_path = os.path.join(*local_path_list)
@@ -218,7 +228,7 @@ def pdf_preview_image(pdf_path, image_destination, max_width=1080):
     output_path = os.path.join(image_destination, preview_filename) #TODO avoid filename of existing file
 
     # use pymupdf to get pdf data for pillow Image object
-    fitz_doc = fitz.open(pdf_path) #TODO do I need to close this?
+    fitz_doc = fitz.open(pdf_path)
     page_pix_map = fitz_doc.load_page(0).get_pixmap()
     page_img = Image.frombytes("RGB", [page_pix_map.width, page_pix_map.height], page_pix_map.samples)
 
@@ -271,3 +281,8 @@ def get_hash(filepath, hash_algo=hashlib.sha1):
             hashobj.update(chunk)
 
     return hashobj.hexdigest()
+
+
+def debug_printing(to_print):
+    dt_stamp = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+    print(dt_stamp + "\n" + str(to_print), file=sys.stderr)
