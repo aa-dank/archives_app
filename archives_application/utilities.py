@@ -150,16 +150,13 @@ def mounted_path_to_networked_path(mounted_path, network_location):
             return True
         return False
 
-    if is_already_network_location(location=mounted_path, some_network_location=network_location):
-        if not mounted_path.startswith(r"//"):
-            mounted_path = "//" + mounted_path
-        return mounted_path
-
     mounted_path = Path(mounted_path)
     new_path_list = [network_location] + list(mounted_path.parts[1:])
     new_network_path = os.path.join(*new_path_list)
-    if not new_network_path.startswith(r"//") and not new_network_path.startswith(r"\\"):
-        new_network_path = "//" + new_network_path
+    if not new_network_path.startswith(r"\\"):
+        if new_network_path.startswith("/"):
+            new_network_path = new_network_path.lstrip("/" + "\\")
+        new_network_path = "\\\\" + new_network_path
     return new_network_path
 
 
@@ -190,21 +187,21 @@ def user_path_to_app_path(path_from_user, location_path_prefix):
             # Probably requires looking at how the server is mounted using linux 'mount' command
             raise Exception("Application limitation -- Unable to map from a network url location to a mounted location.")
 
-
-
         path_from_user = PureWindowsPath(path_from_user)
         user_path_list = list(path_from_user.parts)
 
         server_mount_path_list = split_path(location_path_prefix)
         local_path_list = server_mount_path_list + user_path_list[1:]
-        local_path = os.path.join(*local_path_list)
-        return local_path
+        app_path = os.path.join(*local_path_list)
+        return app_path
 
+    # following is for Windows machine. ie location_path_prefix is a local network url
     if matches_network_url(path_from_user):
-        pass  # TODO what if the user uses network url
+        app_path = "\\\\" + path_from_user.lstrip("/" + "\\")
+    if not matches_network_url(path_from_user):
+        app_path = mounted_path_to_networked_path(mounted_path=path_from_user, network_location=location_path_prefix)
 
-    local_path = mounted_path_to_networked_path(mounted_path=path_from_user, network_location=location_path_prefix)
-    return local_path
+    return app_path
 
 
 def cleanse_filename(proposed_filename: str):

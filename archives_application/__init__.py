@@ -1,6 +1,6 @@
 import os
 import flask
-import logging # example usage: https://github.com/tenable/flask-logging-demo
+import logging
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
@@ -21,9 +21,11 @@ config_json = get_test_config_path()
 #config_json = r'deploy_app_config.json'
 
 
-def create_app(config_class=json_to_config_factory(google_creds_path=google_creds_json, config_json_path=config_json)):
+def create_app(config_class=json_to_config_factory(google_creds_path=google_creds_json,
+                                                   config_json_path=config_json)):
 
     # logging format
+    # example usage: https://github.com/tenable/flask-logging-demo
     defaultFormatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
 
     # start app
@@ -42,13 +44,15 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
     for handler in app.logger.handlers:
         handler.setFormatter(defaultFormatter)
 
+    # config app from config class
     app.config.from_object(config_class)
+
     db.init_app(app)
     bcrypt.init_app(app)
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.1.7'
+    app.config['VERSION'] = '1.1.8'
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add blueprints

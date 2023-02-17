@@ -101,7 +101,7 @@ def assemble_location(location, sqlite_url=False):
 
     return location
 
-def assemble_postgresql_url(host, db_name, username, password="", port="", dialect=""):
+def assemble_postgresql_url(host, db_name, username, password="", port="", dialect="", ssl=False):
     '''
     Assembles a postgresql url from the component parameters.
     @param host: Host location
@@ -122,6 +122,9 @@ def assemble_postgresql_url(host, db_name, username, password="", port="", diale
         dialect = "+" + dialect
 
     uri = f"postgresql{dialect}://{username}{password}@{host}{port}/{db_name}"
+    if ssl:
+        uri = uri + "?sslmode=require"
+
     return uri
 
 def json_to_config_factory(google_creds_path: str, config_json_path: str):
@@ -152,7 +155,8 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
                                                                          db_name=config_dict["POSTGRESQL_DATABASE"],
                                                                          username=config_dict["POSTGRESQL_USERNAME"],
                                                                          password=config_dict["POSTGRESQL_PASSWORD"],
-                                                                         port=config_dict["POSTGRESQL_PORT"])
+                                                                         port=config_dict["POSTGRESQL_PORT"],
+                                                                         ssl=True)
 
     else:
 

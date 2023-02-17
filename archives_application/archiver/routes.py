@@ -50,8 +50,13 @@ def server_change():
         :return: None
         """
         editor = UserModel.query.filter_by(email=executed_edit.user).first()
-        change_model = ServerChangeModel(old_path=executed_edit.old_path, new_path=executed_edit.new_path,
-                                         change_type=executed_edit.change_type, user_id=editor.id)
+        change_model = ServerChangeModel(old_path=executed_edit.old_path,
+                                         new_path=executed_edit.new_path,
+                                         change_type=executed_edit.change_type,
+                                         files_effected=executed_edit.files_effected,
+                                         data_effected=executed_edit.data_effected,
+                                         user_id=editor.id
+                                         )
         db.session.add(change_model)
         db.session.commit()
 
@@ -61,34 +66,43 @@ def server_change():
             user_email = current_user.email
             archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
 
+            # retrieve limits to how much can be changed on the server, but if the user has admin credentials,
+            # there are no limits and they are set to zero
+            files_limit = flask.current_app.config.get('SERVER_CHANGE_FILES_LIMIT')
+            data_limit = flask.current_app.config.get('SERVER_CHANGE_DATA_LIMIT')
+            if 'ADMIN' in current_user.roles:
+                files_limit, data_limit = 0, 0
+
+            new_path = None
+            old_path = None
+            edit_type = None
+
             # if the user entered a path to delete
             if form.path_delete.data:
-                deletion = ServerEdit(server_location=archives_location, change_type='DELETE', user=user_email,
-                                      old_path=form.path_delete.data)
-                deletion.execute()
-                save_server_change(deletion)
+                old_path = form.path_delete.data
+                edit_type = 'DELETE'
 
             # if the user entered a path to change and the desired path change
             if form.current_path.data and form.new_path.data:
-                renaming = ServerEdit(server_location=archives_location, change_type='RENAME', user=user_email,
-                                      old_path=form.current_path.data,
-                                      new_path=form.new_path.data)
-                renaming.execute()
-                save_server_change(renaming)
+                old_path = form.current_path.data
+                new_path = form.new_path.data
+                edit_type = 'RENAME'
 
             # if the user entered a path to an asset to move and a location to move it to
             if form.asset_path.data and form.destination_path.data:
-                move = ServerEdit(server_location=archives_location, change_type='MOVE', user=user_email,
-                                  old_path=form.asset_path.data,
-                                  new_path=form.destination_path.data)
-                move.execute()
-                save_server_change(move)
+                old_path = form.asset_path.data
+                new_path = form.destination_path.data
+                edit_type = 'MOVE'
 
             # if user entered a path for a new directory to be made
             if form.new_directory.data:
-                creation = ServerEdit(server_location=archives_location, change_type='CREATE', user=user_email, new_path=form.new_directory.data)
-                creation.execute()
-                save_server_change(creation)
+                new_path = form.new_directory.data
+                edit_type = 'CREATE'
+
+            creation = ServerEdit(server_location=archives_location, change_type=edit_type, user=user_email,
+                                  new_path=new_path, old_path=old_path)
+            creation.execute(files_limit=files_limit, effected_data_limit=data_limit)
+            save_server_change(creation)
 
             flask.flash(f'Requested change executed and recorded.', 'success')
             return flask.redirect(flask.url_for('archiver.server_change'))

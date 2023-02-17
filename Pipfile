@@ -21,6 +21,7 @@ pandas = "*"
 psycopg2 = "*"
 matplotlib = "*"
 seaborn = "*"
+celery = "*"
 
 [dev-packages]
 

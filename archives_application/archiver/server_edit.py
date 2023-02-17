@@ -36,13 +36,42 @@ class ServerEdit:
         self.data_effected = 0
         self.files_effected = 0
 
-    def execute(self):
+    def execute(self, files_limit = 500, effected_data_limit=500000000):
+        """
+        This function executes the server change that was specified during the creation of the ServerEdit object. The change can be of the following types:
+
+        DELETE: deletes a file or directory at the specified old path.
+        RENAME: renames a file or directory at the specified old path to the specified new path.
+        MOVE: moves a file or directory at the specified old path to the specified new path.
+        CREATE: creates a new file or directory at the specified new path.
+        The function takes two optional parameters, files_limit and effected_data_limit, which sets limits for the number of files and the amount of data affected by the change, respectively. If either of these limits is breached during the execution of the change, an exception is raised.
+
+        The function returns True if the change is successfully executed, False otherwise.
+
+        :param files_limit: Maximum number of files that can be affected by the change (default is 500).
+        :type files_limit: int
+        :param effected_data_limit: Maximum amount of data that can be affected by the change (default is 50,000,000).
+        :type effected_data_limit: int
+        :return: True if the change is successfully executed, False otherwise.
+        :rtype: bool
+        """
+
+        def check_against_limits():
+            if self.data_effected and self.data_effected > effected_data_limit:
+                raise Exception(
+                    f"ServerEdit data limit breached. Too much data effected by change type '{self.change_type}'.\nOld path: {self.old_path}\nNew path: {self.new_path}")
+
+            if self.files_effected and self.files_effected > files_limit:
+                raise Exception(
+                    f"ServerEdit file limit breached. Too many files effected by change type '{self.change_type}.'\nOld path: {self.old_path}\nNew path: {self.new_path}")
+
 
         def get_quantity_effected(dir_path):
             for root, _, files in os.walk(dir_path):
                 for file in files:
                     self.files_effected += 1
                     self.data_effected += os.path.getsize(os.path.join(root, file))
+
 
         # If the change type is 'DELETE'
         if self.change_type.upper() == self.change_type_possibilities[0]:
@@ -56,6 +85,10 @@ class ServerEdit:
             # if the deleted asset is a dir we need to add up all the files and their sizes before removing
             get_quantity_effected(self.old_path)
 
+            # make sure change is not in excess of limits set
+            check_against_limits()
+
+            # remove directory and contents
             shutil.rmtree(self.old_path)
             self.change_executed = True
             return self.change_executed
@@ -73,12 +106,14 @@ class ServerEdit:
             # if this a change of a filepath, we need to cleanse the filename
             if os.path.isfile(old_path):
                 self.files_effected = 1
-                self.data_effected = os.path.getsize(old_path)
+                self.data_effected = os.path.getsize(old_path) #bytes
                 new_path_list[-1] = utilities.cleanse_filename(new_path_list[-1])
 
             else:
                 get_quantity_effected(self.old_path)
 
+            # make sure change is not in excess of limits set
+            check_against_limits()
             while True:
                 if old_path == self.new_path:
                     break
@@ -112,6 +147,10 @@ class ServerEdit:
             else:
                 get_quantity_effected(self.old_path)
 
+            # make sure change is not in excess of limits set
+            check_against_limits()
+
+            # move directory and contents
             shutil.move(self.old_path, destination_path, copy_function=shutil.copytree)
             self.change_executed = True
             return self.change_executed

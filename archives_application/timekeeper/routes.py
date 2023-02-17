@@ -140,6 +140,7 @@ def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str: st
     @param date:
     @param timecard_df:
     @param delimiter_str:
+    @param delimiter_str:
     @return:
     """
     strftime_dt = lambda dt: dt.strftime("%Y-%m-%d")
