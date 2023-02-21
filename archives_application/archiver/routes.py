@@ -1,6 +1,6 @@
 import os
-
 import flask
+import flask_sqlalchemy
 import random
 import re
 import shutil
@@ -30,6 +30,19 @@ def exception_handling_pattern(flash_message, thrown_exception, app_obj):
     flask.flash(flash_message, 'error')
     app_obj.logger.error(thrown_exception, exc_info=True)
     return flask.redirect(flask.url_for('main.home'))
+
+
+def get_db_conn(query_obj: flask_sqlalchemy.query.Query):
+    """
+    Persistent issue to get a good engine or connection to pass queries against.
+    https://levelup.gitconnected.com/how-to-fix-attributeerror-optionengine-object-has-no-attribute-execute-in-pandas-eb635fbb89e4
+    @param query_obj:
+    @return:
+    """
+    eng = query_obj.session.bind
+    if not eng:
+        eng = db.engine
+    return eng.connect()
 
 
 def get_user_handle():

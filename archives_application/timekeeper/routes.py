@@ -1,4 +1,5 @@
 import flask
+import flask_sqlalchemy
 import os
 import sys
 import pandas as pd
@@ -33,6 +34,19 @@ def exception_handling_pattern(flash_message, thrown_exception, app_obj):
     flask.flash(flash_message, 'error')
     app_obj.logger.error(thrown_exception, exc_info=True)
     return flask.redirect(flask.url_for('main.home'))
+
+
+def get_db_conn(query_obj: flask_sqlalchemy.query.Query):
+    """
+    Persistent issue to get a good engine or connection to pass queries against.
+    https://levelup.gitconnected.com/how-to-fix-attributeerror-optionengine-object-has-no-attribute-execute-in-pandas-eb635fbb89e4
+    @param query_obj:
+    @return:
+    """
+    eng = query_obj.session.bind
+    if not eng:
+        eng = db.engine
+    return eng.connect()
 
 
 def pop_dialect_from_sqlite_uri(sql_uri:str):
@@ -98,10 +112,8 @@ def hours_worked_in_day(day: datetime.date, user_id: int):
     query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == user_id,
                                               TimekeeperEventModel.datetime >= day.strftime("%Y-%m-%d"),
                                               TimekeeperEventModel.datetime < days_end.strftime("%Y-%m-%d"))
-    eng = query.session.bind
-    if not eng:
-        eng = db.engine
-    timesheet_df = pd.read_sql(query.statement, eng)
+    db_conn = get_db_conn(query_obj=query)
+    timesheet_df = pd.read_sql(query.statement, con=db_conn)
     timesheet_df.sort_values(by='datetime', inplace=True)
     if timesheet_df.shape[0] == 0:
         clock_ins_have_clock_outs = True
@@ -174,12 +186,9 @@ def timekeeper_event():
         todays_events_query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == user_id,
                                                                 TimekeeperEventModel.datetime > start_of_today)
 
-        # sometimes the bind was none, so this hopefully resolves this.
-        eng = todays_events_query.session.bind
-        if not eng:
-            eng = db.engine
-
-        todays_events_df = pd.read_sql(todays_events_query.statement, eng)
+        #
+        db_conn = get_db_conn(todays_events_query)
+        todays_events_df = pd.read_sql(todays_events_query.statement, con=db_conn)
 
         # if there are no records for the user, they are not clocked in
         if todays_events_df.shape[0] == 0:
@@ -268,11 +277,9 @@ def user_timesheet(employee_id):
         query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == employee_id,
                                                   TimekeeperEventModel.datetime >= query_start_date,
                                                   TimekeeperEventModel.datetime <= query_end_date)
-        eng = query.session.bind
-        if not eng:
-            eng = db.engine
 
-        timesheet_df = pd.read_sql(query.statement, eng)
+        db_conn = get_db_conn(query_obj=query)
+        timesheet_df = pd.read_sql(query.statement, con=db_conn)
     except Exception as e:
         exception_handling_pattern(flash_message="Error getting user timekeeper events from database: ",
                                    thrown_exception=e, app_obj=flask.current_app)
@@ -358,6 +365,7 @@ def all_timesheets():
             flash_message="Error retrieving active archivists from database:",
             thrown_exception=e, app_obj=flask.current_app)
 
+    timesheet_df = pd.DataFrame()
     try:
         # Create datetime objects for start and end dates. Includes end and start dates.
         query_start_date = datetime.now() - timedelta(days = 14)
@@ -375,11 +383,8 @@ def all_timesheets():
             .filter(and_(UserModel.active == True, UserModel.roles.like("%ARCHIVIST%"),
                          TimekeeperEventModel.datetime.between(query_start_date, query_end_date)))
 
-        eng = query.session.bind
-        if not eng:
-            eng = db.engine
-
-        timesheet_df = pd.read_sql(query.statement, eng)
+        db_conn = get_db_conn(query_obj=query)
+        timesheet_df = pd.read_sql(query.statement, con=db_conn)
 
     except Exception as e:
         exception_handling_pattern(flash_message="Error creating dataframe for all archivists: ",
@@ -479,10 +484,8 @@ def archived_metrics_dashboard():
         end_date_str = end_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT'))
         query = ArchivedFileModel.query.filter(ArchivedFileModel.date_archived.between(start_date_str, end_date_str))
 
-        eng = query.session.bind
-        if not eng:
-            eng = db.engine
-        df = pd.read_sql(query.statement, eng)
+        db_conn = get_db_conn(query_obj=query)
+        df = pd.read_sql(query.statement, con=db_conn)
 
         #replace datetime timestamp with just the date
         get_date = lambda dt: dt.date()
