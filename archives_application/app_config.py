@@ -1,5 +1,7 @@
+import flask
 import json
 import os
+from celery import Celery, Task
 
 DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 'C - Consultants',
                      'D - Environmental Review Process', 'E - Program and Design',
@@ -100,6 +102,29 @@ def assemble_location(location, sqlite_url=False):
         return location
 
     return location
+
+
+def celery_init_app(app: flask.Flask) -> Celery:
+    """
+    Initializes and configures a Celery app for use within a Flask app.
+
+    This function sets up a Celery app that can be used to execute background tasks within a Flask app. It defines a
+    custom task class called `FlaskTask` that ensures that tasks executed by Celery have access to the Flask app's
+    context. The Celery app is then configured using the `config_from_object` method, which loads the Celery app's
+    configuration from the `CELERY` key in the Flask app's configuration. Finally, the Celery app is added to the Flask
+    app's extensions with the key `celery`.
+    """
+    class FlaskTask(Task):
+        def __call__(self, *args: object, **kwargs: object) -> object:
+            with app.app_context():
+                return self.run(*args, **kwargs)
+
+    celery_app = Celery(app.name, task_cls=FlaskTask)
+    celery_app.config_from_object(app.config, namespace="CELERY")
+    celery_app.set_default()
+    app.extensions["celery"] = celery_app
+    return celery_app
+
 
 def assemble_postgresql_url(host, db_name, username, password="", port="", dialect="", ssl=""):
     '''

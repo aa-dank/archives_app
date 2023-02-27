@@ -529,7 +529,7 @@ def archived_or_not():
                                        search_location)]
             locations_str = "\n".join(locations_in_search)
             if not locations_in_search:
-                locations_str = f"Nomatches found for {archival_filename}"
+                locations_str = f"No matches found for {archival_filename}"
             else:
                 locations_str = "Locations found:\n" + locations_str
 

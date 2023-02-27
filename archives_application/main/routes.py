@@ -4,6 +4,8 @@ import os
 import subprocess
 import shutil
 import sys
+from celery import shared_task
+from celery.result import AsyncResult
 from flask_login import current_user
 from . import forms
 from .. utilities import roles_required
@@ -11,7 +13,7 @@ from archives_application import db, bcrypt
 from archives_application.models import *
 
 main = flask.Blueprint('main', __name__)
-
+#celery = flask.current_app.extensions['celery'] #TODO
 
 def exception_handling_pattern(flash_message, thrown_exception, app_obj):
     """
@@ -175,8 +177,8 @@ def change_config_settings():
         dynamic_form_class = forms.form_factory(fields_dict=config_dict, form_class_name="ConfigChange")
         form = dynamic_form_class()
     except Exception as e:
-        return exception_handling_pattern(flash_message='An error occurred opening the config file and creating a form from it:',
-                                   thrown_exception=e, app_obj=flask.current_app)
+        m = 'An error occurred opening the config file and creating a form from it:'
+        return exception_handling_pattern(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
 
     if form.validate_on_submit():
         try:
@@ -219,6 +221,25 @@ def test_logging():
     flask.flash("A series of test logging events have been logged.", 'info')
     return flask.redirect(flask.url_for('main.home'))
 
+
 @main.route("/test/database_uri")
 def get_db_uri():
     return flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
+
+@main.route("/test/celery", methods=['GET', 'POST'])
+def test_celery():
+    result = test_task.delay(3, 4)
+    return {"result_id": result.id}
+
+@main.route("/test/result/<id>")
+def test_task_results(id: str):
+    result = AsyncResult(id)
+    return {
+        "ready": result.ready(),
+        "successful": result.successful(),
+        "value": result.result if result.ready() else None,
+    }
+
+@shared_task(ignore_result=False)
+def test_task(a: int, b: int) -> int:
+    return a + b

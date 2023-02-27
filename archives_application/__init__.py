@@ -1,10 +1,10 @@
 import os
 import flask
 import logging
+import archives_application.app_config as app_config
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
-from archives_application.app_config import json_to_config_factory, get_test_config_path
 from oauthlib.oauth2 import WebApplicationClient
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -17,11 +17,11 @@ login_manager.login_message_category = 'info'
 google_creds_json = r'google_client_secret.json'
 
 # use pound to choose between config json files
-config_json = get_test_config_path()
+config_json = app_config.get_test_config_path()
 #config_json = r'deploy_app_config.json'
 
 
-def create_app(config_class=json_to_config_factory(google_creds_path=google_creds_json,
+def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,
                                                    config_json_path=config_json)):
 
     # logging format
@@ -46,6 +46,9 @@ def create_app(config_class=json_to_config_factory(google_creds_path=google_cred
 
     # config app from config class
     app.config.from_object(config_class)
+
+    #create Celery
+    celery = app_config.celery_init_app(app)
 
     db.init_app(app)
     bcrypt.init_app(app)
