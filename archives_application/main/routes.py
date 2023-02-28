@@ -4,16 +4,16 @@ import os
 import subprocess
 import shutil
 import sys
-from celery import shared_task
 from celery.result import AsyncResult
 from flask_login import current_user
-from . import forms
+from . import forms, tasks
 from .. utilities import roles_required
 from archives_application import db, bcrypt
 from archives_application.models import *
 
+
 main = flask.Blueprint('main', __name__)
-#celery = flask.current_app.extensions['celery'] #TODO
+
 
 def exception_handling_pattern(flash_message, thrown_exception, app_obj):
     """
@@ -29,6 +29,64 @@ def exception_handling_pattern(flash_message, thrown_exception, app_obj):
     return flask.redirect(flask.url_for('main.home'))
 
 
+def make_postgresql_backup():
+
+    """
+    Subroutine for sending pg_dump command to shell
+    Resources:
+    https://stackoverflow.com/questions/63299534/backup-postgres-from-python-on-win10
+    https://stackoverflow.com/questions/43380273/pg-dump-pg-restore-password-using-python-module-subprocess
+    https://medium.com/poka-techblog/5-different-ways-to-backup-your-postgresql-database-using-python-3f06cea4f51
+
+    An example of desired command:
+    pg_dump postgresql://archives:password@localhost:5432/archives > /opt/app/data/Archive_Data/backup101.sql
+    """
+    db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
+    db_backup_destination = flask.current_app.config.get("DATABASE_BACKUP_LOCATION")
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    db_backup_destination = db_backup_destination + f"/db_backup_{timestamp}.sql"
+    db_backup_cmd = fr"""sudo pg_dump {db_url} > {db_backup_destination}"""
+
+    # If running on windows, remove sudo from command...
+    if sys.platform.lower() not in ['linux', 'linux2', 'darwin']:
+        db_backup_cmd = db_backup_cmd[5:]
+
+    cmd_result = subprocess.run(db_backup_cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True)
+
+    # if passing the pg_dump command to the shell failed...
+    if cmd_result.stderr:
+        raise Exception(
+            f"Backup command failed: Stderr from attempt to call pg_dump back-up command:\n{cmd_result.stderr}")
+
+    return cmd_result.stdout, cmd_result.stderr
+
+
+def make_sqlite_backup():
+    def clean_url(u: str):
+        """
+        Turns the sqlite url into a path for shutil.copy
+        @param u: sqlite url
+        @return:  sqlite path
+        """
+        u = u[7:]
+        for idx, c in enumerate(u):
+            if c not in [r"\\",r"/"]:
+                u = u[idx:]
+        return u
+
+    db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
+    db_backup_destination = flask.current_app.config.get("DATABASE_BACKUP_LOCATION")
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    db_backup_destination = os.path.join(db_backup_destination, f"db_backup_{timestamp}.sql")
+    db_url = clean_url(db_url)
+    if not os.path.exists(db_url):
+        raise Exception("Cannot use sqlite db location to create a backup; os.path.exists failed. ")
+
+    try:
+        shutil.copyfile(db_url, db_backup_destination)
+    except Exception as e:
+        raise Exception(f"Shutil.copyfile failed to copy the database and threw this error:\n{e}")
 
 @main.route("/")
 @main.route("/home")
@@ -49,64 +107,6 @@ def backup_database():
     or one can pass credentials to it in the request which is useful for a scheduled process
     @return:
     """
-
-    def make_postgresql_backup():
-
-        """
-        Subroutine for sending pg_dump command to shell
-        Resources:
-        https://stackoverflow.com/questions/63299534/backup-postgres-from-python-on-win10
-        https://stackoverflow.com/questions/43380273/pg-dump-pg-restore-password-using-python-module-subprocess
-        https://medium.com/poka-techblog/5-different-ways-to-backup-your-postgresql-database-using-python-3f06cea4f51
-
-        An example of desired command:
-        pg_dump postgresql://archives:password@localhost:5432/archives > /opt/app/data/Archive_Data/backup101.sql
-        """
-        db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
-        db_backup_destination = flask.current_app.config.get("DATABASE_BACKUP_LOCATION")
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        db_backup_destination = db_backup_destination + f"/db_backup_{timestamp}.sql"
-        db_backup_cmd = fr"""sudo pg_dump {db_url} > {db_backup_destination}"""
-
-        # If running on windows, remove sudo from command...
-        if sys.platform.lower() not in ['linux', 'linux2', 'darwin']:
-            db_backup_cmd = db_backup_cmd[5:]
-
-        cmd_result = subprocess.run(db_backup_cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True)
-
-        # if passing the pg_dump command to the shell failed...
-        if cmd_result.stderr:
-            raise Exception(
-                f"Backup command failed: Stderr from attempt to call pg_dump back-up command:\n{cmd_result.stderr}")
-
-        return cmd_result.stdout, cmd_result.stderr
-
-    def make_sqlite_backup():
-        def clean_url(u: str):
-            """
-            Turns the sqlite url into a path for shutil.copy
-            @param u: sqlite url
-            @return:  sqlite path
-            """
-            u = u[7:]
-            for idx, c in enumerate(u):
-                if c not in [r"\\",r"/"]:
-                    u = u[idx:]
-            return u
-
-        db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
-        db_backup_destination = flask.current_app.config.get("DATABASE_BACKUP_LOCATION")
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        db_backup_destination = os.path.join(db_backup_destination, f"db_backup_{timestamp}.sql")
-        db_url = clean_url(db_url)
-        if not os.path.exists(db_url):
-            raise Exception("Cannot use sqlite db location to create a backup; os.path.exists failed. ")
-
-        try:
-            shutil.copyfile(db_url, db_backup_destination)
-        except Exception as e:
-            raise Exception(f"Shutil.copyfile failed to copy the database and threw this error:\n{e}")
 
     def api_exception_subroutine(response_message, thrown_exception):
         """
@@ -228,7 +228,7 @@ def get_db_uri():
 
 @main.route("/test/celery", methods=['GET', 'POST'])
 def test_celery():
-    result = test_task.delay(3, 4)
+    result = tasks.test_task.delay(3, 4)
     return {"result_id": result.id}
 
 @main.route("/test/result/<id>")
@@ -239,7 +239,3 @@ def test_task_results(id: str):
         "successful": result.successful(),
         "value": result.result if result.ready() else None,
     }
-
-@shared_task(ignore_result=False)
-def test_task(a: int, b: int) -> int:
-    return a + b

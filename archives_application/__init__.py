@@ -49,13 +49,14 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
 
     #create Celery
     celery = app_config.celery_init_app(app)
+    celery.autodiscover_tasks()
 
     db.init_app(app)
     bcrypt.init_app(app)
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.1.9'
+    app.config['VERSION'] = '1.1.10'
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add blueprints

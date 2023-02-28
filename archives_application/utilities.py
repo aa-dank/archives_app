@@ -14,7 +14,6 @@ from pathlib import Path, PureWindowsPath, PurePosixPath
 
 
 
-
 def split_path(path):
     '''splits a path into each piece that corresponds to a mount point, directory name, or file'''
     path = str(path)
@@ -143,7 +142,7 @@ def mounted_path_to_networked_path(mounted_path, network_location):
     :param network_location:
     :return:
     """
-    def is_already_network_location(location, some_network_location):
+    def is_already_network_location(location, some_network_location): #TODO fix this sub-function
         test_location = "".join(i for i in str(location) if i not in "\/:.")
         test_network_loc = "".join(i for i in str(some_network_location) if i not in "\/:.")
         if test_location.lower().startswith(test_network_loc.lower()):
@@ -170,13 +169,29 @@ def user_path_to_app_path(path_from_user, location_path_prefix):
     @return:
     '''
 
-    # regex pattern for a domain url. eg matches ppcou.ucsc.edu
-    regex_domain_url = r"([\w]{1,}[.]{1}[\w]{1,}[.]{1}[\w]{1,})"
+    def matches_network_url(some_path: str):
 
-    # uses regex url patterns to identify url paths
-    network_url_patterns = [regex_domain_url]  #TODO add more regex strings to this list to make this match more url patterns
-    matches_network_url = lambda possible_url: any(
-        [bool(re.search(regx, possible_url)) for regx in network_url_patterns])
+        def url_regex_matches(pth: str, url_patterns):
+            network_re_matches = []
+            [network_re_matches.append(*re.findall(pattern, pth)) for pattern in url_patterns ]
+            return network_re_matches
+
+        # first find all instances in the path that match one of the network url patterns.
+        url_regex_1 = r"([\w]{1,}[.]{1}[\w]{1,}[.]{1}[\w]{1,})"
+        network_url_patterns = [url_regex_1]
+        pattern_matches = url_regex_matches(pth=some_path, url_patterns=network_url_patterns)
+
+        # if no regex patterns match anything, We have confirmed it is not a network path
+        if not pattern_matches:
+            return False
+
+        # modify the path and url matches to remove confounding strings and chars.
+        # Then see if the network url match is at the begining of the path
+        modified_test_str = lambda input_str: re.sub(r'[^a-zA-Z0-9\.]|(file|http|https)', '', input_str).lower()
+        test_path = modified_test_str(some_path)
+        pattern_matches = [modified_test_str(match) for match in pattern_matches]
+        is_network_url = any([test_path.startswith(match) for match in pattern_matches])
+        return is_network_url
 
     # If we are not using a network url then the location prefix isthe mount location on either a windows or
     # linux machine.
