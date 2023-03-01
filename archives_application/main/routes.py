@@ -6,7 +6,7 @@ import shutil
 import sys
 from celery.result import AsyncResult
 from flask_login import current_user
-from . import forms, tasks
+#from . import forms, tasks
 from .. utilities import roles_required
 from archives_application import db, bcrypt
 from archives_application.models import *
@@ -58,7 +58,6 @@ def make_postgresql_backup():
     if cmd_result.stderr:
         raise Exception(
             f"Backup command failed: Stderr from attempt to call pg_dump back-up command:\n{cmd_result.stderr}")
-
     return cmd_result.stdout, cmd_result.stderr
 
 
@@ -222,10 +221,19 @@ def test_logging():
     return flask.redirect(flask.url_for('main.home'))
 
 
-@main.route("/test/database_uri")
+@main.route("/test/database_info")
 def get_db_uri():
-    return flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
+    status = db.engine.pool.status()
+    info = {
+        "database_url": flask.current_app.config.get("SQLALCHEMY_DATABASE_URI"),
+        "number_of_connections": status['total'],
+        "checkedout_connections": status['checkedout'],
+        "times_overflowed": status['overflowed'],
+        "num_of_timeouts": status['timeouts']
+    }
+    return info
 
+"""
 @main.route("/test/celery", methods=['GET', 'POST'])
 def test_celery():
     result = tasks.test_task.delay(3, 4)
@@ -239,3 +247,4 @@ def test_task_results(id: str):
         "successful": result.successful(),
         "value": result.result if result.ready() else None,
     }
+"""

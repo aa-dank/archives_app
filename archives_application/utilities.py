@@ -1,5 +1,4 @@
 import datetime
-
 import fitz
 import flask
 import hashlib
@@ -170,7 +169,20 @@ def user_path_to_app_path(path_from_user, location_path_prefix):
     '''
 
     def matches_network_url(some_path: str):
+        """
+        The function first defines a nested sub-function url_regex_matches, which takes a path and a list of URL patterns
+        as input and returns a list of all matches of the URL patterns in the path. The URL patterns used are defined as
+        network_url_patterns.
 
+        Then the function finds all instances in the path that match one of the network url patterns, using the sub-function
+        url_regex_matches. If no matches are found, the function confirms that the path is not a network URL and returns False.
+
+        If matches are found, the function removes confounding characters and strings from the path and the matches,
+        and checks whether any of the modified matches is at the beginning of the modified path. If a match is found,
+        the function returns True, indicating that the path is a network URL. Otherwise, it returns False.
+        @param some_path: path or url string
+        @return: Bool
+        """
         def url_regex_matches(pth: str, url_patterns):
             network_re_matches = []
             [network_re_matches.append(*re.findall(pattern, pth)) for pattern in url_patterns ]
