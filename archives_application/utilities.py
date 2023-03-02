@@ -185,7 +185,7 @@ def user_path_to_app_path(path_from_user, location_path_prefix):
         """
         def url_regex_matches(pth: str, url_patterns):
             network_re_matches = []
-            [network_re_matches.append(*re.findall(pattern, pth)) for pattern in url_patterns ]
+            [network_re_matches.append(*re.findall(pattern, pth)) for pattern in url_patterns if re.findall(pattern, pth)]
             return network_re_matches
 
         # first find all instances in the path that match one of the network url patterns.
