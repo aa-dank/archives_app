@@ -56,7 +56,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.1.12'
+    app.config['VERSION'] = '1.1.13'
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add blueprints

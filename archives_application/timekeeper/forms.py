@@ -8,6 +8,7 @@ from wtforms.validators import DataRequired, Email, EqualTo, ValidationError
 class TimekeepingForm(FlaskForm):
     clock_in = SubmitField('Clock In')
     clock_out = SubmitField('Clock Out')
+    clock_out_log_out = SubmitField('Clock Out, Log Out')
     journal = TextAreaField('Journal')
 
 

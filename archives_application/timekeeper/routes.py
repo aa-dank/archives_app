@@ -222,7 +222,7 @@ def timekeeper_event():
 
     if form.validate_on_submit():
         if clocked_in:
-            if form.clock_out.data:
+            if form.clock_out.data or form.clock_out_log_out.data:
                 try:
                     event_model = TimekeeperEventModel(user_id=current_user_id,
                                                        datetime=datetime.now(),
@@ -230,8 +230,14 @@ def timekeeper_event():
                                                        clock_in_event=False)
                     db.session.add(event_model)
                     db.session.commit()
-                    flask.flash("Successfully clocked out. Please, don't forget to log-out. Good-Bye.", 'success')
+
+                    if form.clock_out_log_out.data:
+                        return flask.redirect(flask.url_for('users.logout'))
+
+                    flask.flash("Successfully clocked out.", 'success')
                     return flask.redirect(flask.url_for('main.home'))
+
+
                 except Exception as e:
                     return exception_handling_pattern(flash_message="Error recording user clock-out event",
                                                       thrown_exception=e, app_obj=flask.current_app)
