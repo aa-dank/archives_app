@@ -23,6 +23,7 @@ matplotlib = "*"
 seaborn = "*"
 redis = "*"
 celery = {extras = ["redis"], version = "*"}
+rq = "*"
 
 [dev-packages]
 
