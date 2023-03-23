@@ -1,7 +1,11 @@
 import flask
 import json
 import os
-from celery import Celery, Task
+import subprocess
+import time
+from celery import Celery, Task, current_app
+from celery.exceptions import WorkerLostError
+
 
 DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 'C - Consultants',
                      'D - Environmental Review Process', 'E - Program and Design',
@@ -103,6 +107,10 @@ def assemble_location(location, sqlite_url=False):
 
     return location
 
+class FlaskTask(Task):
+    def __call__(self, *args: object, **kwargs: object) -> object:
+        with flask.current_app.app_context():
+            return self.run(*args, **kwargs)
 
 def celery_init_app(app: flask.Flask) -> Celery:
     """
@@ -114,14 +122,10 @@ def celery_init_app(app: flask.Flask) -> Celery:
     configuration from the `CELERY` key in the Flask app's configuration. Finally, the Celery app is added to the Flask
     app's extensions with the key `celery`.
     """
-    class FlaskTask(Task):
-        def __call__(self, *args: object, **kwargs: object) -> object:
-            with app.app_context():
-                return self.run(*args, **kwargs)
 
+    #app = app or create_app()
     celery_app = Celery(app.name, task_cls=FlaskTask)
     celery_app.config_from_object(app.config, namespace="CELERY")
-    celery_app.set_default()
     app.extensions["celery"] = celery_app
     return celery_app
 

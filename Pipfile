@@ -21,8 +21,8 @@ pandas = "*"
 psycopg2 = "*"
 matplotlib = "*"
 seaborn = "*"
-celery = "*"
 redis = "*"
+celery = {extras = ["redis"], version = "*"}
 
 [dev-packages]
 

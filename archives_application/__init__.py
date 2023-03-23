@@ -22,7 +22,7 @@ config_json = app_config.get_test_config_path()
 
 
 def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,
-                                                   config_json_path=config_json)):
+                                                   config_json_path=config_json), create_workers=True):
 
     # logging format
     # example usage: https://github.com/tenable/flask-logging-demo
@@ -48,15 +48,15 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     app.config.from_object(config_class)
 
     #create Celery
-    #celery = app_config.celery_init_app(app)
-    #celery.autodiscover_tasks()
+    celery = app_config.celery_init_app(app)
+    celery.set_default()
 
     db.init_app(app)
     bcrypt.init_app(app)
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.1.13'
+    app.config['VERSION'] = '1.2.0'
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add blueprints
@@ -68,6 +68,8 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     app.register_blueprint(archiver)
     app.register_blueprint(main)
     app.register_blueprint(timekeeper)
+
+    celery.autodiscover_tasks(['archives_application.main.tasks'])
 
     # This sets an environmental variable to allow oauth authentication flow to use http requests (vs https)
     if hasattr(config_class, 'OAUTHLIB_INSECURE_TRANSPORT'):

@@ -6,7 +6,7 @@ import shutil
 import sys
 from celery.result import AsyncResult
 from flask_login import current_user
-from . import forms#,tasks
+from . import forms,tasks
 from .. utilities import roles_required
 from archives_application import db, bcrypt
 from archives_application.models import *
@@ -226,20 +226,18 @@ def get_db_uri():
     status = db.engine.pool.status()
     info = {
         "database_url": flask.current_app.config.get("SQLALCHEMY_DATABASE_URI"),
-        "number_of_connections": status['total'],
-        "checkedout_connections": status['checkedout'],
-        "times_overflowed": status['overflowed'],
-        "num_of_timeouts": status['timeouts']
+        "status": status
     }
     return info
 
-"""
+
 @main.route("/test/celery", methods=['GET', 'POST'])
 def test_celery():
+    celery = flask.current_app.extensions["celery"]
     result = tasks.test_task.delay(3, 4)
     return {"result_id": result.id}
 
-@main.route("/test/result/<id>")
+@main.route("/test/<id>")
 def test_task_results(id: str):
     result = AsyncResult(id)
     return {
@@ -247,4 +245,3 @@ def test_task_results(id: str):
         "successful": result.successful(),
         "value": result.result if result.ready() else None,
     }
-"""
