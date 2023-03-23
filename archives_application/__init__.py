@@ -47,10 +47,6 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     # config app from config class
     app.config.from_object(config_class)
 
-    #create Celery
-    celery = app_config.celery_init_app(app)
-    celery.set_default()
-
     db.init_app(app)
     bcrypt.init_app(app)
     login_manager.init_app(app)
@@ -68,8 +64,6 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     app.register_blueprint(archiver)
     app.register_blueprint(main)
     app.register_blueprint(timekeeper)
-
-    celery.autodiscover_tasks(['archives_application.main.tasks'])
 
     # This sets an environmental variable to allow oauth authentication flow to use http requests (vs https)
     if hasattr(config_class, 'OAUTHLIB_INSECURE_TRANSPORT'):
