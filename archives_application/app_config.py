@@ -3,8 +3,7 @@ import json
 import os
 import subprocess
 import time
-from celery import Celery, Task, current_app
-from celery.exceptions import WorkerLostError
+
 
 
 DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 'C - Consultants',

@@ -229,19 +229,3 @@ def get_db_uri():
         "status": status
     }
     return info
-
-
-@main.route("/test/celery", methods=['GET', 'POST'])
-def test_celery():
-    celery = flask.current_app.extensions["celery"]
-    result = tasks.test_task.delay(3, 4)
-    return {"result_id": result.id}
-
-@main.route("/test/<id>")
-def test_task_results(id: str):
-    result = AsyncResult(id)
-    return {
-        "ready": result.ready(),
-        "successful": result.successful(),
-        "value": result.result if result.ready() else None,
-    }
