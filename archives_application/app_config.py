@@ -125,7 +125,11 @@ def celery_init_app(app: flask.Flask) -> Celery:
 
     #app = app or create_app()
     celery_app = Celery(app.name, task_cls=FlaskTask)
-    celery_app.config_from_object(app.config, namespace="CELERY")
+    #https://docs.celeryq.dev/en/latest/userguide/application.html#example-1-using-the-name-of-a-module
+    # Using the name of a module is recommended as this means the module does not need to be serialized when the prefork
+    # pool is used. If you’re experiencing configuration problems or pickle errors then please try using the name of a
+    # module instead.
+    celery_app.config_from_object(app.name, namespace="CELERY")
     app.extensions["celery"] = celery_app
     return celery_app
 
