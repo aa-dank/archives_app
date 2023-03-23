@@ -79,4 +79,4 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     #with app.app_context():
     #    db.create_all()
 
-    return app
+    return app, celery
