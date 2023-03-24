@@ -55,6 +55,10 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     login_manager.init_app(app)
     ext_celery.init_app(app)
 
+    #register tasks with celery
+    task_locations = ['archives_application.main.tasks']
+    app.extensions["flask-celeryext"].celery.autodiscover_tasks(task_locations)
+
     # Set a version number
     app.config['VERSION'] = '1.2.0'
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
