@@ -2,6 +2,8 @@ import os
 import flask
 import logging
 import archives_application.app_config as app_config
+from archives_application.celery_utils import make_celery
+from flask_celeryext import FlaskCeleryExt
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
@@ -12,6 +14,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 db = SQLAlchemy()
 bcrypt = Bcrypt()
 login_manager = LoginManager()
+ext_celery = FlaskCeleryExt(create_celery_app=make_celery)
 login_manager.login_view = 'users.choose_login'
 login_manager.login_message_category = 'info'
 google_creds_json = r'google_client_secret.json'
@@ -47,13 +50,10 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     # config app from config class
     app.config.from_object(config_class)
 
-    #create Celery
-    celery = app_config.celery_init_app(app)
-    celery.set_default()
-
     db.init_app(app)
     bcrypt.init_app(app)
     login_manager.init_app(app)
+    ext_celery.init_app(app)
 
     # Set a version number
     app.config['VERSION'] = '1.2.0'
@@ -68,8 +68,6 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     app.register_blueprint(archiver)
     app.register_blueprint(main)
     app.register_blueprint(timekeeper)
-
-    celery.autodiscover_tasks(['archives_application.main.tasks'])
 
     # This sets an environmental variable to allow oauth authentication flow to use http requests (vs https)
     if hasattr(config_class, 'OAUTHLIB_INSECURE_TRANSPORT'):

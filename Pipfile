@@ -24,6 +24,8 @@ seaborn = "*"
 redis = "*"
 celery = {extras = ["redis"], version = "*"}
 rq = "*"
+flask-celeryext = "*"
+rq-dashboard = "*"
 
 [dev-packages]
 
