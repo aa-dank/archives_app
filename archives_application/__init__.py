@@ -6,7 +6,9 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
 from oauthlib.oauth2 import WebApplicationClient
+from rq import Queue
 from werkzeug.middleware.proxy_fix import ProxyFix
+from worker import conn
 
 
 db = SQLAlchemy()
@@ -19,7 +21,7 @@ google_creds_json = r'google_client_secret.json'
 # use pound to choose between config json files
 config_json = app_config.get_test_config_path()
 #config_json = r'deploy_app_config.json'
-
+q = Queue(connection=conn, default_timeout=1800)
 
 def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,
                                                    config_json_path=config_json), create_workers=True):

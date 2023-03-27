@@ -8,7 +8,7 @@ from celery.result import AsyncResult
 from flask_login import current_user
 from . import forms
 from .. utilities import roles_required
-from archives_application import db, bcrypt
+from archives_application import db, bcrypt, q
 from archives_application.models import *
 
 
@@ -30,7 +30,6 @@ def exception_handling_pattern(flash_message, thrown_exception, app_obj):
 
 
 def make_postgresql_backup():
-
     """
     Subroutine for sending pg_dump command to shell
     Resources:
@@ -229,3 +228,22 @@ def get_db_uri():
         "status": status
     }
     return info
+
+def test_task(a):
+    return (a+4)*3
+
+@main.route("/test/rq", methods=['GET', 'POST'])
+def queue_test():
+    result = q.enqueue(test_task, 2)
+    return {"task_id": result.id}
+
+@main.route("/test/<id>", methods=['GET', 'POST'])
+def check_task(id):
+    job = q.fetch_job(id)
+    if job is None:
+        return {"status": "error", "message": f"No job found with id {id}"}
+    elif job.is_finished:
+        result = job.result
+        return {"status": "success", "result": result}
+    else:
+        return {"status": "pending"}
