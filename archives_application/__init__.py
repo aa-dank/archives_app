@@ -5,6 +5,7 @@ import archives_application.app_config as app_config
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
+from logging.handlers import RotatingFileHandler
 from oauthlib.oauth2 import WebApplicationClient
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -52,7 +53,17 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.2.0'
+    app.config['VERSION'] = '1.1.14'
+
+    # If the SQLALCHEMY_ECHO parameter is true, need to set up logs for logging sql
+    if app.config.get("SQLALCHEMY_ECHO"):
+        log_path = os.path.join(app.config.get("DATABASE_BACKUP_LOCATION"), 'sql.log')
+        handler = RotatingFileHandler(log_path, maxBytes=10000, backupCount=1)
+        handler.setLevel(logging.DEBUG)
+        db_logger = logging.getLogger('sqlalchemy.engine')
+        db_logger.addHandler(handler)
+
+    # Create Oauth client for using google services
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add blueprints
