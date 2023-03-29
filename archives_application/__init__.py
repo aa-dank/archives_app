@@ -5,7 +5,6 @@ import archives_application.app_config as app_config
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
-from logging.handlers import RotatingFileHandler
 from oauthlib.oauth2 import WebApplicationClient
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -27,7 +26,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
 
     # logging format
     # example usage: https://github.com/tenable/flask-logging-demo
-    defaultFormatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
+    default_formatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
 
     # start app
     app = flask.Flask(__name__)
@@ -42,8 +41,9 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
         app.wsgi_app = ProxyFix(app.wsgi_app)
 
     # set universal format for all logging handlers.
+    app.config['DEFAULT_LOGGING_FORMATTER'] = default_formatter
     for handler in app.logger.handlers:
-        handler.setFormatter(defaultFormatter)
+        handler.setFormatter(default_formatter)
 
     # config app from config class
     app.config.from_object(config_class)
@@ -53,15 +53,12 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.1.14'
+    app.config['VERSION'] = '1.1.15'
 
     # If the SQLALCHEMY_ECHO parameter is true, need to set up logs for logging sql
     if app.config.get("SQLALCHEMY_ECHO"):
-        log_path = os.path.join(app.config.get("DATABASE_BACKUP_LOCATION"), 'sql.log')
-        handler = RotatingFileHandler(log_path, maxBytes=10000, backupCount=1)
-        handler.setLevel(logging.DEBUG)
-        db_logger = logging.getLogger('sqlalchemy.engine')
-        db_logger.addHandler(handler)
+        log_path = os.path.join(app.config.get("DATABASE_BACKUP_LOCATION"), app.config.get("SQLALCHEMY_LOG_FILE"))
+        app_config.setup_sql_logging(log_filepath=log_path)
 
     # Create Oauth client for using google services
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)

@@ -1,15 +1,18 @@
 import flask
 import json
+import logging
 import os
 import subprocess
 import shutil
 import sys
+import archives_application.app_config as app_config
 from celery.result import AsyncResult
 from flask_login import current_user
 from . import forms
 from .. utilities import roles_required
 from archives_application import db, bcrypt
 from archives_application.models import *
+
 
 
 main = flask.Blueprint('main', __name__)
@@ -229,3 +232,21 @@ def get_db_uri():
         "status": status
     }
     return info
+
+@main.route("/admin/sql_logging", methods=['GET', 'POST'])
+@roles_required(['ADMIN'])
+def toggle_sql_logging():
+    # "If set to True SQLAlchemy will log all the statements issued to stderr which can be useful for debugging"
+    # https://flask-sqlalchemy.palletsprojects.com/en/2.x/config/
+    current_echo = flask.current_app.config.get("SQLALCHEMY_ECHO", False)
+    log_path = os.path.join(flask.current_app.config.get("DATABASE_BACKUP_LOCATION"),
+                            flask.current_app.config.get("SQLALCHEMY_LOG_FILE"))
+    flask.current_app.config['SQLALCHEMY_ECHO'] = not current_echo
+    db_logger = logging.getLogger('sqlalchemy.engine')
+    if not current_echo:
+        db_logger = app_config.setup_sql_logging(log_filepath=log_path)
+        db_logger.disabled = False
+    else:
+        db_logger.handlers.clear()
+        db_logger.disabled = True
+    return flask.jsonify(**{"sql logging":flask.current_app.config['SQLALCHEMY_ECHO'], "log location":log_path})
