@@ -19,7 +19,9 @@ RUN apt-get update && apt-get install -y \
     libgirepository1.0-dev \
     pkg-config \
     smbclient \
-    redis-server
+    redis-server \
+    nfs-common \
+    cifs-utils
 
 # Install any needed packages specified in requirements.txt
 RUN pip install --trusted-host pypi.python.org -r requirements.txt
