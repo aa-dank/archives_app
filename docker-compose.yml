@@ -1,0 +1,37 @@
+version: "3.9"
+services:
+  archives_app:
+    build: .
+    ports:
+      - "5000:5000"
+    depends_on:
+      - redis
+    environment:
+      - USERNAME=${USERNAME}
+      - PASSWORD=${PASSWORD}
+    command: |
+      sh -c "
+      mount -t cifs -o username=${USERNAME},password=${PASSWORD} //ppdo-fs05.ppcou.ucsc.edu/Archive_Data /app/data/Archive_Data
+      mount -t cifs -o username=${USERNAME},password=${PASSWORD} //ppdo-act-record.ppcou.ucsc.edu/PPC_Records /app/data/PPC_Records
+      service redis-server start
+      flask run --host=0.0.0.0"
+    volumes:
+      - ./credentials.env:/app/credentials.env
+      - archives_data:/app/data/Archive_Data
+      - ppc_records:/app/data/PPC_Records
+    privileged: true
+  redis:
+    image: "redis:alpine"
+volumes:
+  archives_data:
+    driver: local
+    driver_opts:
+      type: cifs
+      o: username=${USERNAME},password=${PASSWORD},file_mode=0777,dir_mode=0777
+      device: //ppdo-fs05.ppcou.ucsc.edu/Archive_Data
+  ppc_records:
+    driver: local
+    driver_opts:
+      type: cifs
+      o: username=${USERNAME},password=${PASSWORD},file_mode=0777,dir_mode=0777
+      device: //ppdo-act-record.ppcou.ucsc.edu/PPC_Records
