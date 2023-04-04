@@ -29,7 +29,6 @@
 *.pickle
 *.csv
 *.db
-*.env
 
 # OS generated files #
 ######################
@@ -39,7 +38,7 @@
 .Spotlight-V100
 .Trashes
 .idea
-thumbs.db
+ehthumbs.db
 Thumbs.db
 desktop.ini
 #TODO prevent pycache files from being included in git
@@ -53,6 +52,8 @@ archives_application/config.py
 
 
 # Dev Files #
+archives_application/archiver/file_to_archive/*
+archives_application/archiver/static/temp_files/*
 /dev_files
 .idea/csv-plugin.xml
 
