@@ -1,21 +1,21 @@
 version: "3.9"
 services:
   archives_app:
-    build: .
-    user: "ppcou\adankert:1156DAVpass"
+    build:
+      context: .
+      args:
+        USERNAME: adankert
+        USER_UID: 1000
+    user: "${USERNAME}"
     ports:
       - "5000:5000"
     depends_on:
       - redis
-    environment:
-      - USERNAME=${USERNAME}
-      - PASSWORD=${PASSWORD}
     command: |
       sh -c "
       service redis-server start
       flask run --host=0.0.0.0"
     volumes:
-      - ./credentials.env:/app/credentials.env
       - R:/:/app/Data/PPC_Records
       - V:/:/app/Data/Archive_Data
       - Z:/:/app/Data/Cannon_Scans
