@@ -13,7 +13,7 @@ services:
       - redis
     command: |
       sh -c "
-      service redis-server start
+      sudo service redis-server start
       flask run --host=0.0.0.0"
     volumes:
       - R:/:/app/Data/PPC_Records
