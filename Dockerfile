@@ -5,15 +5,13 @@ ENV PYTHONDONTWRITEBYTECODE 1
 # Set the working directory to /app
 WORKDIR /app
 
-# Create user with the same UID and GID as the host user
-ARG USERNAME=adankert
-ARG USER_UID=1000
-ARG USER_GID=$USER_UID
-RUN groupadd --gid $USER_GID $USERNAME && \
-    useradd --uid $USER_UID --gid $USER_GID -m $USERNAME
-
 # Copy the current directory contents into the container at /app
 COPY . /app
+
+ENV SMB_USERNAME=${SMB_USERNAME:-username}
+ENV SMB_PASSWORD=${SMB_PASSWORD:-password}
+ENV SMB_DOMAIN=${SMB_DOMAIN:-domain}
+ENV SMB_VERSION=${SMB_VERSION:-1.0}
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -29,6 +27,17 @@ RUN apt-get update && apt-get install -y \
     redis-server \
     nfs-common \
     cifs-utils
+
+# Create a directory for the mount
+RUN mkdir -p /app/Data
+
+# Mount the Windows Server shares
+RUN mkdir -p /app/Data/Archive_Data
+RUN mkdir -p /app/Data/PPC_Records
+RUN mkdir -p /app/Data/Cannon_Scans
+RUN mount -t cifs -o "username=${SMB_USERNAME},password=${SMB_PASSWORD},domain=${SMB_DOMAIN},vers=${SMB_VERSION}" //ppdo-fs05.ppcou.ucsc.edu/Archive_Data /app/Data/Archive_Data
+RUN mount -t cifs -o "username=${SMB_USERNAME},password=${SMB_PASSWORD},domain=${SMB_DOMAIN},vers=${SMB_VERSION}" //PPDO-ACT-RECORD.ppcou.ucsc.edu/PPC_Records /app/Data/PPC_Records
+RUN mount -t cifs -o "username=${SMB_USERNAME},password=${SMB_PASSWORD},domain=${SMB_DOMAIN},vers=${SMB_VERSION}" //ppdo-fs05.ppcou.ucsc.edu/Cannon_Scans /app/Data/Cannon_Scans
 
 # Install any needed packages specified in requirements.txt
 RUN pip install --trusted-host pypi.python.org -r requirements.txt
