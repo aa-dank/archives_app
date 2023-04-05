@@ -35,9 +35,6 @@ RUN mkdir -p /app/Data
 RUN mkdir -p /app/Data/Archive_Data
 RUN mkdir -p /app/Data/PPC_Records
 RUN mkdir -p /app/Data/Cannon_Scans
-RUN mount -t cifs -o "username=${SMB_USERNAME},password=${SMB_PASSWORD},domain=${SMB_DOMAIN},vers=${SMB_VERSION}" //ppdo-fs05.ppcou.ucsc.edu/Archive_Data /app/Data/Archive_Data
-RUN mount -t cifs -o "username=${SMB_USERNAME},password=${SMB_PASSWORD},domain=${SMB_DOMAIN},vers=${SMB_VERSION}" //PPDO-ACT-RECORD.ppcou.ucsc.edu/PPC_Records /app/Data/PPC_Records
-RUN mount -t cifs -o "username=${SMB_USERNAME},password=${SMB_PASSWORD},domain=${SMB_DOMAIN},vers=${SMB_VERSION}" //ppdo-fs05.ppcou.ucsc.edu/Cannon_Scans /app/Data/Cannon_Scans
 
 # Install any needed packages specified in requirements.txt
 RUN pip install --trusted-host pypi.python.org -r requirements.txt
@@ -47,6 +44,3 @@ EXPOSE 5000
 
 # Set the environment variable for Flask app
 ENV FLASK_APP=run.py
-
-# Set the user for the container
-USER $USERNAME
