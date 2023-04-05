@@ -28,9 +28,6 @@ RUN apt-get update && apt-get install -y \
     nfs-common \
     cifs-utils
 
-# Create a directory for the mount
-RUN mkdir -p /app/Data
-
 # Mount the Windows Server shares
 RUN mkdir -p /app/Data/Archive_Data
 RUN mkdir -p /app/Data/PPC_Records
