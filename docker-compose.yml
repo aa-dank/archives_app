@@ -1,12 +1,7 @@
 version: "3.9"
 services:
   archives_app:
-    build:
-      context: .
-      args:
-        USERNAME: adankert
-        USER_UID: 1000
-    user: "${USERNAME}"
+    build: .
     ports:
       - "5000:5000"
     depends_on:
@@ -15,11 +10,19 @@ services:
       sh -c "
       sudo service redis-server start
       flask run --host=0.0.0.0"
-    volumes:
-      - R:/:/app/Data/PPC_Records
-      - V:/:/app/Data/Archive_Data
-      - Z:/:/app/Data/Cannon_Scans
-      - C:/:/app/Data/PC
     privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - SYS_RESOURCE
+      - --ambient
+    volumes:
+      - //ppdo-fs05.ppcou.ucsc.edu/Archive_Data:/app/Data/Archive_Data
+      - //PPDO-ACT-RECORD.ppcou.ucsc.edu/PPC_Records:/app/Data/PPC_Records
+      - //ppdo-fs05.ppcou.ucsc.edu/Cannon_Scans:/app/Data/Cannon_Scans
+    environment:
+      - SMB_USERNAME=adankert
+      - SMB_PASSWORD=1156*******pass
+      - SMB_DOMAIN=ppcou
+      - SMB_VERSION=1.0
   redis:
     image: "redis:alpine"
