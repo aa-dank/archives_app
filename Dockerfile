@@ -8,11 +8,6 @@ WORKDIR /app
 # Copy the current directory contents into the container at /app
 COPY . /app
 
-ENV SMB_USERNAME=${SMB_USERNAME:-username}
-ENV SMB_PASSWORD=${SMB_PASSWORD:-password}
-ENV SMB_DOMAIN=${SMB_DOMAIN:-domain}
-ENV SMB_VERSION=${SMB_VERSION:-1.0}
-
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
