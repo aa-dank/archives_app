@@ -16,8 +16,5 @@ services:
       mount -t cifs -o "username=adankert,password=1156DAVpass,domain=ppcou,vers=1.0" //ppdo-fs05.ppcou.ucsc.edu/Cannon_Scans /app/Data/Cannon_Scans
       flask run --host=0.0.0.0"
     privileged: true
-    cap_add:
-      - SYS_ADMIN
-      - SYS_RESOURCE
   redis:
     image: "redis:alpine"
