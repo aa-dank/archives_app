@@ -52,8 +52,12 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     bcrypt.init_app(app)
     login_manager.init_app(app)
 
+    # TODO Do I need this?
+    #with app.app_context():
+    #    db.session.bind = db.engine
+
     # Set a version number
-    app.config['VERSION'] = '1.1.16'
+    app.config['VERSION'] = '1.1.17'
 
     # If the SQLALCHEMY_ECHO parameter is true, need to set up logs for logging sql
     if app.config.get("SQLALCHEMY_ECHO"):
