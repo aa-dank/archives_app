@@ -5,7 +5,7 @@ import random
 import re
 import shutil
 import sys
-from .. import utilities
+from .. import utilities, db
 from .archival_file import ArchivalFile
 from .server_edit import ServerEdit
 from .forms import *
@@ -351,7 +351,7 @@ def inbox_item():
 
                     # make sure that the old file has been removed
                     if os.path.exists(arch_file_path):
-                        os.remove(arch_file_path) #TODO having problems deleting old files
+                        os.remove(arch_file_path)
                     flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
 
                 except Exception as e:

@@ -1,23 +1,23 @@
-import flask
-import flask_sqlalchemy
 import os
 import sys
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import seaborn as sns
 from datetime import datetime, timedelta
-from dateutil import parser
 
+import flask
+import flask_sqlalchemy
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from dateutil import parser
+from flask import current_app
+from flask_login import login_required, current_user
+from sqlalchemy import and_
+
+from .forms import TimekeepingForm, TimeSheetForm, TimeSheetAdminForm
 from .. import db
 from .. import utilities
 from ..models import UserModel, TimekeeperEventModel, ArchivedFileModel
-from flask import current_app
-from flask_login import login_required, current_user
-from .forms import TimekeepingForm, TimeSheetForm, TimeSheetAdminForm
-from sqlalchemy import and_
-
 
 timekeeper = flask.Blueprint('timekeeper', __name__)
 
@@ -35,19 +35,10 @@ def exception_handling_pattern(flash_message, thrown_exception, app_obj):
     app_obj.logger.error(thrown_exception, exc_info=True)
     return flask.redirect(flask.url_for('main.home'))
 
-
-def get_db_conn(query_obj: flask_sqlalchemy.query.Query):
-    """
-    Persistent issue to get a good engine or connection to pass queries against.
-    https://levelup.gitconnected.com/how-to-fix-attributeerror-optionengine-object-has-no-attribute-execute-in-pandas-eb635fbb89e4
-    @param query_obj:
-    @return:
-    """
-    eng = query_obj.session.bind
-    if not eng:
-        eng = db.engine
-    return eng.connect()
-
+def db_query_to_df(query: flask_sqlalchemy.query.Query):
+    results = query.all()
+    df = pd.DataFrame([row.__dict__ for row in results])
+    return df
 
 def pop_dialect_from_sqlite_uri(sql_uri:str):
     """
@@ -69,7 +60,6 @@ def pop_dialect_from_sqlite_uri(sql_uri:str):
             while new_url[0] == "/":
                 new_url = new_url[1:]
     return new_url
-
 
 def daterange(start_date: datetime, end_date: datetime):
     """
@@ -113,17 +103,11 @@ def hours_worked_in_day(day: datetime.date, user_id: int):
                                               TimekeeperEventModel.datetime >= day.strftime("%Y-%m-%d"),
                                               TimekeeperEventModel.datetime < days_end.strftime("%Y-%m-%d"))
 
-    with get_db_conn(query_obj=query) as db_conn:
-        timesheet_df = pd.read_sql(query.statement, con=db_conn)
-
-        # issues with sending commands to DB can result in pd.read_sql returning None instead of Dataframe
-        assert type(timesheet_df) == type(pd.DataFrame()), "pd.read_sql did not return a Dataframe."
-
-
-    timesheet_df.sort_values(by='datetime', inplace=True)
+    timesheet_df = db_query_to_df(query=query)
     if timesheet_df.shape[0] == 0:
         clock_ins_have_clock_outs = True
     else:
+        timesheet_df.sort_values(by='datetime', inplace=True)
         clock_ins_have_clock_outs = clocked_out_everytime(timesheet_df["clock_in_event"])
 
         # iterate over time in events...
@@ -191,12 +175,7 @@ def timekeeper_event():
         db.session.commit()
         todays_events_query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == user_id,
                                                                 TimekeeperEventModel.datetime > start_of_today)
-
-        with get_db_conn(query_obj=todays_events_query) as db_conn:
-            todays_events_df = pd.read_sql(todays_events_query.statement, con=db_conn)
-
-            # issues with sending commands to DB can result in pd.read_sql returning None instead of Dataframe
-            assert type(todays_events_df) == type(pd.DataFrame()), "pd.read_sql did not return a Dataframe."
+        todays_events_df = db_query_to_df(todays_events_query)
 
 
 
@@ -293,12 +272,11 @@ def user_timesheet(employee_id):
         query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == employee_id,
                                                   TimekeeperEventModel.datetime >= query_start_date,
                                                   TimekeeperEventModel.datetime <= query_end_date)
+        timesheet_df = db_query_to_df(query=query)
 
-        with get_db_conn(query_obj=query) as db_conn:
-            timesheet_df = pd.read_sql(query.statement, con=db_conn)
 
-            # issues with sending commands to DB can result in pd.read_sql returning None instead of Dataframe
-            assert type(timesheet_df) == type(pd.DataFrame()), "pd.read_sql did not return a Dataframe."
+        # issues with sending commands to DB can result in pd.read_sql returning None instead of Dataframe
+        assert type(timesheet_df) == type(pd.DataFrame()), "pd.read_sql did not return a Dataframe."
 
     except Exception as e:
         exception_handling_pattern(flash_message="Error getting user timekeeper events from database: ",
@@ -376,9 +354,8 @@ def all_timesheets():
     form = TimeSheetForm()
     try:
         # Get 'active' employee emails to use in dropdown choices
-        is_archivist = lambda user: 'ARCHIVIST' in user.roles.split(",")
-        archivists = [{'email': employee.email, 'id': employee.id} for employee in UserModel.query.all() if
-                     is_archivist(employee) and employee.active]
+        archivists = [{'email': employee.email, 'id': employee.id} for employee in
+                      UserModel.query.filter(UserModel.roles.contains('ARCHIVIST'), UserModel.active.is_(True))]
 
     except Exception as e:
         return exception_handling_pattern(
@@ -403,11 +380,7 @@ def all_timesheets():
             .filter(and_(UserModel.active == True, UserModel.roles.like("%ARCHIVIST%"),
                          TimekeeperEventModel.datetime.between(query_start_date, query_end_date)))
 
-        with get_db_conn(query_obj=query) as db_conn:
-            timesheet_df = pd.read_sql(query.statement, con=db_conn)
-
-            # issues with sending commands to DB can result in pd.read_sql returning None instead of Dataframe
-            assert type(timesheet_df) == type(pd.DataFrame()), "pd.read_sql did not return a Dataframe."
+        timesheet_df = db_query_to_df(query=query)
 
     except Exception as e:
         exception_handling_pattern(flash_message="Error creating dataframe for all archivists: ",
@@ -507,10 +480,7 @@ def archived_metrics_dashboard():
         end_date_str = end_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT'))
         query = ArchivedFileModel.query.filter(ArchivedFileModel.date_archived.between(start_date_str, end_date_str))
 
-        with get_db_conn(query_obj=query) as db_conn:
-            df = pd.read_sql(query.statement, con=db_conn)
-            # issues with sending commands to DB can result in pd.read_sql returning None instead of Dataframe
-            assert type(df) == type(pd.DataFrame()), "pd.read_sql did not return a Dataframe."
+        df = db_query_to_df(query=query)
 
         #replace datetime timestamp with just the date
         get_date = lambda dt: dt.date()
