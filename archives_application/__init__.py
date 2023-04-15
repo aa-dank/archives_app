@@ -17,8 +17,8 @@ login_manager.login_message_category = 'info'
 google_creds_json = r'google_client_secret.json'
 
 # use pound to choose between config json files
-config_json = app_config.get_test_config_path()
-#config_json = r'deploy_app_config.json'
+#config_json = app_config.get_test_config_path()
+config_json = r'deploy_app_config.json'
 
 
 def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,

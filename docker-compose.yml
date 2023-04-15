@@ -8,13 +8,15 @@ services:
       - "5000:5000"
     depends_on:
       - redis
+    volumes:
+      - ./archives_app:/app/archives_app
     command: |
       sh -c "
       service redis-server start
       mount -t cifs -o "username=adankert,password=1156DAVpass,domain=ppcou,vers=1.0" //ppdo-fs05.ppcou.ucsc.edu/Archive_Data /app/Data/Archive_Data
       mount -t cifs -o "username=adankert,password=1156DAVpass,domain=ppcou,vers=1.0" //PPDO-ACT-RECORD.ppcou.ucsc.edu/PPC_Records /app/Data/PPC_Records
       mount -t cifs -o "username=adankert,password=1156DAVpass,domain=ppcou,vers=1.0" //ppdo-fs05.ppcou.ucsc.edu/Cannon_Scans /app/Data/Cannon_Scans
-      flask run --host=0.0.0.0"
+      flask run --port=5000 --reload --app archives_app.run"
     privileged: true
   redis:
     image: "redis:alpine"
