@@ -1,8 +1,10 @@
 import flask
 import json
+import logging
 import os
 import subprocess
 import time
+from logging.handlers import RotatingFileHandler
 
 
 
@@ -175,7 +177,29 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
     config_dict['CONFIG_JSON_PATH'] = config_json_path
     return type("DynamicServerConfig", (), config_dict)
 
+def setup_sql_logging(log_filepath):
+    """
+    Set up a logger instance to log SQLAlchemy database activity to a file and to the console.
 
+    @param log_filepath:
+    @return:
+    """
+    handler = RotatingFileHandler(log_filepath, maxBytes=10000, backupCount=1)
+    handler.setLevel(logging.DEBUG)
+    if flask.current_app.config.get('DEFAULT_LOGGING_FORMATTER'):
+       formatter = flask.current_app.config.get('DEFAULT_LOGGING_FORMATTER')
+       handler.setFormatter(formatter)
+    db_logger = logging.getLogger('sqlalchemy.engine')
+    db_logger.addHandler(handler)
 
+    # Add a StreamHandler to log to the console as well
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.DEBUG)
+    if flask.current_app.config.get('DEFAULT_LOGGING_FORMATTER'):
+        formatter = flask.current_app.config.get('DEFAULT_LOGGING_FORMATTER')
+        console_handler.setFormatter(formatter)
+    db_logger.addHandler(console_handler)
+    db_logger.setLevel(logging.DEBUG)
+    return db_logger
 
 
