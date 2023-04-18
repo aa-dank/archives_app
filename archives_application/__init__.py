@@ -6,9 +6,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
 from oauthlib.oauth2 import WebApplicationClient
-from rq import Queue
 from werkzeug.middleware.proxy_fix import ProxyFix
-from worker import conn
 
 
 db = SQLAlchemy()
@@ -19,16 +17,16 @@ login_manager.login_message_category = 'info'
 google_creds_json = r'google_client_secret.json'
 
 # use pound to choose between config json files
-config_json = app_config.get_test_config_path()
-#config_json = r'deploy_app_config.json'
-q = Queue(connection=conn, default_timeout=1800)
+#config_json = app_config.get_test_config_path()
+config_json = r'deploy_app_config.json'
+
 
 def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,
                                                    config_json_path=config_json), create_workers=True):
 
     # logging format
     # example usage: https://github.com/tenable/flask-logging-demo
-    defaultFormatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
+    default_formatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
 
     # start app
     app = flask.Flask(__name__)
@@ -43,22 +41,30 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
         app.wsgi_app = ProxyFix(app.wsgi_app)
 
     # set universal format for all logging handlers.
+    app.config['DEFAULT_LOGGING_FORMATTER'] = default_formatter
     for handler in app.logger.handlers:
-        handler.setFormatter(defaultFormatter)
+        handler.setFormatter(default_formatter)
 
     # config app from config class
     app.config.from_object(config_class)
-
-    #create Celery
-    celery = app_config.celery_init_app(app)
-    celery.set_default()
 
     db.init_app(app)
     bcrypt.init_app(app)
     login_manager.init_app(app)
 
+    # TODO Do I need this?
+    #with app.app_context():
+    #    db.session.bind = db.engine
+
     # Set a version number
-    app.config['VERSION'] = '1.2.0'
+    app.config['VERSION'] = '1.1.17'
+
+    # If the SQLALCHEMY_ECHO parameter is true, need to set up logs for logging sql
+    if app.config.get("SQLALCHEMY_ECHO"):
+        log_path = os.path.join(app.config.get("DATABASE_BACKUP_LOCATION"), app.config.get("SQLALCHEMY_LOG_FILE"))
+        app_config.setup_sql_logging(log_filepath=log_path)
+
+    # Create Oauth client for using google services
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add blueprints
@@ -70,8 +76,6 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     app.register_blueprint(archiver)
     app.register_blueprint(main)
     app.register_blueprint(timekeeper)
-
-    celery.autodiscover_tasks(['archives_application.main.tasks'])
 
     # This sets an environmental variable to allow oauth authentication flow to use http requests (vs https)
     if hasattr(config_class, 'OAUTHLIB_INSECURE_TRANSPORT'):

@@ -184,6 +184,7 @@ class ArchivalFile:
                 existing_destination_dirs = [dir_name for dir_name in new_path_dirs if
                                              dir_name.upper().startswith(destination_dir_prefix)]
                 if existing_destination_dirs:
+                    # again, assuming there is only one destination dir. Could be more sophisticated about this.
                     new_path = os.path.join(new_path, existing_destination_dirs[0])
                 else:
                     file_num_dirs = [dir for dir in new_path_dirs if
@@ -191,6 +192,21 @@ class ArchivalFile:
                     if not file_num_dirs:
                         new_path = os.path.join(new_path, large_template_destination)
                     else:
+                        # If there are multiple directories that match the project number, how should we go about
+                        # deciding which one is the next part of destination path?
+                        next_dir = ''
+                        for next_dir in file_num_dirs:
+                            # if the next dir and project number are the same we use this next_dir.
+                            if len(next_dir) == len(self.project_number):
+                                break
+
+                            # if the character after project_number in the next_dir string is in this list, we will use this directory
+                            char_after_number = next_dir[len(self.project_number):][0]
+                            if char_after_number in [' ', ':']:
+                                break
+                            # if no next_dir breaks the loop, automatically use last entry from file_num_dirs
+
+                        new_path = os.path.join(new_path, next_dir)
                         return path_from_project_num_dir_to_destination(path_to_project_num_dir=new_path,
                                                                         large_template_destination=large_template_destination,
                                                                         destination_filename=destination_filename)
