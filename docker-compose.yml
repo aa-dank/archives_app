@@ -1,22 +1,21 @@
 version: "3.9"
 services:
   archives_app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "5000:5000"
+    build: .
+    restart: unless-stopped
+
     depends_on:
       - redis
     volumes:
-      - ./archives_app:/app/archives_app
+      - .:/app/archives_app
+    ports:
+      - "127.0.0.1:5000:5000"
     command: |
       sh -c "
-      service redis-server start
       mount -t cifs -o "username=adankert,password=1156DAVpass,domain=ppcou,vers=1.0" //ppdo-fs05.ppcou.ucsc.edu/Archive_Data /app/Data/Archive_Data
       mount -t cifs -o "username=adankert,password=1156DAVpass,domain=ppcou,vers=1.0" //PPDO-ACT-RECORD.ppcou.ucsc.edu/PPC_Records /app/Data/PPC_Records
       mount -t cifs -o "username=adankert,password=1156DAVpass,domain=ppcou,vers=1.0" //ppdo-fs05.ppcou.ucsc.edu/Cannon_Scans /app/Data/Cannon_Scans
-      flask run --port=5000 --reload --app archives_app.run"
+      flask run --host=0.0.0.0 --port=5000 --reload"
     privileged: true
   redis:
     image: "redis:alpine"
