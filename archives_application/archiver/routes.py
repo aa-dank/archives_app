@@ -1,6 +1,7 @@
-import os
+import datetime
 import flask
 import flask_sqlalchemy
+import os
 import random
 import re
 import shutil
@@ -341,6 +342,7 @@ def inbox_item():
                 try:
                     archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
                                                       project_number=arch_file.project_number,
+                                                      date_archived=datetime.now(),
                                                       document_date=form.document_date.data,
                                                       destination_directory=arch_file.destination_dir,
                                                       file_code=arch_file.file_code, archivist_id=current_user.id,

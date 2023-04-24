@@ -59,7 +59,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     #    db.session.bind = db.engine
 
     # Set a version number
-    app.config['VERSION'] = '1.1.17'
+    app.config['VERSION'] = '1.1.18'
 
     # If the SQLALCHEMY_ECHO parameter is true, need to set up logs for logging sql
     if app.config.get("SQLALCHEMY_ECHO"):
