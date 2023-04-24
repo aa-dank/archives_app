@@ -5,13 +5,15 @@ import archives_application.app_config as app_config
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
+from rq import Queue
 from oauthlib.oauth2 import WebApplicationClient
 from werkzeug.middleware.proxy_fix import ProxyFix
-
+from worker import conn
 
 db = SQLAlchemy()
 bcrypt = Bcrypt()
 login_manager = LoginManager()
+q = Queue(connection=conn, default_timeout=1800)
 login_manager.login_view = 'users.choose_login'
 login_manager.login_message_category = 'info'
 google_creds_json = r'google_client_secret.json'

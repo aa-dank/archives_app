@@ -24,6 +24,7 @@ seaborn = "*"
 redis = "*"
 celery = {extras = ["redis"], version = "*"}
 rq = "*"
+rq-win = {git = "https://github.com/michaelbrooks/rq-win.git"}
 
 [dev-packages]
 
