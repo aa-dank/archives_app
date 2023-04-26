@@ -135,6 +135,9 @@ def assemble_postgresql_url(host, db_name, username, password="", port="", diale
 
     return uri
 
+def assemble_redis_url(redis_location, redis_port):
+    return'redis://' + redis_location + ":" + redis_port
+
 def json_to_config_factory(google_creds_path: str, config_json_path: str):
     """
     THis function turns a json file of config info and a google credentials json file into a flask app config class.
@@ -175,6 +178,15 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
     config_dict['ARCHIVES_LOCATION'] = assemble_location(location=config_dict['ARCHIVES_LOCATION'])
     config_dict["ARCHIVIST_INBOX_LOCATION"] = assemble_location(location=config_dict["ARCHIVIST_INBOX_LOCATION"])
     config_dict['CONFIG_JSON_PATH'] = config_json_path
+
+    # Assemble Redis url
+    if config_dict.get('REDIS_LOCATION'):
+        config_dict['REDIS_URL'] = assemble_redis_url(redis_location=config_dict.get('REDIS_LOCATION'),
+                                                      redis_port=config_dict.get('REDIS_PORT'))
+
+    # The DynamicServerConfig class is created dynamically using Python's type() function, which takes three arguments:
+    # the name of the class, a tuple of parent classes (empty in this case), and a dictionary of attributes and their
+    # values, the config_dict here.
     return type("DynamicServerConfig", (), config_dict)
 
 def setup_sql_logging(log_filepath):

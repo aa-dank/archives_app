@@ -9,7 +9,7 @@ import archives_application.app_config as app_config
 from flask_login import current_user
 from . import forms
 from .. utilities import roles_required
-from archives_application import db, bcrypt, q
+from archives_application import db, bcrypt
 from archives_application.models import *
 
 
@@ -250,18 +250,17 @@ def toggle_sql_logging():
         db_logger.disabled = True
     return flask.jsonify(**{"sql logging":flask.current_app.config['SQLALCHEMY_ECHO'], "log location":log_path})
 
-
 def test_task(a):
-    return (a+4)*3
+    return (a + 4) * 3
 
-@main.route("/test/rq", methods=['GET', 'POST'])
+@main.route("/test_rq", methods=['GET', 'POST'])
 def queue_test():
-    result = q.enqueue(test_task, 2)
+    result = flask.current_app.q.enqueue(test_task, 2)
     return {"task_id": result.id}
 
-@main.route("/test/<id>", methods=['GET', 'POST'])
+@main.route("/test_rq/<id>", methods=['GET', 'POST'])
 def check_task(id):
-    job = q.fetch_job(id)
+    job = flask.current_app.q.fetch_job(id)
     if job is None:
         return {"status": "error", "message": f"No job found with id {id}"}
     elif job.is_finished:
