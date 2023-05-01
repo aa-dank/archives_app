@@ -211,7 +211,7 @@ def change_config_settings():
 @roles_required(['ADMIN'])
 def test_logging():
     """
-    endpoint for seeing how the system responds to errors
+    endpoint for seeing how the system responds to different logging events
     @return:
     """
     flask.current_app.logger.debug("I'm a test DEBUG message")
@@ -256,7 +256,7 @@ def test_task(a):
 @main.route("/test_rq", methods=['GET', 'POST'])
 def queue_test():
     result = flask.current_app.q.enqueue(test_task, 2)
-    return {"task_id": result.id}
+    return {"test task id": result.id, "Redis URL": flask.current_app.config.get("REDIS_URL")}
 
 @main.route("/test_rq/<id>", methods=['GET', 'POST'])
 def check_task(id):

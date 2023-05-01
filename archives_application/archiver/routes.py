@@ -6,6 +6,8 @@ import random
 import re
 import shutil
 import sys
+import time
+from datetime import timedelta
 from .. import utilities, db
 from .archival_file import ArchivalFile
 from .server_edit import ServerEdit
@@ -547,3 +549,130 @@ def archived_or_not():
                                        app_obj=flask.current_app)
 
     return flask.render_template('archived_or_not.html', title='Determine if File Already Archived', form=form)
+
+def scrape_file_data(app_obj, start_location: str, file_server_root_index: int,
+                     exclusion_functions: list[Callable[[str], bool]]):
+    scrape_time = timedelta(minutes=10)
+    start_time = time.time()
+    start_location_found = False
+    scrape_log = {"Scrape Date": datetime.now().strftime(app_obj.config.get('DEFAULT_DATETIME_FORMAT')),
+                  "Files Added":0,
+                  "File Locations Added":0,
+                  "Errors":[],
+                  "Time Elapsed":0,
+                  "Next Start Location": start_location}
+
+    for root, dirs, files in os.walk(app_obj.config.get('ARCHIVES_LOCATION')):
+        # if the time limit for scraping has passed, we end the scraping loop
+        if (datetime.now() - start_time) >= scrape_time:
+            scrape_log["Next Start Location"] = root
+            break
+
+        # We iterate through the archives folder structure until we find the location from which we want to start
+        # scraping file data.
+        if root == start_location:
+            start_location_found = True
+
+        if not start_location_found:
+            continue
+
+        filepaths = [os.path.join(root, f) for f in files]
+        for file in filepaths:
+            try:
+                # if the file is excluded by one of the exclusion functions, move to next file
+                if any([fun(file) for fun in exclusion_functions]):
+                    continue
+                file_is_new = False
+                file_hash = utilities.get_hash(filepath=file)
+                db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
+
+                # if there is not an equivalent entry in database, we add it.
+                if not db_file_entry:
+                    file_is_new = True
+                    file_size = os.path.getsize(file)
+                    path_list = utilities.split_path(file)
+                    extension = path_list[-1].split(".")[-1].lower()
+                    model = FileModel(hash=file_hash,
+                                      size=file_size,
+                                      extension=extension)
+                    db.session.add(model)
+                    db.session.commit()
+                    db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
+                    scrape_log["Files Added"] += 1
+
+                path_list = utilities.split_path(file)
+                file_server_dirs = os.path.join(*path_list[file_server_root_index:-1])
+                filename = path_list[-1]
+                if not file_is_new:
+
+                    # query to see if the current path is already represented in the database
+                    db_path_entry = db.session.query(FileLocationModel).filter(
+                        FileLocationModel.file_server_directories == file_server_dirs,
+                        FileLocationModel.filename == filename).first()
+                    confirmed_exists_dt = datetime.now()
+                    confirmed_hash_dt = datetime.now()
+
+                    # if there is an entry for this path in the database update the dates now we have confirmed location and
+                    # that the file has not changed (hash is same.)
+                    if db_path_entry:
+
+
+                        entry_updates = {"existence_confirmed": confirmed_exists_dt,
+                                         "hash_confirmed": confirmed_hash_dt}
+                        db.session.query(FileLocationModel).filter(
+                            FileLocationModel.file_server_directories == file_server_dirs,
+                            FileLocationModel.filename == filename).update(entry_updates)
+
+                        db.session.commit()
+                        continue
+
+                new_location = FileLocationModel(file_id=db_file_entry.id,
+                                                 file_server_directories=file_server_dirs,
+                                                 filename=filename, existence_confirmed=confirmed_exists_dt,
+                                                 hash_confirmed=confirmed_hash_dt)
+                db.session.add(new_location)
+                db.session.commit()
+                scrape_log["File Locations Added"] += 1
+
+            except Exception as e:
+                e_dict = {"Filepath": file, "Exception": str(e)}
+                scrape_log["Errors"].append(e_dict)
+
+    scrape_log["Time Elapsed"] = str(time.time() - start_time) + "s"
+    return scrape_log
+
+
+@archiver.route("/scrape_files", methods=['GET', 'POST'])
+@utilities.roles_required(['ADMIN', 'ARCHIVIST'])
+def scrape_files():
+    def retrieve_scraping_start_location():
+        pass
+
+    def exclude_extensions(f_path, ext_list=['DS_Store', '.ini']):
+        """
+        checks filepath to see if it is using excluded extensions
+        """
+        filename = utilities.split_path(f_path)[-1]
+        return any([filename.endswith(ext) for ext in ext_list])
+
+    def exclude_filenames(f_path, excluded_names=['Thumbs.db', 'thumbs.db', 'desktop.ini']):
+        """
+        excludes files with certain names
+        """
+        filename = utilities.split_path(f_path)[-1]
+        return filename in excluded_names
+    result = {}
+    try:
+        scrape_location = flask.current_app.config.get("ARCHIVES_LOCATION")
+        #scraping_start = retrieve_scraping_start_location(app=flask.current_app._get_current_object(),)
+        result = scrape_file_data(app_obj=flask.current_app._get_current_object(),
+                                  start_location=scrape_location,
+                                  file_server_root_index=2,
+                                  exclusion_functions=[exclude_filenames, exclude_extensions])
+
+    except Exception as e:
+        exception_handling_pattern(flash_message="Issue setting up file scraping task:",
+                                   thrown_exception=e,
+                                   app_obj=flask.current_app)
+
+    return result

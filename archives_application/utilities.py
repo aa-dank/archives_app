@@ -49,12 +49,12 @@ def roles_required(roles: list[str]):
     def decorator(func):
         @wraps(func)
         def wrap(*args, **kwargs):
-            user_role_list = current_user.roles.split(",")
             # if the user has at least a single role and at least one of the user roles is in roles...
-            if hasattr(current_user, 'roles') and [role for role in roles if role in user_role_list]:
+            if hasattr(current_user, 'roles') and [role for role in roles if role in current_user.roles.split(",")]:
                 return func(*args, **kwargs)
             else:
-                flask.flash("Need a different role to access this.", 'warning')
+                mssg = "Access Denied. Are you logged in? Do you have the correct account role to access this?"
+                flask.flash(mssg, 'warning')
                 return flask.redirect(flask.url_for('main.home'))
 
         return wrap
@@ -205,7 +205,7 @@ def user_path_to_app_path(path_from_user, location_path_prefix):
         is_network_url = any([test_path.startswith(match) for match in pattern_matches])
         return is_network_url
 
-    # If we are not using a network url then the location prefix isthe mount location on either a windows or
+    # If we are not using a network url then the location prefix is the mount location on either a windows or
     # linux machine.
     if not matches_network_url(location_path_prefix):
 
