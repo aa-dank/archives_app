@@ -309,7 +309,7 @@ def user_timesheet(employee_id):
                                    thrown_exception=e, app_obj=flask.current_app)
 
     aggregate_hours_df = pd.DataFrame.from_dict(all_days_data)
-    archivist_dict["html_table"] = aggregate_hours_df.to_html(index=False)
+    archivist_dict["html_table"] = aggregate_hours_df.to_html(index=False, classes="table-hover table-dark")
 
     return flask.render_template('timesheet_tables.html', title="Timesheet", form=form, archivist_info_list=[archivist_dict])
 
@@ -409,11 +409,11 @@ def all_timesheets():
                     compiled_journal = compile_journal(date=range_date,
                                                        timecard_df=user_timesheet_df,
                                                        delimiter_str=" \ ")
-                    day_data["journal"] = compiled_journal
+                    day_data["Journal"] = compiled_journal
                     all_days_data.append(day_data)
 
                 archivist_dict["timesheet_df"] = pd.DataFrame.from_dict(all_days_data)
-                archivist_dict["html_table"] = archivist_dict["timesheet_df"].to_html(index=False)
+                archivist_dict["html_table"] = archivist_dict["timesheet_df"].to_html(index=False, classes="table-hover table-dark")
 
     except Exception as e:
         exception_handling_pattern(flash_message="Error creating individualized timesheet tables: ",
