@@ -22,19 +22,24 @@ RUN apt-get update && apt-get install -y \
     iproute2 \
     iputils-ping
 
-ENV FLASK_APP=run.py
-
-# Set the working directory to /app
-WORKDIR /app/archives_app
 
 # Mount the Windows Server shares
 RUN mkdir -p /app/Data/Archive_Data
 RUN mkdir -p /app/Data/PPC_Records
 RUN mkdir -p /app/Data/Cannon_Scans
 RUN mkdir -p /app/archives_app
+RUN chown -R nobody:nogroup /app/Data && \
+    chown -R nobody:nogroup /app/archives_app && \
+    chmod -R 777 /app/Data && \
+    chmod -R 777 /app/archives_app
+
+# Set the working directory to /app
+WORKDIR /app/archives_app
 
 # Copy requirements.txt to /app/archives_app
 COPY requirements.txt /app/archives_app
+
+ENV FLASK_APP=run.py
 
 # Expose port 5000 for the Flask application
 EXPOSE 5000

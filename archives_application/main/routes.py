@@ -7,8 +7,8 @@ import shutil
 import sys
 import archives_application.app_config as app_config
 from flask_login import current_user
-from . import forms
-from .. utilities import roles_required
+from archives_application.main import forms
+from archives_application.utilities import roles_required
 from archives_application import db, bcrypt
 from archives_application.models import *
 

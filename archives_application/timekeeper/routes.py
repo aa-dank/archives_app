@@ -14,10 +14,9 @@ from flask import current_app
 from flask_login import login_required, current_user
 from sqlalchemy import and_
 
-from .forms import TimekeepingForm, TimeSheetForm, TimeSheetAdminForm
-from .. import db
-from .. import utilities
-from ..models import UserModel, TimekeeperEventModel, ArchivedFileModel
+from archives_application.timekeeper.forms import TimekeepingForm, TimeSheetForm, TimeSheetAdminForm
+from archives_application import utilities
+from archives_application.models import UserModel, TimekeeperEventModel, ArchivedFileModel, db
 
 timekeeper = flask.Blueprint('timekeeper', __name__)
 
