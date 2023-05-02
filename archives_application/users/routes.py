@@ -5,8 +5,8 @@ import requests
 from flask_login import login_user, logout_user, login_required, current_user
 from archives_application import db, bcrypt
 from archives_application.models import *
-from .. import utilities
-from .forms import *
+from archives_application import utilities
+from archives_application.users.forms import *
 
 
 #TODO we should probably create a dataclass for individual info about a user. Now it is saved in a dictionary

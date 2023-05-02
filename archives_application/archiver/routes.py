@@ -8,13 +8,13 @@ import shutil
 import sys
 import time
 from datetime import timedelta
-from .. import utilities, db
-from .archival_file import ArchivalFile
-from .server_edit import ServerEdit
-from .forms import *
+from archives_application.archiver.archival_file import ArchivalFile
+from archives_application import utilities
+from archives_application.archiver.server_edit import ServerEdit
+from archives_application.archiver.forms import *
 from flask_login import login_required, current_user
 from archives_application.models import *
-from archives_application import bcrypt
+from archives_application import db
 from typing import Callable
 
 
@@ -550,7 +550,7 @@ def archived_or_not():
 
     return flask.render_template('archived_or_not.html', title='Determine if File Already Archived', form=form)
 
-def scrape_file_data(app_obj, start_location: str, file_server_root_index: int,
+def scrape_file_data(app_obj: flask.app.Flask, start_location: str, file_server_root_index: int,
                      exclusion_functions: list[Callable[[str], bool]]):
     scrape_time = timedelta(minutes=10)
     start_time = time.time()
@@ -563,8 +563,9 @@ def scrape_file_data(app_obj, start_location: str, file_server_root_index: int,
                   "Next Start Location": start_location}
 
     for root, dirs, files in os.walk(app_obj.config.get('ARCHIVES_LOCATION')):
+        
         # if the time limit for scraping has passed, we end the scraping loop
-        if (datetime.now() - start_time) >= scrape_time:
+        if timedelta(seconds=(time.time() - start_time)) >= scrape_time:
             scrape_log["Next Start Location"] = root
             break
 
@@ -603,14 +604,14 @@ def scrape_file_data(app_obj, start_location: str, file_server_root_index: int,
                 path_list = utilities.split_path(file)
                 file_server_dirs = os.path.join(*path_list[file_server_root_index:-1])
                 filename = path_list[-1]
+                confirmed_exists_dt = datetime.now()
+                confirmed_hash_dt = datetime.now()
                 if not file_is_new:
 
                     # query to see if the current path is already represented in the database
                     db_path_entry = db.session.query(FileLocationModel).filter(
                         FileLocationModel.file_server_directories == file_server_dirs,
                         FileLocationModel.filename == filename).first()
-                    confirmed_exists_dt = datetime.now()
-                    confirmed_hash_dt = datetime.now()
 
                     # if there is an entry for this path in the database update the dates now we have confirmed location and
                     # that the file has not changed (hash is same.)
@@ -643,7 +644,6 @@ def scrape_file_data(app_obj, start_location: str, file_server_root_index: int,
 
 
 @archiver.route("/scrape_files", methods=['GET', 'POST'])
-@utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def scrape_files():
     def retrieve_scraping_start_location():
         pass
@@ -667,7 +667,7 @@ def scrape_files():
         #scraping_start = retrieve_scraping_start_location(app=flask.current_app._get_current_object(),)
         result = scrape_file_data(app_obj=flask.current_app._get_current_object(),
                                   start_location=scrape_location,
-                                  file_server_root_index=2,
+                                  file_server_root_index=3,
                                   exclusion_functions=[exclude_filenames, exclude_extensions])
 
     except Exception as e:
