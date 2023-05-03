@@ -551,8 +551,11 @@ def archived_or_not():
 
     return flask.render_template('archived_or_not.html', title='Determine if File Already Archived', form=form)
 
+
 def scrape_file_data(archives_location: str, start_location: str, file_server_root_index: int,
-                     exclusion_functions: list[Callable[[str], bool]], scrape_time: timedelta):
+                     exclusion_functions: list[Callable[[str], bool]], scrape_time: timedelta,
+                     queue_id: str):
+    
     start_time = time.time()
     start_location_found = False
     scrape_log = {"Scrape Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
@@ -616,8 +619,6 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
                     # if there is an entry for this path in the database update the dates now we have confirmed location and
                     # that the file has not changed (hash is same.)
                     if db_path_entry:
-
-
                         entry_updates = {"existence_confirmed": confirmed_exists_dt,
                                          "hash_confirmed": confirmed_hash_dt}
                         db.session.query(FileLocationModel).filter(
@@ -639,7 +640,11 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
                 e_dict = {"Filepath": file, "Exception": str(e)}
                 scrape_log["Errors"].append(e_dict)
 
+    # update the task entry in the database
     scrape_log["Time Elapsed"] = str(time.time() - start_time) + "s"
+    task_db_updates = {"status": 'finished', "result": scrape_log, time_completed:datetime.now()}
+    db.session.query(WorkerTask).filter(WorkerTask.id == queue_id).update(task_db_updates)
+    db.commit()
     return scrape_log
 
 
@@ -651,7 +656,7 @@ def exclude_extensions(f_path, ext_list=['DS_Store', '.ini']):
     return any([filename.endswith(ext) for ext in ext_list])
 
 
-def exclude_filenames(f_path, excluded_names=['Thumbs.db', 'thumbs.db', 'desktop.ini']):
+def exclude_filenames(f_path, excluded_names=['Thumbs.db', 'thumbs.db', 'desktop.ini', '.DS_Store']):
     """
     excludes files with certain names
     """
@@ -668,6 +673,8 @@ def scrape_files():
     task_dict = {}
     try:
         scrape_location = retrieve_scraping_start_location()
+        #create our own job id to pass to the task so it can manipulate and query its own representation in the database
+        scrape_job_id = f"{scrape_file_data.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
         scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
                        "start_location": scrape_location,
                        "file_server_root_index": 3,
@@ -676,12 +683,18 @@ def scrape_files():
 
         task = flask.current_app.q.enqueue_call(func=scrape_file_data,
                                                 kwargs=scrape_params,
+                                                job_id= scrape_job_id
                                                 result_ttl=43200)
         
         task_dict = {"task_id": task.id,
                      "enqueued_at":str(task.enqueued_at),
                      "origin": task.origin,
                      "func_name": task.func.__name__}
+        
+        new_task_record = WorkerTask(task_id=task.id, time_enqueued=str(task.enqueued_at), origin=task.origin,
+                                     function_name=task.func.__name__, status=task.status)
+        db.session.add(new_task_record)
+        db.session.commit()
 
     except Exception as e:
         return exception_handling_pattern(flash_message="Issue setting up file scraping task:",
