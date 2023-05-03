@@ -107,13 +107,13 @@ class FileLocationModel(db.Model):
     
 
 class WorkerTask(db.Model):
-
     __tablename__ = 'worker_tasks'
+    
     id = db.Column(db.Integer, primary_key=True)
-    task_id = db.Column(db.String(255))
-    task_completed = db.Column(db.DateTime)
-    task_enqueued = db.Column(db.DateTime)
+    task_id = db.Column(db.String(255), nullable=False)
+    time_enqueued = db.Column(db.DateTime, nullable=False)
+    time_completed = db.Column(db.DateTime)
+    origin = db.Column(db.String(255), nullable=False)
+    function_name = db.Column(db.String(255))
+    failed = db.Column(db.Boolean, nullable=False)
     task_results = db.Column(db.JSON)
-
-    def __repr__(self):
-        return f"Task: {self.id}, {self.task_id}, {self.task_enqueued}, {self.task_completed}, {self.task_results}"
