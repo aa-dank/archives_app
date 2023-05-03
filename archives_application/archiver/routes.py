@@ -1,4 +1,5 @@
 import datetime
+import dill
 import flask
 import flask_sqlalchemy
 import os
@@ -551,8 +552,7 @@ def archived_or_not():
     return flask.render_template('archived_or_not.html', title='Determine if File Already Archived', form=form)
 
 def scrape_file_data(app_obj: flask.app.Flask, start_location: str, file_server_root_index: int,
-                     exclusion_functions: list[Callable[[str], bool]]):
-    scrape_time = timedelta(minutes=10)
+                     exclusion_functions: list[Callable[[str], bool]], scrape_time: timedelta):
     start_time = time.time()
     start_location_found = False
     scrape_log = {"Scrape Date": datetime.now().strftime(app_obj.config.get('DEFAULT_DATETIME_FORMAT')),
@@ -645,9 +645,11 @@ def scrape_file_data(app_obj: flask.app.Flask, start_location: str, file_server_
 
 @archiver.route("/scrape_files", methods=['GET', 'POST'])
 def scrape_files():
+    
     def retrieve_scraping_start_location():
-        pass
+        return flask.current_app.config.get("ARCHIVES_LOCATION")
 
+    
     def exclude_extensions(f_path, ext_list=['DS_Store', '.ini']):
         """
         checks filepath to see if it is using excluded extensions
@@ -655,24 +657,37 @@ def scrape_files():
         filename = utilities.split_path(f_path)[-1]
         return any([filename.endswith(ext) for ext in ext_list])
 
+    
     def exclude_filenames(f_path, excluded_names=['Thumbs.db', 'thumbs.db', 'desktop.ini']):
         """
         excludes files with certain names
         """
         filename = utilities.split_path(f_path)[-1]
         return filename in excluded_names
-    result = {}
+    
+    
+    task_dict = {}
     try:
-        scrape_location = flask.current_app.config.get("ARCHIVES_LOCATION")
-        #scraping_start = retrieve_scraping_start_location(app=flask.current_app._get_current_object(),)
-        result = scrape_file_data(app_obj=flask.current_app._get_current_object(),
-                                  start_location=scrape_location,
-                                  file_server_root_index=3,
-                                  exclusion_functions=[exclude_filenames, exclude_extensions])
+        scrape_location = retrieve_scraping_start_location()
+        serialized_app = dill.dumps(flask.current_app._get_current_object())
+        scrape_params = {"app_obj": serialized_app,
+                       "start_location": scrape_location,
+                       "file_server_root_index": 3,
+                       "exclusion_functions": [exclude_extensions, exclude_filenames],
+                       "scrape_time": timedelta(minutes=5)}
+
+        task = flask.current_app.q.enqueue_call(func=scrape_file_data,
+                                                   kwargs=scrape_params,
+                                                   result_ttl=43200)
+        
+        task_dict = {"task_id": task.id,
+                     "enqueued_at":task.equeued_at,
+                     "origin": task.origin,
+                     "func_name": task.func}
 
     except Exception as e:
         exception_handling_pattern(flash_message="Issue setting up file scraping task:",
                                    thrown_exception=e,
                                    app_obj=flask.current_app)
 
-    return result
+    return task_dict
