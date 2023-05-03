@@ -115,5 +115,8 @@ class WorkerTask(db.Model):
     time_completed = db.Column(db.DateTime)
     origin = db.Column(db.String(255), nullable=False)
     function_name = db.Column(db.String(255))
-    failed = db.Column(db.Boolean, nullable=False)
+    status = db.Column(db.String)
     task_results = db.Column(db.JSON)
+
+    def __repr__(self):
+        return f"Enqueued Task: {self.id}, {self.task_id}, {self.time_enqueued}, {self.origin}, {self.function_name}, {self.time_completed}, {self.status}, {self.task_results}"
