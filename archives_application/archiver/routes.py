@@ -642,9 +642,10 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
 
     # update the task entry in the database
     scrape_log["Time Elapsed"] = str(time.time() - start_time) + "s"
-    task_db_updates = {"status": 'finished', "result": scrape_log, time_completed:datetime.now()}
+    task_db_updates = {"status": 'finished', "result": scrape_log, "time_completed":datetime.now()}
     db.session.query(WorkerTask).filter(WorkerTask.id == queue_id).update(task_db_updates)
     db.commit()
+    
     return scrape_log
 
 
@@ -656,7 +657,7 @@ def exclude_extensions(f_path, ext_list=['DS_Store', '.ini']):
     return any([filename.endswith(ext) for ext in ext_list])
 
 
-def exclude_filenames(f_path, excluded_names=['Thumbs.db', 'thumbs.db', 'desktop.ini', '.DS_Store']):
+def exclude_filenames(f_path, excluded_names=['Thumbs.db', 'thumbs.db', 'desktop.ini']):
     """
     excludes files with certain names
     """
@@ -667,23 +668,37 @@ def exclude_filenames(f_path, excluded_names=['Thumbs.db', 'thumbs.db', 'desktop
 @archiver.route("/scrape_files", methods=['GET', 'POST'])
 def scrape_files():
     
-    def retrieve_scraping_start_location():
-        return flask.current_app.config.get("ARCHIVES_LOCATION")
+    def retrieve_location_to_start_scraping():
+        location = flask.current_app.config.get("ARCHIVES_LOCATION")
+        try:
+            most_recent_scrape = db.session.query(WorkerTask).filter(
+                WorkerTask.task_results.has_key("Next Start Location"),
+                WorkerTask.time_completed.isnot(None)
+            ).order_by(desc(WorkerTask.time_completed)).first()
+
+            if most_recent_scrape is not None:
+                location = most_recent_scrape.task_results["Next Start Location"]  
+                
+        except Exception as e:
+            pass 
+        return location
     
     task_dict = {}
     try:
-        scrape_location = retrieve_scraping_start_location()
-        #create our own job id to pass to the task so it can manipulate and query its own representation in the database
+        scrape_location = retrieve_location_to_start_scraping()
+        # Create our own job id to pass to the task so it can manipulate and query its own representation 
+        # in the database and Redis.
         scrape_job_id = f"{scrape_file_data.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
         scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
-                       "start_location": scrape_location,
-                       "file_server_root_index": 3,
-                       "exclusion_functions": [exclude_extensions, exclude_filenames],
-                       "scrape_time": timedelta(minutes=15)}
+                         "start_location": scrape_location,
+                         "file_server_root_index": 3,
+                         "exclusion_functions": [exclude_extensions, exclude_filenames],
+                         "scrape_time": timedelta(minutes=15),
+                         "queue_id": scrape_job_id}
 
         task = flask.current_app.q.enqueue_call(func=scrape_file_data,
                                                 kwargs=scrape_params,
-                                                job_id= scrape_job_id
+                                                job_id= scrape_job_id,
                                                 result_ttl=43200)
         
         task_dict = {"task_id": task.id,
@@ -692,7 +707,7 @@ def scrape_files():
                      "func_name": task.func.__name__}
         
         new_task_record = WorkerTask(task_id=task.id, time_enqueued=str(task.enqueued_at), origin=task.origin,
-                                     function_name=task.func.__name__, status=task.status)
+                                     function_name=task.func.__name__, status="queued")
         db.session.add(new_task_record)
         db.session.commit()
 
