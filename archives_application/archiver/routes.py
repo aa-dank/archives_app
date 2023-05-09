@@ -7,10 +7,10 @@ import random
 import re
 import shutil
 import sys
-import time
 from datetime import timedelta
 from archives_application.archiver.archival_file import ArchivalFile
 from archives_application import utilities
+
 from archives_application.archiver.server_edit import ServerEdit
 from archives_application.archiver.forms import *
 from flask_login import login_required, current_user
@@ -312,7 +312,7 @@ def inbox_item():
                 return flask.send_file(arch_file_path, as_attachment=not file_can_be_opened_in_browser)
 
 
-            # raise exception if there is not the requiored fields filled out in the submitted form.
+            # raise exception if there is not the required fields filled out in the submitted form.
             if not ((form.project_number.data and form.destination_directory.data) or form.destination_path.data):
                 raise Exception(
                     "Missing required fields -- either project_number and destination_directory or just a destination_path")
@@ -552,103 +552,6 @@ def archived_or_not():
     return flask.render_template('archived_or_not.html', title='Determine if File Already Archived', form=form)
 
 
-def scrape_file_data(archives_location: str, start_location: str, file_server_root_index: int,
-                     exclusion_functions: list[Callable[[str], bool]], scrape_time: timedelta,
-                     queue_id: str):
-    
-    start_time = time.time()
-    start_location_found = False
-    scrape_log = {"Scrape Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
-                  "Files Added":0,
-                  "File Locations Added":0,
-                  "Errors":[],
-                  "Time Elapsed":0,
-                  "Next Start Location": start_location}
-
-    for root, _, files in os.walk(archives_location):
-        
-        # if the time limit for scraping has passed, we end the scraping loop
-        if timedelta(seconds=(time.time() - start_time)) >= scrape_time:
-            scrape_log["Next Start Location"] = root
-            break
-
-        # We iterate through the archives folder structure until we find the location from which we want to start
-        # scraping file data.
-        if root == start_location:
-            start_location_found = True
-
-        if not start_location_found:
-            continue
-
-        filepaths = [os.path.join(root, f) for f in files]
-        for file in filepaths:
-            try:
-                # if the file is excluded by one of the exclusion functions, move to next file
-                if any([fun(file) for fun in exclusion_functions]):
-                    continue
-                file_is_new = False
-                file_hash = utilities.get_hash(filepath=file)
-                db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
-
-                # if there is not an equivalent entry in database, we add it.
-                if not db_file_entry:
-                    file_is_new = True
-                    file_size = os.path.getsize(file)
-                    path_list = utilities.split_path(file)
-                    extension = path_list[-1].split(".")[-1].lower()
-                    model = FileModel(hash=file_hash,
-                                      size=file_size,
-                                      extension=extension)
-                    db.session.add(model)
-                    db.session.commit()
-                    db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
-                    scrape_log["Files Added"] += 1
-
-                path_list = utilities.split_path(file)
-                file_server_dirs = os.path.join(*path_list[file_server_root_index:-1])
-                filename = path_list[-1]
-                confirmed_exists_dt = datetime.now()
-                confirmed_hash_dt = datetime.now()
-                if not file_is_new:
-
-                    # query to see if the current path is already represented in the database
-                    db_path_entry = db.session.query(FileLocationModel).filter(
-                        FileLocationModel.file_server_directories == file_server_dirs,
-                        FileLocationModel.filename == filename).first()
-
-                    # if there is an entry for this path in the database update the dates now we have confirmed location and
-                    # that the file has not changed (hash is same.)
-                    if db_path_entry:
-                        entry_updates = {"existence_confirmed": confirmed_exists_dt,
-                                         "hash_confirmed": confirmed_hash_dt}
-                        db.session.query(FileLocationModel).filter(
-                            FileLocationModel.file_server_directories == file_server_dirs,
-                            FileLocationModel.filename == filename).update(entry_updates)
-
-                        db.session.commit()
-                        continue
-
-                new_location = FileLocationModel(file_id=db_file_entry.id,
-                                                 file_server_directories=file_server_dirs,
-                                                 filename=filename, existence_confirmed=confirmed_exists_dt,
-                                                 hash_confirmed=confirmed_hash_dt)
-                db.session.add(new_location)
-                db.session.commit()
-                scrape_log["File Locations Added"] += 1
-
-            except Exception as e:
-                e_dict = {"Filepath": file, "Exception": str(e)}
-                scrape_log["Errors"].append(e_dict)
-
-    # update the task entry in the database
-    scrape_log["Time Elapsed"] = str(time.time() - start_time) + "s"
-    task_db_updates = {"status": 'finished', "result": scrape_log, "time_completed":datetime.now()}
-    db.session.query(WorkerTask).filter(WorkerTask.id == queue_id).update(task_db_updates)
-    db.commit()
-    
-    return scrape_log
-
-
 def exclude_extensions(f_path, ext_list=['DS_Store', '.ini']):
     """
     checks filepath to see if it is using excluded extensions
@@ -667,20 +570,28 @@ def exclude_filenames(f_path, excluded_names=['Thumbs.db', 'thumbs.db', 'desktop
 
 @archiver.route("/scrape_files", methods=['GET', 'POST'])
 def scrape_files():
+    from archives_application.archiver.archiver_tasks import scrape_file_data
     
     def retrieve_location_to_start_scraping():
+        """
+        Retrieves the location from which to start scraping files. 
+        This is the last directory scraped of the most recent completed scrape.
+        If there is no location in the database, we use the root of the archives directory.
+        
+        :return: str Location to start scraping files
+        """
         location = flask.current_app.config.get("ARCHIVES_LOCATION")
         try:
             most_recent_scrape = db.session.query(WorkerTask).filter(
-                WorkerTask.task_results.has_key("Next Start Location"),
+                db.cast(WorkerTask.task_results, db.String).like('%Next Start Location%'),
                 WorkerTask.time_completed.isnot(None)
-            ).order_by(desc(WorkerTask.time_completed)).first()
+            ).order_by(db.desc(WorkerTask.time_completed)).first()
 
             if most_recent_scrape is not None:
                 location = most_recent_scrape.task_results["Next Start Location"]  
                 
         except Exception as e:
-            pass 
+            pass #TODO Do something with error
         return location
     
     task_dict = {}
@@ -690,24 +601,24 @@ def scrape_files():
         # in the database and Redis.
         scrape_job_id = f"{scrape_file_data.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
         scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
-                         "start_location": scrape_location,
-                         "file_server_root_index": 3,
-                         "exclusion_functions": [exclude_extensions, exclude_filenames],
-                         "scrape_time": timedelta(minutes=15),
-                         "queue_id": scrape_job_id}
+                        "start_location": scrape_location,
+                        "file_server_root_index": 3,
+                        "exclusion_functions": [exclude_extensions, exclude_filenames],
+                        "scrape_time": timedelta(minutes=3),
+                        "queue_id": scrape_job_id}
 
         task = flask.current_app.q.enqueue_call(func=scrape_file_data,
                                                 kwargs=scrape_params,
                                                 job_id= scrape_job_id,
                                                 result_ttl=43200)
-        
+    
         task_dict = {"task_id": task.id,
-                     "enqueued_at":str(task.enqueued_at),
-                     "origin": task.origin,
-                     "func_name": task.func.__name__}
+                    "enqueued_at":str(task.enqueued_at),
+                    "origin": task.origin,
+                    "func_name": task.func.__name__}
         
         new_task_record = WorkerTask(task_id=task.id, time_enqueued=str(task.enqueued_at), origin=task.origin,
-                                     function_name=task.func.__name__, status="queued")
+                                    function_name=task.func.__name__, status="queued")
         db.session.add(new_task_record)
         db.session.commit()
 
