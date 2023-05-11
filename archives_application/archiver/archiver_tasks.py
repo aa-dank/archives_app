@@ -8,12 +8,14 @@ from datetime import timedelta, datetime
 from typing import Callable
 
 
-# Create the app context
+# Create the app context so that tasks can access app extensions even though
+# they are not running in the main thread.
 app = create_app()
 app.app_context().push()
 
 
 def get_db():
+    """Get the database object from the app context."""
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy'].db
         return db
@@ -22,6 +24,17 @@ def get_db():
 def scrape_file_data(archives_location: str, start_location: str, file_server_root_index: int,
                      exclusion_functions: list[Callable[[str], bool]], scrape_time: timedelta,
                      queue_id: str):
+    """
+    This function scrapes file data from the archives file server and adds it to the database.
+    
+    :param archives_location: The location of the archives file server.
+    :param start_location: The location from which to start scraping file data.
+    :param file_server_root_index: The index of the file server root in the file server path.
+    :param exclusion_functions: A list of functions that take a file path as input and return True if the file
+    should be excluded from the scraping process.
+    :param scrape_time: The amount of time to spend scraping file data.
+    :param queue_id: The id of task in the worker queue.
+    """
     db = get_db()
 
     scrape_log = {"Scrape Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
