@@ -2,11 +2,10 @@ import datetime
 import flask
 import flask_sqlalchemy
 import os
-import pickle
 import random
 import re
 import shutil
-import sys
+import pandas as pd
 from datetime import timedelta
 from archives_application.archiver.archival_file import ArchivalFile
 from archives_application import utilities
@@ -16,7 +15,6 @@ from archives_application.archiver.forms import *
 from flask_login import login_required, current_user
 from archives_application.models import *
 from archives_application import db
-from typing import Callable
 
 
 archiver = flask.Blueprint('archiver', __name__)
@@ -36,17 +34,10 @@ def exception_handling_pattern(flash_message, thrown_exception, app_obj):
     return flask.redirect(flask.url_for('main.home'))
 
 
-def get_db_conn(query_obj: flask_sqlalchemy.query.Query):
-    """
-    Persistent issue to get a good engine or connection to pass queries against.
-    https://levelup.gitconnected.com/how-to-fix-attributeerror-optionengine-object-has-no-attribute-execute-in-pandas-eb635fbb89e4
-    @param query_obj:
-    @return:
-    """
-    eng = query_obj.session.bind
-    if not eng:
-        eng = db.engine
-    return eng.connect()
+def db_query_to_df(query: flask_sqlalchemy.query.Query):
+    results = query.all()
+    df = pd.DataFrame([row.__dict__ for row in results])
+    return df
 
 
 def get_user_handle():
@@ -321,7 +312,17 @@ def inbox_item():
             archival_filename = arch_file_filename
             if form.new_filename.data:
                 archival_filename = utilities.cleanse_filename(form.new_filename.data)
-            arch_file = ArchivalFile(current_path=arch_file_path, project=form.project_number.data,
+            
+            # make sure the archival filename includes the file extension
+            file_ext = arch_file_filename.split(".")[-1]
+            if not archival_filename.lower().endswith(file_ext.lower()):
+                archival_filename = archival_filename + "." + file_ext    
+
+            # strip the project number of any whitespace (in case an archivist adds a space after the project number)
+            project_num = form.project_number.data
+            if project_num:
+                project_num = project_num.strip()
+            arch_file = ArchivalFile(current_path=arch_file_path, project=project_num,
                                      new_filename=archival_filename, notes=form.notes.data,
                                      destination_dir=form.destination_directory.data,
                                      archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'),
@@ -386,81 +387,6 @@ def inbox_item():
 @login_required
 def archived_or_not():
 
-    def add_files_to_db(dir_path: str, db_session: db.session, file_server_root_index: int,
-                        exclusion_functions: list[Callable[[str], bool]]):
-        """
-        This function is used to add files and their information to a database using an ORM session. It takes in a directory
-         path, the ORM session, and an index for the file server's root directory. The function uses os.walk to iterate
-         through the directory and its subdirectories, getting the file paths and adding them to the database with their
-         respective file information such as hash, size, and extension. It also adds the file's location on the file server
-         to the database, and updates any existing entries with the current existence and hash confirmation dates.
-        :param dir_path:
-        :param db_session:
-        :param file_server_root_index: integer that represents the index of the root directory of the file server in the
-        file path.
-        :return:
-        """
-        for root, dirs, files in os.walk(dir_path):
-            filepaths = [os.path.join(root, f) for f in files]
-            for file in filepaths:
-
-                # if the file is excluded by one of the exclusion functions, move to next file
-                if any([fun(file) for fun in exclusion_functions]):
-                    continue
-
-                file_hash = utilities.get_hash(filepath=file)
-                file_entry = db_session.query(FileModel).filter(FileModel.hash == file_hash).first()
-                if not file_entry:
-                    file_size = os.path.getsize(file)
-                    path_list = utilities.split_path(file)
-                    extension = path_list[-1].split(".")[-1].lower()
-                    model = FileModel(hash=file_hash,
-                                      size=file_size,
-                                      extension=extension
-                                      )
-                    db_session.add(model)
-                    db_session.commit()
-
-                    file_entry = db_session.query(FileModel).filter(FileModel.hash == file_hash).first()
-
-                path_list = utilities.split_path(file)
-                file_server_dirs = os.path.join(*path_list[file_server_root_index:-1])
-                filename = path_list[-1]
-
-                # query to see if the current path is already represented in the database
-                path_entry = db_session.query(FileLocationModel).filter(
-                    FileLocationModel.file_server_directories == file_server_dirs,
-                    FileLocationModel.filename == filename).first()
-                confirmed_exists_dt = datetime.now()
-                confirmed_hash_dt = datetime.now()
-
-                # if there is a entry for this path in the database update the dates now we have confirmed location and that
-                # the file has not changed (hash is same.)
-                if path_entry:
-                    entry_updates = {"existence_confirmed": confirmed_exists_dt, "hash_confirmed": confirmed_hash_dt}
-                    db_session.query(FileLocationModel).filter(
-                        FileLocationModel.file_server_directories == file_server_dirs,
-                        FileLocationModel.filename == filename).update(entry_updates)
-
-                    db_session.commit()
-                    continue
-
-                new_location = FileLocationModel(file_id=file_entry.id, file_server_directories=file_server_dirs,
-                                                 filename=filename, existence_confirmed=confirmed_exists_dt,
-                                                 hash_confirmed=confirmed_hash_dt)
-                db_session.add(new_location)
-                db_session.commit()
-
-    def number_of_new_files(dir_path: str, db_session: db.session, file_server_root_index: int):
-        path_list = utilities.split_path(dir_path)
-        file_server_dirs = os.path.join(*path_list[file_server_root_index:])
-        files_in_db = db_session.query(FileLocationModel) \
-            .filter(FileLocationModel.file_server_directories.startswith(file_server_dirs)).count()
-        files_on_server = 0
-        for _, _, files in os.walk(dir_path):
-            files_on_server += len(files)
-
-        return files_on_server - files_in_db
 
     def known_locations(filepath: str, db_session: db.session):
         filehash = utilities.get_hash(filepath=filepath)
@@ -469,21 +395,6 @@ def archived_or_not():
             locations = db_session.query(FileLocationModel).filter(FileLocationModel.file_id == matching_file.id)
             return list(locations)
         return []
-
-    # define file_exclusion functions which take a filepath and assess whether it is a file that be considered
-    def exclude_extensions(f_path, ext_list=['DS_Store', '.ini']):
-        """
-        checks filepath to see if it using excluded extensions
-        """
-        filename = utilities.split_path(f_path)[-1]
-        return any([filename.endswith(ext) for ext in ext_list])
-
-    def exclude_filenames(f_path, excluded_names=['Thumbs.db', 'thumbs.db', 'desktop.ini']):
-        """
-        excludes files with certain names
-        """
-        filename = utilities.split_path(f_path)[-1]
-        return filename in excluded_names
 
     form = ArchivedOrNotForm()
     temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
@@ -496,9 +407,9 @@ def archived_or_not():
 
             # process requires that user has entered a location
             search_location = form.search_path.data
-            if not search_location:
-                flask.flash(f"Need to specify a search location.", 'warning')
-                flask.redirect(flask.url_for('archiver.archived_or_not'))
+            if search_location:
+                search_location = utilities.user_path_to_app_path(path_from_user=search_location,
+                                                              location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
 
             # we need to know where the root directory that is common across all urls on file server would be.
             # we will use the index of the root directory (with ##xx pattern subdirectories) in the path
@@ -509,39 +420,23 @@ def archived_or_not():
                                          utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')) if
                                          has_any_letters(d)]
             file_server_root_directory_index = len(file_server_root_dir_list)
-            search_location = utilities.user_path_to_app_path(path_from_user=search_location,
-                                                              location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
-
-            new_files = number_of_new_files(dir_path=search_location,
-                                            db_session=db.session,
-                                            file_server_root_index=file_server_root_directory_index)
-            if new_files:
-                add_files_to_db(dir_path=search_location,db_session=db.session,
-                                file_server_root_index=file_server_root_directory_index,
-                                exclusion_functions=[exclude_extensions, exclude_filenames])
-
-            locations = known_locations(filepath=temp_path, db_session=db.session)
-            # prevent list of locations from getting too long
-            if len(locations) > 5:
-                locations = locations[:4]
-
-            make_full_path = lambda server_dirs, filename: os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
-                                                              server_dirs, filename)
-
-            # make newline delimited list of paths that have the folder and exist in the search directory
-            locations_in_search = [make_full_path(pth.file_server_directories, pth.filename) for pth in locations if
-                                   make_full_path(pth.file_server_directories, pth.filename).startswith(
-                                       search_location)]
-            locations_str = "\n".join(locations_in_search)
-            if not locations_in_search:
-                locations_str = f"No matches found for {archival_filename}"
-            else:
-                locations_str = "Locations found:\n" + locations_str
+            
+            file_hash = utilities.get_hash(filepath=temp_path)
+            
+            matching_file = db.session.query(FileModel).filter(FileModel.hash == filehash).first()
+            if not matching_file:
+                flask.flash(f"No file found with hash {file_hash}", 'info')
+                return flask.redirect(flask.url_for('archiver.archived_or_not'))
+            
+            # Create dataframe of all locations that match the hash
+            
+            locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == matching_file.id)
+            locations_df = db_query_to_df(locations)
+            
 
             os.remove(temp_path)
-            flask.flash(locations_str, 'message')
-            flask.redirect(flask.url_for('archiver.archived_or_not'))
-
+            
+            return {}
 
         except Exception as e:
             os.remove(temp_path)
@@ -604,7 +499,7 @@ def scrape_files():
                         "start_location": scrape_location,
                         "file_server_root_index": 3,
                         "exclusion_functions": [exclude_extensions, exclude_filenames],
-                        "scrape_time": timedelta(minutes=3),
+                        "scrape_time": timedelta(minutes=120),
                         "queue_id": scrape_job_id}
 
         task = flask.current_app.q.enqueue_call(func=scrape_file_data,

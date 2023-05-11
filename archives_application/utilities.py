@@ -9,26 +9,89 @@ import sys
 from flask_login import current_user
 from functools import wraps
 from PIL import Image
-from pathlib import Path, PureWindowsPath, PurePosixPath
+from pathlib import Path, PureWindowsPath
 
 
 
 def split_path(path):
-    '''splits a path into each piece that corresponds to a mount point, directory name, or file'''
-    path = str(path)
-    allparts = []
-    while 1:
-        parts = os.path.split(path)
-        if parts[0] == path:  # sentinel for absolute paths
-            allparts.insert(0, parts[0])
-            break
-        elif parts[1] == path:  # sentinel for relative paths
-            allparts.insert(0, parts[1])
-            break
+    """
+    Split a path into a list of directories/files/mount points. It is built to accomodate Splitting both Windows and Linux paths
+    on linux systems. (It will not necessarily work to process linux paths on Windows systems)
+    :param path: The path to split.
+    """
+
+    def detect_filepath_type(filepath):
+        """
+        Detects the cooresponding OS of the filepath. (Windows, Linux, or Unknown)
+        :param filepath: The filepath to detect.
+        :return: The OS of the filepath. (Windows, Linux, or Unknown)
+        """
+        windows_pattern = r"^[A-Za-z]:\\(.+)$"
+        linux_pattern = r"^/([^/]+/)*[^/]+$"
+
+        if re.match(windows_pattern, filepath):
+            return "Windows"
+        elif re.match(linux_pattern, filepath):
+            return "Linux"
         else:
-            path = parts[0]
-            allparts.insert(0, parts[1])
-    return allparts
+            return "Unknown"
+        
+    def split_windows_path(filepath):
+        """"""
+        parts = []
+        curr_part = ""
+        is_absolute = False
+
+        if filepath.startswith("\\\\"):
+            # UNC path
+            parts.append(filepath[:2])
+            filepath = filepath[2:]
+        elif len(filepath) >= 2 and filepath[1] == ":":
+            # Absolute path
+            parts.append(filepath[:2])
+            filepath = filepath[2:]
+            is_absolute = True
+
+        for char in filepath:
+            if char == "\\":
+                if curr_part:
+                    parts.append(curr_part)
+                    curr_part = ""
+            else:
+                curr_part += char
+
+        if curr_part:
+            parts.append(curr_part)
+
+        if not is_absolute and not parts:
+            # Relative path with a single directory or filename
+            parts.append(curr_part)
+
+        return parts
+    
+    def split_other_path(path):
+
+        allparts = []
+        while True:
+            parts = os.path.split(path)
+            if parts[0] == path:  # sentinel for absolute paths
+                allparts.insert(0, parts[0])
+                break
+            elif parts[1] == path:  # sentinel for relative paths
+                allparts.insert(0, parts[1])
+                break
+            else:
+                path = parts[0]
+                allparts.insert(0, parts[1])
+        return allparts
+
+    path = str(path)
+    path_type = detect_filepath_type(path)
+    
+    if path_type == "Windows":
+        return split_windows_path(path)
+    
+    return split_other_path(path)
 
 
 def roles_required(roles: list[str]):
