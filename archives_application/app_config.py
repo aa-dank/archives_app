@@ -61,7 +61,7 @@ def get_test_config_path(prefix: str = "test_config"):
     """
     Function that allows to switch out config files without having to update the config filename as long as the filename
     starts with the prefix.
-    For example might have a config for use with sqlite, 'test_config_sqlite3.json' and one for postgresql,
+    For example might have a config for use with local database cluster, 'test_config_local_db.json' and one for postgresql,
     'test_config_postgres.json'. If the prefix is set to "test_config" then any confid that starts with that prefix.
     @param prefix: prefix string that identifies a test config
     @return:
@@ -77,36 +77,24 @@ def google_creds_from_creds_json(creds_path):
 
     return client_id, client_secret
 
-def assemble_location(location, sqlite_url=False):
+def assemble_location(location):
     """
     This takes paths and modifies them to work on either windows or linux systems
     @param location:
-    @param sqlite_url:
     @return:
     """
-    # TODO the logic of this function is poorly tested.
-    # example of working test config url: r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
-    sqlite_prefix = r"sqlite://"
+    # TODO: need to test functionality more thoroughly
     is_network_path = lambda some_path: (os.path.exists(r"\\" + some_path), os.path.exists(r"//" + some_path))
     bck_slsh, frwd_slsh = is_network_path(location)
-    has_sqlite_prefix = location.lower().startswith("sqlite")
 
     # if network location, process as such, including
     if frwd_slsh:
         location = r"//" + location
-        if (os.name in ['nt']) and (not has_sqlite_prefix) and sqlite_url:
-            location = r"/" + location
-        if sqlite_url and not has_sqlite_prefix:
-            location = sqlite_prefix + location
         return location
 
     if bck_slsh:
         location = r"\\" + location
-        if sqlite_url and not has_sqlite_prefix:
-            location = sqlite_prefix + location
         return location
-
-    return location
 
 
 def assemble_postgresql_url(host, db_name, username, password="", port="", dialect="", ssl=""):
@@ -160,20 +148,13 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
     # this url is where other api endpoints in the google ecosystem are indexed
     config_dict['GOOGLE_DISCOVERY_URL'] = (r"https://accounts.google.com/.well-known/openid-configuration")
 
-    # If the database type is sqlite, just use the url. Otherwise, we process the config into a postgresql url
-    if config_dict.get("POSTGRESQL_DATABASE"):
-        config_dict['SQLALCHEMY_DATABASE_URI'] = assemble_postgresql_url(host=config_dict["Sqalchemy_Database_Location"],
-                                                                         db_name=config_dict["POSTGRESQL_DATABASE"],
-                                                                         username=config_dict["POSTGRESQL_USERNAME"],
-                                                                         password=config_dict["POSTGRESQL_PASSWORD"],
-                                                                         port=config_dict["POSTGRESQL_PORT"],
-                                                                         ssl=config_dict["POSTGRESQL_SSL"])
-
-    else:
-
-        # test value for SQLALCHEMY_DATABASE_URI should be r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
-        config_dict['SQLALCHEMY_DATABASE_URI'] = assemble_location(
-            location=config_dict['Sqalchemy_Database_Location'], sqlite_url=True)
+    # Assemble Sqlalchemy url
+    config_dict['SQLALCHEMY_DATABASE_URI'] = assemble_postgresql_url(host=config_dict["Sqalchemy_Database_Location"],
+                                                                        db_name=config_dict["POSTGRESQL_DATABASE"],
+                                                                        username=config_dict["POSTGRESQL_USERNAME"],
+                                                                        password=config_dict["POSTGRESQL_PASSWORD"],
+                                                                        port=config_dict["POSTGRESQL_PORT"],
+                                                                        ssl=config_dict["POSTGRESQL_SSL"])
 
     config_dict['ARCHIVES_LOCATION'] = assemble_location(location=config_dict['ARCHIVES_LOCATION'])
     config_dict["ARCHIVIST_INBOX_LOCATION"] = assemble_location(location=config_dict["ARCHIVIST_INBOX_LOCATION"])

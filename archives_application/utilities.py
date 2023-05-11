@@ -329,29 +329,6 @@ def pdf_preview_image(pdf_path, image_destination, max_width=1080):
     fitz_doc.close()
     return output_path
 
-def establish_location_path(location, sqlite_url=False):
-    # TODO the logic of this function is poorly tested.
-    # example of working test config url: r'sqlite://///ppcou.ucsc.edu\Data\Archive_Data\archives_app.db'
-    sqlite_prefix = r"sqlite://"
-    is_network_path = lambda some_path: (os.path.exists(r"\\" + some_path), os.path.exists(r"//" + some_path))
-    bck_slsh, frwd_slsh = is_network_path(location)
-    has_sqlite_prefix = location.lower().startswith("sqlite")
-
-    # if network location, process as such, including
-    if frwd_slsh:
-        location = r"//" + location
-        if (os.name in ['nt']) and (not has_sqlite_prefix) and sqlite_url:
-            location = r"/" + location
-        if sqlite_url and not has_sqlite_prefix:
-            location = sqlite_prefix + location
-        return location
-
-    if bck_slsh:
-        location = r"\\" + location
-        return location
-
-    return location
-
 
 def get_hash(filepath, hash_algo=hashlib.sha1):
     def chunk_reader(fobj, chunk_size=1024):
