@@ -39,26 +39,6 @@ def db_query_to_df(query: flask_sqlalchemy.query.Query):
     df = pd.DataFrame([row.__dict__ for row in results])
     return df
 
-def pop_dialect_from_sqlite_uri(sql_uri:str):
-    """
-    turns the sqlite uri into a normal path by removing the sqlite prefix on the database path required by sqlalchemy.
-    Useful for using normal sqlite3 queries on the database.
-    More info: https://docs.sqlalchemy.org/en/14/core/engines.html#database-urls
-    :param sql_uri:
-    :return:
-    """
-    new_url = sql_uri
-    if sql_uri.startswith("sqlite"):
-        # if the platform is not linux or mac, it is assumed to be windows
-        if sys.platform.lower() not in ['linux', 'linux2', 'darwin']: #TODO are windows paths stored with back slash
-            return "\\\\" + new_url.split("/")[-1]
-        else:
-            sqlite_prefix = new_url.split("/")[0]
-            new_url = new_url[len(sqlite_prefix):]
-            # remove first char while the first char is '/'.
-            while new_url[0] == "/":
-                new_url = new_url[1:]
-    return new_url
 
 def daterange(start_date: datetime, end_date: datetime):
     """
@@ -96,7 +76,7 @@ def hours_worked_in_day(day: datetime.date, user_id: int):
 
     hours_worked = 0
 
-    # query sqlite db to retrieve all entries for given user id and day date. Put them in dataframe.
+    # query db to retrieve all entries for given user id and day date. Put them in dataframe.
     days_end = day + timedelta(days=1)
     query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == user_id,
                                               TimekeeperEventModel.datetime >= day.strftime("%Y-%m-%d"),

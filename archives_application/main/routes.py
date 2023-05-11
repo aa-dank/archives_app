@@ -62,33 +62,6 @@ def make_postgresql_backup():
             f"Backup command failed: Stderr from attempt to call pg_dump back-up command:\n{cmd_result.stderr}")
     return cmd_result.stdout, cmd_result.stderr
 
-
-def make_sqlite_backup():
-    def clean_url(u: str):
-        """
-        Turns the sqlite url into a path for shutil.copy
-        @param u: sqlite url
-        @return:  sqlite path
-        """
-        u = u[7:]
-        for idx, c in enumerate(u):
-            if c not in [r"\\",r"/"]:
-                u = u[idx:]
-        return u
-
-    db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
-    db_backup_destination = flask.current_app.config.get("DATABASE_BACKUP_LOCATION")
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    db_backup_destination = os.path.join(db_backup_destination, f"db_backup_{timestamp}.sql")
-    db_url = clean_url(db_url)
-    if not os.path.exists(db_url):
-        raise Exception("Cannot use sqlite db location to create a backup; os.path.exists failed. ")
-
-    try:
-        shutil.copyfile(db_url, db_backup_destination)
-    except Exception as e:
-        raise Exception(f"Shutil.copyfile failed to copy the database and threw this error:\n{e}")
-
 @main.route("/")
 @main.route("/home")
 def home():
@@ -128,38 +101,22 @@ def backup_database():
 
         # If there is a matching user to the request parameter, the password matches and that account has admin role...
         if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
-            # if using a postgresql database
-            if flask.current_app.config.get("POSTGRESQL_DATABASE"):
-                try:
-                    make_postgresql_backup()
-                except Exception as e:
-                    msg = "Error during function to backup the database:\n"
-                    return api_exception_subroutine(msg, e)
 
-            # if using a sqlite database
-            else:
-                try:
-                    make_sqlite_backup()
-                except Exception as e:
-                    msg = "Error during function to backup the database:\n"
-                    return api_exception_subroutine(msg, e)
+            try:
+                make_postgresql_backup()
+            except Exception as e:
+                msg = "Error during function to backup the database:\n"
+                return api_exception_subroutine(msg, e)
 
             return flask.Response("Database Back Up Successful", status=200)
 
     elif current_user:
         if current_user.is_authenticated and has_admin_role(current_user):
-            if flask.current_app.config.get("POSTGRESQL_DATABASE"):
-                try:
-                    make_postgresql_backup()
-                except Exception as e:
-                    msg = "Error during function to backup the database:\n"
-                    return api_exception_subroutine(msg, e)
-            else:
-                try:
-                    make_sqlite_backup()
-                except Exception as e:
-                    msg = "Error during function to backup the database:\n"
-                    return api_exception_subroutine(msg, e)
+            try:
+                make_postgresql_backup()
+            except Exception as e:
+                msg = "Error during function to backup the database:\n"
+                return api_exception_subroutine(msg, e)
 
             flask.flash("Database backup successs.", 'info')
             return flask.redirect(flask.url_for('main.home'))
