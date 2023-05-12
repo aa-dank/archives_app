@@ -35,6 +35,8 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
     :param scrape_time: The amount of time to spend scraping file data.
     :param queue_id: The id of task in the worker queue.
     """
+    
+    
     db = get_db()
 
     scrape_log = {"Scrape Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
@@ -94,7 +96,7 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
                 if not file_is_new:
 
                     # query to see if the current path is already represented in the database
-                    db_path_entry = flask.current_app.db.session.query(FileLocationModel).filter(
+                    db_path_entry = db.session.query(FileLocationModel).filter(
                         FileLocationModel.file_server_directories == file_server_dirs,
                         FileLocationModel.filename == filename).first()
 
@@ -120,6 +122,7 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
 
             except Exception as e:
                 e_dict = {"Filepath": file, "Exception": str(e)}
+                print(e_dict)  #TODO remove
                 scrape_log["Errors"].append(e_dict)
 
     # update the task entry in the database

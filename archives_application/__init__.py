@@ -9,7 +9,6 @@ from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
 from oauthlib.oauth2 import WebApplicationClient
 from werkzeug.middleware.proxy_fix import ProxyFix
-from worker import conn
 
 db = SQLAlchemy()
 bcrypt = Bcrypt()
@@ -55,7 +54,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.2.2'
+    app.config['VERSION'] = '1.2.3'
 
     # If the SQLALCHEMY_ECHO parameter is true, need to set up logs for logging sql
     if app.config.get("SQLALCHEMY_ECHO"):
