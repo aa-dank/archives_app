@@ -14,7 +14,7 @@ from archives_application.archiver.server_edit import ServerEdit
 from archives_application.archiver.forms import *
 from flask_login import login_required, current_user
 from archives_application.models import *
-from archives_application import db
+from archives_application import db, bcrypt
 
 
 archiver = flask.Blueprint('archiver', __name__)
@@ -340,7 +340,9 @@ def inbox_item():
                     destination_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
                                                     archival_filename)
                 arch_file.cached_destination_path = destination_path
+                arch_file.destination_dir = None
 
+            # archive the file in the destination and attempt to record the archival in the database    
             archiving_successful, archiving_exception = arch_file.archive_in_destination()
             if archiving_successful:
                 try:
@@ -465,7 +467,27 @@ def exclude_filenames(f_path, excluded_names=['Thumbs.db', 'thumbs.db', 'desktop
 
 @archiver.route("/scrape_files", methods=['GET', 'POST'])
 def scrape_files():
+    """
+    Enqueues a task to scrape files from the archives location. Built to accept requests from logged in users
+    and from requests that include user credentials as request arguments. The scraping will automatically
+    begin at the scrape
+    Use the 'user' argument to specify the user to use for the scrape.
+    Use the 'password' argument to specify the password for the user.
+    Use the 'scrape_time' to specify how long the scrape should run for.
+    """
     from archives_application.archiver.archiver_tasks import scrape_file_data
+    
+    
+    def api_exception_subroutine(response_message, thrown_exception):
+        """
+        Subroutine for handling an exception and returning response code to api call
+        @param response_message: message sent with response code
+        @param thrown_exception: exception that broke the 'try' conditional
+        @return:
+        """
+        flask.current_app.logger.error(thrown_exception, exc_info=True)
+        return flask.Response(response_message + "\n" + thrown_exception, status=500)
+    
     
     def retrieve_location_to_start_scraping():
         """
@@ -489,36 +511,64 @@ def scrape_files():
             pass #TODO Do something with error
         return location
     
-    task_dict = {}
-    try:
-        scrape_location = retrieve_location_to_start_scraping()
-        # Create our own job id to pass to the task so it can manipulate and query its own representation 
-        # in the database and Redis.
-        scrape_job_id = f"{scrape_file_data.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
-        scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
-                        "start_location": scrape_location,
-                        "file_server_root_index": 3,
-                        "exclusion_functions": [exclude_extensions, exclude_filenames],
-                        "scrape_time": timedelta(minutes=120),
-                        "queue_id": scrape_job_id}
-
-        task = flask.current_app.q.enqueue_call(func=scrape_file_data,
-                                                kwargs=scrape_params,
-                                                job_id= scrape_job_id,
-                                                result_ttl=43200)
     
-        task_dict = {"task_id": task.id,
-                    "enqueued_at":str(task.enqueued_at),
-                    "origin": task.origin,
-                    "func_name": task.func.__name__}
+    # Check if the request includes user credentials or is from a logged in user. 
+    # User needs to have ADMIN role.
+    request_is_authenticated = False
+    has_admin_role = lambda usr: any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
+    if flask.request.args.get('user'):
+        user_param = flask.request.args.get('user')
+        password_param = flask.request.args.get('password')
+        user = UserModel.query.filter_by(email=user_param).first()
+
+        # If there is a matching user to the request parameter, the password matches and that account has admin role...
+        if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
+            request_is_authenticated = True
+
+    elif current_user:
+        if current_user.is_authenticated and has_admin_role(current_user):
+            request_is_authenticated = True
+
+    # If the request is authenticated, we can proceed to enqueue the task.
+    if request_is_authenticated:
+        task_dict = {}
+        try:
+            # Retrieve scrape parameters
+            scrape_location = retrieve_location_to_start_scraping()
+            scrape_time = 180
+            if flask.request.args.get('scrape_time'):
+                scrape_time = int(flask.request.args.get('scrape_time'))
+            scrape_time = timedelta(minutes=scrape_time)
+
+            # Create our own job id to pass to the task so it can manipulate and query its own representation 
+            # in the database and Redis.
+            scrape_job_id = f"{scrape_file_data.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+            scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
+                            "start_location": scrape_location,
+                            "file_server_root_index": 3,
+                            "exclusion_functions": [exclude_extensions, exclude_filenames],
+                            "scrape_time": scrape_time,
+                            "queue_id": scrape_job_id}
+
+            task = flask.current_app.q.enqueue_call(func=scrape_file_data,
+                                                    kwargs=scrape_params,
+                                                    job_id= scrape_job_id,
+                                                    result_ttl=43200)
         
-        new_task_record = WorkerTask(task_id=task.id, time_enqueued=str(task.enqueued_at), origin=task.origin,
-                                    function_name=task.func.__name__, status="queued")
-        db.session.add(new_task_record)
-        db.session.commit()
+            task_dict = {"task_id": task.id,
+                        "enqueued_at":str(task.enqueued_at),
+                        "origin": task.origin,
+                        "func_name": task.func.__name__}
+            
+            # Add task to database
+            new_task_record = WorkerTask(task_id=task.id, time_enqueued=str(task.enqueued_at), origin=task.origin,
+                                        function_name=task.func.__name__, status="queued")
+            db.session.add(new_task_record)
+            db.session.commit()
 
-    except Exception as e:
-        return exception_handling_pattern(flash_message="Issue setting up file scraping task:",
-                                          thrown_exception=e, app_obj=flask.current_app)
-
-    return task_dict
+        except Exception as e:
+            return api_exception_subroutine(response_message="Error enqueuing task", thrown_exception=e)   
+        
+        return flask.Response(json.dumps(task_dict), status=200)
+    
+    return flask.Response("Unauthorized", status=401)
