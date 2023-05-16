@@ -34,6 +34,7 @@ def exception_handling_pattern(flash_message, thrown_exception, app_obj):
     app_obj.logger.error(thrown_exception, exc_info=True)
     return flask.redirect(flask.url_for('main.home'))
 
+
 def db_query_to_df(query: flask_sqlalchemy.query.Query):
     results = query.all()
     df = pd.DataFrame([row.__dict__ for row in results])
@@ -126,8 +127,9 @@ def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str: st
     """
     strftime_dt = lambda dt: dt.strftime("%Y-%m-%d")
     timecard_df = timecard_df[timecard_df["datetime"].map(strftime_dt) == date.strftime("%Y-%m-%d")]
-    compiled_journal = delimiter_str.join([journal for journal in timecard_df["Journal"].tolist() if journal])
+    compiled_journal = delimiter_str.join([journal for journal in timecard_df["journal"].tolist() if journal])
     return compiled_journal
+
 
 @timekeeper.route("/timekeeper", methods=['GET', 'POST'])
 @login_required
@@ -278,6 +280,17 @@ def user_timesheet(employee_id):
             else:
                 day_data["Hours Worked"] = str(hours)
 
+            # get the daily archiving metrics if applicable
+            if 'ARCHIVIST' in current_user.roles or 'ADMIN' in current_user.roles:
+                archived_files_query = ArchivedFileModel.query.filter(ArchivedFileModel.archivist_id == employee_id,
+                                                         ArchivedFileModel.date_archived >= range_date,
+                                                         ArchivedFileModel.date_archived <= range_date + timedelta(days=1))
+                arched_files_df = db_query_to_df(query=archived_files_query)
+                day_data["Archived Files"] = arched_files_df.shape[0]
+                day_data["Archived Megabytes"] = 0
+                if not arched_files_df.empty:
+                    day_data["Archived Megabytes"] = (arched_files_df["file_size"].sum()/1000000).round(2)
+
             # Mush all journal entries together into a single journal entry
             compiled_journal = compile_journal(range_date, timesheet_df, " \ ")
             day_data["Journal"] = compiled_journal
@@ -383,6 +396,17 @@ def all_timesheets():
                         day_data["Hours Worked"] = "TIME ENTRY INCOMPLETE"
                     else:
                         day_data["Hours Worked"] = str(hours)
+                    
+                    # get the daily archiving metrics if applicable
+                    if 'ARCHIVIST' in current_user.roles or 'ADMIN' in current_user.roles:
+                        archived_files_query = ArchivedFileModel.query.filter(ArchivedFileModel.archivist_id == archivist_dict['id'],
+                                                                ArchivedFileModel.date_archived >= range_date,
+                                                                ArchivedFileModel.date_archived <= range_date + timedelta(days=1))
+                        arched_files_df = db_query_to_df(query=archived_files_query)
+                        day_data["Archived Files"] = arched_files_df.shape[0]
+                        day_data["Archived Megabytes"] = 0
+                        if not arched_files_df.empty:
+                            day_data["Archived Megabytes"] = (arched_files_df["file_size"].sum()/1000000).round(2)
 
                     # Mush all journal entries together into a single journal entry
                     compiled_journal = compile_journal(date=range_date,
@@ -399,7 +423,6 @@ def all_timesheets():
                                    thrown_exception=e, app_obj=flask.current_app)
 
     return flask.render_template('timesheet_tables.html', title="Timesheets", form=form, archivist_info_list=archivists)
-
 
 
 @timekeeper.route("/timekeeper/admin", methods=['GET', 'POST'])
