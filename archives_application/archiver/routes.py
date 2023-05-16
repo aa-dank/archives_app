@@ -1,6 +1,7 @@
 import datetime
 import flask
 import flask_sqlalchemy
+import json
 import os
 import random
 import re
@@ -85,24 +86,24 @@ def server_change():
             old_path = None
             edit_type = None
 
-            # if the user entered a path to delete
+            # If the user entered a path to delete
             if form.path_delete.data:
                 old_path = form.path_delete.data
                 edit_type = 'DELETE'
 
-            # if the user entered a path to change and the desired path change
+            # If the user entered a path to change and the desired path change
             if form.current_path.data and form.new_path.data:
                 old_path = form.current_path.data
                 new_path = form.new_path.data
                 edit_type = 'RENAME'
 
-            # if the user entered a path to an asset to move and a location to move it to
+            # If the user entered a path to an asset to move and a location to move it to
             if form.asset_path.data and form.destination_path.data:
                 old_path = form.asset_path.data
                 new_path = form.destination_path.data
                 edit_type = 'MOVE'
 
-            # if user entered a path for a new directory to be made
+            # If user entered a path for a new directory to be made
             if form.new_directory.data:
                 new_path = form.new_directory.data
                 edit_type = 'CREATE'
@@ -252,14 +253,14 @@ def inbox_item():
         preview_image_url = get_no_preview_placeholder_url()
         temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
 
-        # create the file preview image if it is a pdf
+        # Create the file preview image if it is a pdf
         arch_file_preview_image_path = None
         arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
         if arch_file_filename.split(".")[-1].lower() in ['pdf']:
             arch_file_preview_image_path = utilities.pdf_preview_image(arch_file_path, temp_files_directory)
             preview_image_url = flask.url_for(r"static", filename = "temp_files/" + utilities.split_path(arch_file_preview_image_path)[-1])
 
-        # copy file as preview of itself if the file is an image
+        # Copy file as preview of itself if the file is an image
         image_file_extensions = ['jpg', 'tiff', 'jpeg', 'tif']
         if arch_file_filename.split(".")[-1].lower() in image_file_extensions:
             preview_path = os.path.join(temp_files_directory, arch_file_filename)
@@ -267,7 +268,7 @@ def inbox_item():
             preview_image_url = flask.url_for(r"static",
                                               filename="temp_files/" + utilities.split_path(preview_path)[-1])
 
-        # if we made a preview image, record the path in the session so it can be removed upon logout
+        # If we made a preview image, record the path in the session so it can be removed upon logout
         if arch_file_preview_image_path:
             if not flask.session[current_user.email].get('temporary files'):
                 flask.session[current_user.email]['temporary files'] = []
@@ -276,7 +277,7 @@ def inbox_item():
         form = InboxItemForm()
         form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
 
-        # if the flask.session has data previously entered in this form, then re-enter it into the form before rendering
+        # If the flask.session has data previously entered in this form, then re-enter it into the form before rendering
         # it in html
         if flask.session.get(current_user.email) and flask.session.get(current_user.email).get('inbox_form_data'):
             sesh_data = flask.session.get(current_user.email).get('inbox_form_data')
@@ -294,7 +295,7 @@ def inbox_item():
     try:
         if form.validate_on_submit():
 
-            # if the user clicked the download button, we send the file to the user, save what data the user has entered,
+            # If the user clicked the download button, we send the file to the user, save what data the user has entered,
             # and rerender the page.
             if form.download_item.data:
                 # boolean for whether to attempt opening the file in the browser
@@ -389,62 +390,46 @@ def inbox_item():
 @login_required
 def archived_or_not():
 
+    def cleanse_locations_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+        # New df is only the columns we want, 'file_server_directories' and 'filename'
+        df = df[['file_server_directories', 'filename']]
+        # New row  'filepath' which joins the directories and the filename
+        df['filepath'] = df.apply(lambda row: (row['file_server_directories'] + "\\" + row['filename']), axis=1)
+        return df[['filepath']]
 
-    def known_locations(filepath: str, db_session: db.session):
-        filehash = utilities.get_hash(filepath=filepath)
-        matching_file = db_session.query(FileModel).filter(FileModel.hash == filehash).first()
-        if matching_file:
-            locations = db_session.query(FileLocationModel).filter(FileLocationModel.file_id == matching_file.id)
-            return list(locations)
-        return []
 
     form = ArchivedOrNotForm()
     temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
     if form.validate_on_submit():
         try:
-            # save file to temporary directory
-            archival_filename = form.upload.data.filename
-            temp_path = os.path.join(temp_files_directory, archival_filename)
+            # Save file to temporary directory
+            filename = form.upload.data.filename
+            temp_path = os.path.join(temp_files_directory, filename)
             form.upload.data.save(temp_path)
-
-            # process requires that user has entered a location
-            search_location = form.search_path.data
-            if search_location:
-                search_location = utilities.user_path_to_app_path(path_from_user=search_location,
-                                                              location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
-
-            # we need to know where the root directory that is common across all urls on file server would be.
-            # we will use the index of the root directory (with ##xx pattern subdirectories) in the path
-            # For linux paths that start with /, we need to remove that first part of the split path because '/' is not
-            # a directory
-            has_any_letters = lambda the_string: re.search('[a-zA-Z]', the_string)
-            file_server_root_dir_list = [d for d in
-                                         utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')) if
-                                         has_any_letters(d)]
-            file_server_root_directory_index = len(file_server_root_dir_list)
-            
             file_hash = utilities.get_hash(filepath=temp_path)
-            
-            matching_file = db.session.query(FileModel).filter(FileModel.hash == filehash).first()
+
+            matching_file = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
             if not matching_file:
                 flask.flash(f"No file found with hash {file_hash}", 'info')
                 return flask.redirect(flask.url_for('archiver.archived_or_not'))
             
-            # Create dataframe of all locations that match the hash
-            
+            # Create html table of all locations that match the hash
             locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == matching_file.id)
             locations_df = db_query_to_df(locations)
-            
-
             os.remove(temp_path)
+            if locations_df.empty:
+                raise Exception(f"No locations found for file, {filename}, with hash {file_hash}, though file was found in database.")
             
-            return {}
+            locations_df = cleanse_locations_dataframe(locations_df)
+            location_table_html = locations_df.to_html()
+            return flask.render_template('locations_tables.html', title='Archived Locations',
+                                         file_locations_list=[{"filename":filename, "locations_html":location_table_html}])
 
         except Exception as e:
             os.remove(temp_path)
-            exception_handling_pattern(flash_message="Error looking for instances of file on Server.",
-                                       thrown_exception=e,
-                                       app_obj=flask.current_app)
+            return exception_handling_pattern(flash_message="Error looking for instances of file on Server.",
+                                              thrown_exception=e,
+                                              app_obj=flask.current_app)
 
     return flask.render_template('archived_or_not.html', title='Determine if File Already Archived', form=form)
 
@@ -475,6 +460,7 @@ def scrape_files():
     Use the 'password' argument to specify the password for the user.
     Use the 'scrape_time' to specify how long the scrape should run for.
     """
+    # import task here to avoid circular import
     from archives_application.archiver.archiver_tasks import scrape_file_data
     
     
@@ -535,17 +521,17 @@ def scrape_files():
         try:
             # Retrieve scrape parameters
             scrape_location = retrieve_location_to_start_scraping()
-            scrape_time = 180
+            scrape_time = 8
+            file_server_root_index = len(utilities.split_path(flask.current_app.config.get("ARCHIVES_LOCATION")))
             if flask.request.args.get('scrape_time'):
                 scrape_time = int(flask.request.args.get('scrape_time'))
             scrape_time = timedelta(minutes=scrape_time)
-
             # Create our own job id to pass to the task so it can manipulate and query its own representation 
             # in the database and Redis.
             scrape_job_id = f"{scrape_file_data.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
             scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
                             "start_location": scrape_location,
-                            "file_server_root_index": 3,
+                            "file_server_root_index": file_server_root_index,
                             "exclusion_functions": [exclude_extensions, exclude_filenames],
                             "scrape_time": scrape_time,
                             "queue_id": scrape_job_id}
@@ -567,7 +553,10 @@ def scrape_files():
             db.session.commit()
 
         except Exception as e:
-            return api_exception_subroutine(response_message="Error enqueuing task", thrown_exception=e)   
+            mssg = "Error enqueuing task"
+            if e.__class__.__name__ == "ConnectionError":
+                mssg = "Error connecting to Redis. Is Redis running?"
+            return api_exception_subroutine(response_message=mssg, thrown_exception=e)   
         
         return flask.Response(json.dumps(task_dict), status=200)
     

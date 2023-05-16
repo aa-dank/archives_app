@@ -7,20 +7,6 @@
                 <legend class="border-bottom mb-4">Check for file...</legend>
                 <p>This tool checks the complete contents of the specified destination for the uploaded file. It does this by checking the file against every other file in the specified directory; thus, it can take a very long time if there are many files to compare.</p>
                 <div class="form-group">
-                    <h6>{{ form.search_path.label(class="form-control-label") }}</h6>
-                <p>Destination most likely copied from Windows Explorer.</p>
-                    {% if form.search_path.errors %}
-                        {{ form.search_path(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.search_path.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.search_path(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
-                <div class="form-group">
                     <h6>{{ form.upload.label(class="form-control-file") }}</h6>
                     {% if form.upload.errors %}
                         {{ form.upload(class="form-control form-control-lg is-invalid") }}

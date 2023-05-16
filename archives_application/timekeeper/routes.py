@@ -126,7 +126,7 @@ def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str: st
     """
     strftime_dt = lambda dt: dt.strftime("%Y-%m-%d")
     timecard_df = timecard_df[timecard_df["datetime"].map(strftime_dt) == date.strftime("%Y-%m-%d")]
-    compiled_journal = delimiter_str.join([journal for journal in timecard_df["journal"].tolist() if journal])
+    compiled_journal = delimiter_str.join([journal for journal in timecard_df["Journal"].tolist() if journal])
     return compiled_journal
 
 @timekeeper.route("/timekeeper", methods=['GET', 'POST'])
@@ -238,7 +238,7 @@ def user_timesheet(employee_id):
                                    app_obj=flask.current_app)
 
     try:
-
+ 
         query_start_date = datetime.now() - timedelta(days = 14)
         query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
         query_end_date = datetime.now()
@@ -280,7 +280,7 @@ def user_timesheet(employee_id):
 
             # Mush all journal entries together into a single journal entry
             compiled_journal = compile_journal(range_date, timesheet_df, " \ ")
-            day_data["journal"] = compiled_journal
+            day_data["Journal"] = compiled_journal
             all_days_data.append(day_data)
 
     except Exception as e:
@@ -390,7 +390,7 @@ def all_timesheets():
                                                        delimiter_str=" \ ")
                     day_data["Journal"] = compiled_journal
                     all_days_data.append(day_data)
-
+                    
                 archivist_dict["timesheet_df"] = pd.DataFrame.from_dict(all_days_data)
                 archivist_dict["html_table"] = archivist_dict["timesheet_df"].to_html(index=False, classes="table-hover table-dark")
 
