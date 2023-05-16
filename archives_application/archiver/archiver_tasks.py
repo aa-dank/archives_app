@@ -100,7 +100,7 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
                         FileLocationModel.file_server_directories == file_server_dirs,
                         FileLocationModel.filename == filename).first()
 
-                    # if there is an entry for this path in the database update the dates now we have confirmed location and
+                    # If there is an entry for this path in the database update the dates now we have confirmed location and
                     # that the file has not changed (hash is same.)
                     if db_path_entry:
                         entry_updates = {"existence_confirmed": confirmed_exists_dt,

@@ -1,0 +1,13 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+      <h2>File Locations</h2>
+        {% for file_locations_dict in file_locations_list %}
+        <div>
+        <h2>{{ file_locations_dict["filename"] }}</h2>
+        {{ file_locations_dict["locations_html"] | safe }}
+        <hr width="75%" />
+        </div>
+        {% endfor %}
+    </div>
+{% endblock content %}
