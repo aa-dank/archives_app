@@ -600,3 +600,26 @@ def test_scrape_files():
         return api_exception_subroutine(response_message=mssg, thrown_exception=e)
 
 
+@archiver.route("/confirm_file_locations", methods=['GET', 'POST'])
+def confirm_db_file_locations():
+    """
+    This function will confirm that the file locations in the database are still valid.
+    """
+    # import task here to avoid circular import
+    from archives_application.archiver.archiver_tasks import  
+    
+    try:
+        # Create our own job id to pass to the task so it can manipulate and query its own representation 
+        # in the database and Redis.
+        confirm_job_id = f"{confirm_file_locations.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+        confirm_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
+                        "queue_id": confirm_job_id}
+        confirm_results = verify_db_file_locations(**confirm_params)
+        confirm_dict = {"verify_results": confirm_results, "confirm_params": confirm_params}
+        return flask.Response(json.dumps(confirm_dict), status=200)
+
+    except Exception as e:
+        mssg = "Error enqueuing task"
+        if e.__class__.__name__ == "ConnectionError":
+            mssg = "Error connecting to Redis. Is Redis running?"
+        return api_exception_subroutine(response_message=mssg, thrown_exception=e)
