@@ -21,7 +21,7 @@ from archives_application import db, bcrypt
 archiver = flask.Blueprint('archiver', __name__)
 
 
-def exception_handling_pattern(flash_message, thrown_exception, app_obj):
+def web_exception_subroutine(flash_message, thrown_exception, app_obj):
     """
     Sub-process for handling patterns
     @param flash_message:
@@ -33,6 +33,18 @@ def exception_handling_pattern(flash_message, thrown_exception, app_obj):
     flask.flash(flash_message, 'error')
     app_obj.logger.error(thrown_exception, exc_info=True)
     return flask.redirect(flask.url_for('main.home'))
+
+
+def api_exception_subroutine(response_message, thrown_exception):
+    """
+    Subroutine for handling an exception and returning response code to api call.
+    (In contrast to the web_exception_subroutine, which is for handling exceptions in the web app.)
+    @param response_message: message sent with response code
+    @param thrown_exception: exception that broke the 'try' conditional
+    @return:
+    """
+    flask.current_app.logger.error(thrown_exception, exc_info=True)
+    return flask.Response(response_message + "\n" + thrown_exception, status=500)
 
 
 def db_query_to_df(query: flask_sqlalchemy.query.Query):
@@ -117,7 +129,7 @@ def server_change():
             return flask.redirect(flask.url_for('archiver.server_change'))
 
         except Exception as e:
-            return exception_handling_pattern(flash_message="Error processing or executing change: ",
+            return web_exception_subroutine(flash_message="Error processing or executing change: ",
                                               thrown_exception=e, app_obj=flask.current_app)
     return flask.render_template('server_change.html', title='Make change to file server', form=form)
 
@@ -125,6 +137,9 @@ def server_change():
 @archiver.route("/upload_file", methods=['GET', 'POST'])
 @login_required
 def upload_file():
+    """
+    This function handles the upload of a single file to the server.
+    """
     form = UploadFileForm()
     # set filing code choices from app config
     form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
@@ -183,7 +198,7 @@ def upload_file():
 
         except Exception as e:
             m = "Error occurred while trying to read form data, move the asset, or record asset info in database: "
-            return exception_handling_pattern(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
+            return web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
 
     return flask.render_template('upload_file.html', title='Upload File to Archive', form=form)
 
@@ -289,7 +304,7 @@ def inbox_item():
             flask.session['inbox_form_data'] = None
 
     except Exception as e:
-        exception_handling_pattern(flash_message="Issue setting up inbox item for archiving: ", thrown_exception=e,
+        web_exception_subroutine(flash_message="Issue setting up inbox item for archiving: ", thrown_exception=e,
                                    app_obj=flask.current_app)
 
     try:
@@ -375,14 +390,14 @@ def inbox_item():
                 return flask.redirect(flask.url_for('archiver.inbox_item'))
             else:
                 message = f'Failed to archive file:{arch_file.current_path} Destination: {arch_file.get_destination_path()} Error:'
-                return exception_handling_pattern(flash_message=message, thrown_exception=archiving_exception,
+                return web_exception_subroutine(flash_message=message, thrown_exception=archiving_exception,
                                            app_obj=flask.current_app)
 
         return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename,
                                      preview_image=preview_image_url)
 
     except Exception as e:
-        return exception_handling_pattern(flash_message="Issue archiving document: ", thrown_exception=e,
+        return web_exception_subroutine(flash_message="Issue archiving document: ", thrown_exception=e,
                                    app_obj=flask.current_app)
 
 
@@ -427,11 +442,34 @@ def archived_or_not():
 
         except Exception as e:
             os.remove(temp_path)
-            return exception_handling_pattern(flash_message="Error looking for instances of file on Server.",
+            return web_exception_subroutine(flash_message="Error looking for instances of file on Server.",
                                               thrown_exception=e,
                                               app_obj=flask.current_app)
 
     return flask.render_template('archived_or_not.html', title='Determine if File Already Archived', form=form)
+
+
+def retrieve_location_to_start_scraping():
+    """
+    Retrieves the location from which to start scraping files. 
+    This is the last directory scraped of the most recent completed scrape.
+    If there is no location in the database, we use the root of the archives directory.
+    
+    :return: str Location to start scraping files
+    """
+    location = flask.current_app.config.get("ARCHIVES_LOCATION")
+    try:
+        most_recent_scrape = db.session.query(WorkerTask).filter(
+            db.cast(WorkerTask.task_results, db.String).like('%Next Start Location%'),
+            WorkerTask.time_completed.isnot(None)
+        ).order_by(db.desc(WorkerTask.time_completed)).first()
+
+        if most_recent_scrape is not None:
+            location = most_recent_scrape.task_results["Next Start Location"]  
+            
+    except Exception as e:
+        pass #TODO Do something with error
+    return location
 
 
 def exclude_extensions(f_path, ext_list=['DS_Store', '.ini']):
@@ -462,41 +500,6 @@ def scrape_files():
     """
     # import task here to avoid circular import
     from archives_application.archiver.archiver_tasks import scrape_file_data
-    
-    
-    def api_exception_subroutine(response_message, thrown_exception):
-        """
-        Subroutine for handling an exception and returning response code to api call
-        @param response_message: message sent with response code
-        @param thrown_exception: exception that broke the 'try' conditional
-        @return:
-        """
-        flask.current_app.logger.error(thrown_exception, exc_info=True)
-        return flask.Response(response_message + "\n" + thrown_exception, status=500)
-    
-    
-    def retrieve_location_to_start_scraping():
-        """
-        Retrieves the location from which to start scraping files. 
-        This is the last directory scraped of the most recent completed scrape.
-        If there is no location in the database, we use the root of the archives directory.
-        
-        :return: str Location to start scraping files
-        """
-        location = flask.current_app.config.get("ARCHIVES_LOCATION")
-        try:
-            most_recent_scrape = db.session.query(WorkerTask).filter(
-                db.cast(WorkerTask.task_results, db.String).like('%Next Start Location%'),
-                WorkerTask.time_completed.isnot(None)
-            ).order_by(db.desc(WorkerTask.time_completed)).first()
-
-            if most_recent_scrape is not None:
-                location = most_recent_scrape.task_results["Next Start Location"]  
-                
-        except Exception as e:
-            pass #TODO Do something with error
-        return location
-    
     
     # Check if the request includes user credentials or is from a logged in user. 
     # User needs to have ADMIN role.
@@ -561,3 +564,38 @@ def scrape_files():
         return flask.Response(json.dumps(task_dict), status=200)
     
     return flask.Response("Unauthorized", status=401)
+
+
+@archiver.route("test/scrape_files", methods=['GET', 'POST'])
+@utilities.roles_required(['ADMIN'])
+def test_scrape_files():
+    # import task here to avoid circular import
+    from archives_application.archiver.archiver_tasks import scrape_file_data
+    
+    try:
+        # Retrieve scrape parameters
+        scrape_location = retrieve_location_to_start_scraping()
+        scrape_time = 8
+        file_server_root_index = len(utilities.split_path(flask.current_app.config.get("ARCHIVES_LOCATION")))
+        if flask.request.args.get('scrape_time'):
+            scrape_time = int(flask.request.args.get('scrape_time'))
+        scrape_time = timedelta(minutes=scrape_time)
+        
+        # Create our own job id to pass to the task so it can manipulate and query its own representation 
+        # in the database and Redis.
+        scrape_job_id = f"{scrape_file_data.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+        scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
+                        "start_location": scrape_location,
+                        "file_server_root_index": file_server_root_index,
+                        "exclusion_functions": [exclude_extensions, exclude_filenames],
+                        "scrape_time": scrape_time,
+                        "queue_id": scrape_job_id}
+        scrape_results = scrape_file_data(**scrape_params)
+        scrape_dict = {"scrape_results": scrape_results, "scrape_params": scrape_params}
+        return flask.Response(json.dumps(scrape_dict), status=200)
+
+    except Exception as e:
+        mssg = "Error enqueuing task"
+        if e.__class__.__name__ == "ConnectionError":
+            mssg = "Error connecting to Redis. Is Redis running?"
+        return api_exception_subroutine(response_message=mssg, thrown_exception=e)

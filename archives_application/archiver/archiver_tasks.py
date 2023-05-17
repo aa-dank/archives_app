@@ -53,7 +53,9 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
 
         # if the time limit for scraping has passed, we end the scraping loop
         if timedelta(seconds=(time.time() - start_time)) >= scrape_time:
-            scrape_log["Next Start Location"] = root
+            # process root to be agnostic to where the archives location is mounted
+            next_start = utilities.split_path(root)[file_server_root_index:]
+            scrape_log["Next Start Location"] = os.path.join(*next_start)
             break
 
         # We iterate through the archives folder structure until we find the location from which we want to start
@@ -70,11 +72,11 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
                 # if the file is excluded by one of the exclusion functions, move to next file
                 if any([fun(file) for fun in exclusion_functions]):
                     continue
+                
+                # if there is not an equivalent entry in database, we add it.
                 file_is_new = False
                 file_hash = utilities.get_hash(filepath=file)
                 db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
-
-                # if there is not an equivalent entry in database, we add it.
                 if not db_file_entry:
                     file_is_new = True
                     file_size = os.path.getsize(file)
@@ -122,7 +124,6 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
 
             except Exception as e:
                 e_dict = {"Filepath": file, "Exception": str(e)}
-                print(e_dict)  #TODO remove
                 scrape_log["Errors"].append(e_dict)
 
     # update the task entry in the database

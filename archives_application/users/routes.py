@@ -14,7 +14,7 @@ from archives_application.users.forms import *
 users = flask.Blueprint('users', __name__)
 
 
-def exception_handling_pattern(flash_message, thrown_exception, app_obj):
+def web_exception_subroutine(flash_message, thrown_exception, app_obj):
     """
     Sub-process for handling patterns
     @param flash_message:
@@ -83,7 +83,7 @@ def google_auth():
         return flask.redirect(request_uri)
 
     except Exception as e:
-        return exception_handling_pattern(flash_message="Error during authentication with Google: ",
+        return web_exception_subroutine(flash_message="Error during authentication with Google: ",
                                           thrown_exception=e, app_obj=flask.current_app)
 
 
@@ -161,7 +161,7 @@ def callback():
         return flask.redirect(flask.url_for('main.home'))
 
     except Exception as e:
-        return exception_handling_pattern(flash_message='Error during Google Authentication Callback: ',
+        return web_exception_subroutine(flash_message='Error during Google Authentication Callback: ',
                                           thrown_exception=e, app_obj=flask.current_app)
 
 @users.route("/google_auth/register", methods=['GET', 'POST'])
@@ -188,7 +188,7 @@ def google_register():
             flask.flash(f'Account created for {new_user_email}!', 'success')
             return flask.redirect(flask.url_for('main.home'))
         except Exception as e:
-            return exception_handling_pattern(flash_message="Error while iniating google registration workflow: ",
+            return web_exception_subroutine(flash_message="Error while iniating google registration workflow: ",
                                               thrown_exception=e, app_obj=flask.current_app)
 
     return flask.render_template('google_register.html', title='Register', form=form)
@@ -234,7 +234,7 @@ def new_account_registeration():
             return flask.redirect(flask.url_for('users.login'))
 
         except Exception as e:
-            return exception_handling_pattern(flash_message="Error occured while creating a new account:",
+            return web_exception_subroutine(flash_message="Error occured while creating a new account:",
                                               thrown_exception=e, app_obj=flask.current_app)
 
     return flask.render_template('register.html', title='Register', form=form)
@@ -268,7 +268,7 @@ def login():
                 return flask.redirect(flask.url_for('main.home'))
 
         except Exception as e:
-            return exception_handling_pattern(flash_message="Error while processing user login: ",
+            return web_exception_subroutine(flash_message="Error while processing user login: ",
                                               thrown_exception=e, app_obj=flask.current_app)
 
     return flask.render_template('login.html', title='Login', form=form)
