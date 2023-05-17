@@ -458,17 +458,15 @@ def retrieve_location_to_start_scraping():
     :return: str Location to start scraping files
     """
     location = flask.current_app.config.get("ARCHIVES_LOCATION")
-    try:
-        most_recent_scrape = db.session.query(WorkerTask).filter(
-            db.cast(WorkerTask.task_results, db.String).like('%Next Start Location%'),
-            WorkerTask.time_completed.isnot(None)
-        ).order_by(db.desc(WorkerTask.time_completed)).first()
 
-        if most_recent_scrape is not None:
-            location = most_recent_scrape.task_results["Next Start Location"]  
-            
-    except Exception as e:
-        pass #TODO Do something with error
+    most_recent_scrape = db.session.query(WorkerTask).filter(
+        db.cast(WorkerTask.task_results, db.String).like('%Next Start Location%'),
+        WorkerTask.time_completed.isnot(None)
+    ).order_by(db.desc(WorkerTask.time_completed)).first()
+
+    if most_recent_scrape is not None:
+        previous_scrape_location = most_recent_scrape.task_results["Next Start Location"]  
+        location = os.path.join(location, previous_scrape_location)
     return location
 
 
@@ -566,7 +564,7 @@ def scrape_files():
     return flask.Response("Unauthorized", status=401)
 
 
-@archiver.route("test/scrape_files", methods=['GET', 'POST'])
+@archiver.route("/test/scrape_files", methods=['GET', 'POST'])
 @utilities.roles_required(['ADMIN'])
 def test_scrape_files():
     # import task here to avoid circular import
@@ -591,6 +589,7 @@ def test_scrape_files():
                         "scrape_time": scrape_time,
                         "queue_id": scrape_job_id}
         scrape_results = scrape_file_data(**scrape_params)
+        scrape_params.pop("exclusion_functions") # remove exclusion_fuctions from scrape_params because it is not JSON serializable
         scrape_dict = {"scrape_results": scrape_results, "scrape_params": scrape_params}
         return flask.Response(json.dumps(scrape_dict), status=200)
 
@@ -599,3 +598,5 @@ def test_scrape_files():
         if e.__class__.__name__ == "ConnectionError":
             mssg = "Error connecting to Redis. Is Redis running?"
         return api_exception_subroutine(response_message=mssg, thrown_exception=e)
+
+

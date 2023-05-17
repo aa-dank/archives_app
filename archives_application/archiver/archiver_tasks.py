@@ -74,7 +74,7 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
                     continue
                 
                 # if there is not an equivalent entry in database, we add it.
-                file_is_new = False
+                file_is_new = False # flag to indicate if the file is new to the database
                 file_hash = utilities.get_hash(filepath=file)
                 db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
                 if not db_file_entry:
@@ -91,10 +91,16 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
                     scrape_log["Files Added"] += 1
 
                 path_list = utilities.split_path(file)
-                file_server_dirs = os.path.join(*path_list[file_server_root_index:-1])
+                # This is for if there is a file in the root directory of the share (eg R:\some_file.pdf) )
+                file_server_dirs = ""
+                if path_list[file_server_root_index:-1] != []:
+                    file_server_dirs = os.path.join(*path_list[file_server_root_index:-1])
                 filename = path_list[-1]
                 confirmed_exists_dt = datetime.now()
                 confirmed_hash_dt = datetime.now()
+                
+                # If the file is not new, we check if the path is already represented in the database
+                # and update the file database entryto reflect that the file has been checked.
                 if not file_is_new:
 
                     # query to see if the current path is already represented in the database
