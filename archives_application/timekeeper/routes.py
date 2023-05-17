@@ -21,7 +21,7 @@ from archives_application.models import UserModel, TimekeeperEventModel, Archive
 timekeeper = flask.Blueprint('timekeeper', __name__)
 
 
-def exception_handling_pattern(flash_message, thrown_exception, app_obj):
+def web_exception_subroutine(flash_message, thrown_exception, app_obj):
     """
     Sub-process for handling patterns
     @param flash_message:
@@ -177,7 +177,7 @@ def timekeeper_event():
         clocked_in = is_clocked_in(user_id=current_user_id)
 
     except Exception as e:
-        return exception_handling_pattern(flash_message="Error when checking if user is clocked in",
+        return web_exception_subroutine(flash_message="Error when checking if user is clocked in",
                                           thrown_exception=e, app_obj=flask.current_app)
 
     if form.validate_on_submit():
@@ -199,7 +199,7 @@ def timekeeper_event():
 
 
                 except Exception as e:
-                    return exception_handling_pattern(flash_message="Error recording user clock-out event",
+                    return web_exception_subroutine(flash_message="Error recording user clock-out event",
                                                       thrown_exception=e, app_obj=flask.current_app)
 
         else:
@@ -214,7 +214,7 @@ def timekeeper_event():
                     flask.flash(f'Successfully clocked in.', 'success')
                     return flask.redirect(flask.url_for('main.home'))
                 except Exception as e:
-                    return exception_handling_pattern(flash_message="Error recording user clock-in event",
+                    return web_exception_subroutine(flash_message="Error recording user clock-in event",
                                                       thrown_exception=e, app_obj=flask.current_app)
 
     return flask.render_template('timekeeper.html', title='Timekeeper', form=form,  clocked_in=clocked_in,
@@ -235,7 +235,7 @@ def user_timesheet(employee_id):
         archivist_dict = {'email': employee.email, 'id': employee.id}
 
     except Exception as e:
-        exception_handling_pattern(flash_message=f"Error trying to get user info from the database for user id {employee_id}",
+        web_exception_subroutine(flash_message=f"Error trying to get user info from the database for user id {employee_id}",
                                    thrown_exception=e,
                                    app_obj=flask.current_app)
 
@@ -260,7 +260,7 @@ def user_timesheet(employee_id):
         assert type(timesheet_df) == type(pd.DataFrame()), "pd.read_sql did not return a Dataframe."
 
     except Exception as e:
-        exception_handling_pattern(flash_message="Error getting user timekeeper events from database: ",
+        web_exception_subroutine(flash_message="Error getting user timekeeper events from database: ",
                                    thrown_exception=e, app_obj=flask.current_app)
 
     if timesheet_df.shape[0] == 0:
@@ -297,7 +297,7 @@ def user_timesheet(employee_id):
             all_days_data.append(day_data)
 
     except Exception as e:
-        exception_handling_pattern(flash_message="Error creating table of hours worked: ",
+        web_exception_subroutine(flash_message="Error creating table of hours worked: ",
                                    thrown_exception=e, app_obj=flask.current_app)
 
     aggregate_hours_df = pd.DataFrame.from_dict(all_days_data)
@@ -350,7 +350,7 @@ def all_timesheets():
                       UserModel.query.filter(UserModel.roles.contains('ARCHIVIST'), UserModel.active.is_(True))]
 
     except Exception as e:
-        return exception_handling_pattern(
+        return web_exception_subroutine(
             flash_message="Error retrieving active archivists from database:",
             thrown_exception=e, app_obj=flask.current_app)
 
@@ -375,7 +375,7 @@ def all_timesheets():
         timesheet_df = db_query_to_df(query=query)
 
     except Exception as e:
-        exception_handling_pattern(flash_message="Error creating dataframe for all archivists: ",
+        web_exception_subroutine(flash_message="Error creating dataframe for all archivists: ",
                                    thrown_exception=e, app_obj=flask.current_app)
 
     try:
@@ -419,7 +419,7 @@ def all_timesheets():
                 archivist_dict["html_table"] = archivist_dict["timesheet_df"].to_html(index=False, classes="table-hover table-dark")
 
     except Exception as e:
-        exception_handling_pattern(flash_message="Error creating individualized timesheet tables: ",
+        web_exception_subroutine(flash_message="Error creating individualized timesheet tables: ",
                                    thrown_exception=e, app_obj=flask.current_app)
 
     return flask.render_template('timesheet_tables.html', title="Timesheets", form=form, archivist_info_list=archivists)
@@ -453,7 +453,7 @@ def choose_employee():
 
 
     except Exception as e:
-        return exception_handling_pattern(flash_message="Error trying to elicit or process employee email for making a timesheet :",
+        return web_exception_subroutine(flash_message="Error trying to elicit or process employee email for making a timesheet :",
                                           thrown_exception=e, app_obj=flask.current_app)
     return flask.render_template('timekeeper_admin.html', form=form)
 
@@ -560,11 +560,10 @@ def archived_metrics_dashboard():
 
     df = pd.DataFrame()
     production_plot = plt.figure()
-    jpg_path: str = None
     try:
         df = generate_daily_chart_stats_df()
     except Exception as e:
-        exception_handling_pattern(flash_message="Error trying to generate aggregate daily data for plot:",
+        web_exception_subroutine(flash_message="Error trying to generate aggregate daily data for plot:",
                                    thrown_exception=e,
                                    app_obj=current_app)
 
@@ -575,7 +574,7 @@ def archived_metrics_dashboard():
         try:
             production_plot = archiving_production_barchart(df=df)
         except Exception as e:
-            exception_handling_pattern(flash_message="Error making the plot object:",
+            web_exception_subroutine(flash_message="Error making the plot object:",
                                        thrown_exception=e,
                                        app_obj=current_app)
 

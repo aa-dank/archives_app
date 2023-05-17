@@ -17,7 +17,7 @@ from archives_application.models import *
 main = flask.Blueprint('main', __name__)
 
 
-def exception_handling_pattern(flash_message, thrown_exception, app_obj):
+def web_exception_subroutine(flash_message, thrown_exception, app_obj):
     """
     Sub-process for handling patterns
     @param flash_message:
@@ -136,7 +136,7 @@ def change_config_settings():
         form = dynamic_form_class()
     except Exception as e:
         m = 'An error occurred opening the config file and creating a form from it:'
-        return exception_handling_pattern(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
+        return web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
 
     if form.validate_on_submit():
         try:
@@ -158,7 +158,7 @@ def change_config_settings():
             return flask.redirect(flask.url_for('main.home'))
 
         except Exception as e:
-            return exception_handling_pattern(flash_message="Error processing form responses into json config file: ",
+            return web_exception_subroutine(flash_message="Error processing form responses into json config file: ",
                                        thrown_exception=e, app_obj=flask.current_app)
 
     return flask.render_template('change_config_settings.html', title='Change Config File', form=form, settings_dict=config_dict)
