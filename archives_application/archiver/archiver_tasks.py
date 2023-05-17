@@ -73,13 +73,17 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
                 if any([fun(file) for fun in exclusion_functions]):
                     continue
                 
+                # if the file is empty, move to next file
+                file_size = os.path.getsize(file)
+                if file_size == 0:
+                    continue
+
                 # if there is not an equivalent entry in database, we add it.
                 file_is_new = False # flag to indicate if the file is new to the database
                 file_hash = utilities.get_hash(filepath=file)
                 db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
                 if not db_file_entry:
                     file_is_new = True
-                    file_size = os.path.getsize(file)
                     path_list = utilities.split_path(file)
                     extension = path_list[-1].split(".")[-1].lower()
                     model = FileModel(hash=file_hash,
@@ -138,3 +142,6 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
     db.session.query(WorkerTask).filter(WorkerTask.task_id == queue_id).update(task_db_updates)
     db.session.commit()
     return scrape_log
+
+
+def confirm_file_locations(archive_location: str, initial_index: int, confirming_time: timedelta, queue_id: str):
