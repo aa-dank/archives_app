@@ -567,46 +567,42 @@ def scrape_files():
 @archiver.route("/test/scrape_files", methods=['GET', 'POST'])
 @utilities.roles_required(['ADMIN'])
 def test_scrape_files():
+    """
+    Endpoint for testing archiver_tasks.scrape_file_data function in development.
+    """
     # import task here to avoid circular import
     from archives_application.archiver.archiver_tasks import scrape_file_data
+
+    # Retrieve scrape parameters
+    scrape_location = retrieve_location_to_start_scraping()
+    scrape_time = 8
+    file_server_root_index = len(utilities.split_path(flask.current_app.config.get("ARCHIVES_LOCATION")))
+    if flask.request.args.get('scrape_time'):
+        scrape_time = int(flask.request.args.get('scrape_time'))
+    scrape_time = timedelta(minutes=scrape_time)
     
-    try:
-        # Retrieve scrape parameters
-        scrape_location = retrieve_location_to_start_scraping()
-        scrape_time = 8
-        file_server_root_index = len(utilities.split_path(flask.current_app.config.get("ARCHIVES_LOCATION")))
-        if flask.request.args.get('scrape_time'):
-            scrape_time = int(flask.request.args.get('scrape_time'))
-        scrape_time = timedelta(minutes=scrape_time)
-        
-        # Create our own job id to pass to the task so it can manipulate and query its own representation 
-        # in the database and Redis.
-        scrape_job_id = f"{scrape_file_data.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
-        scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
-                        "start_location": scrape_location,
-                        "file_server_root_index": file_server_root_index,
-                        "exclusion_functions": [exclude_extensions, exclude_filenames],
-                        "scrape_time": scrape_time,
-                        "queue_id": scrape_job_id}
-        scrape_results = scrape_file_data(**scrape_params)
-        scrape_params.pop("exclusion_functions") # remove exclusion_fuctions from scrape_params because it is not JSON serializable
-        scrape_dict = {"scrape_results": scrape_results, "scrape_params": scrape_params}
-        return flask.Response(json.dumps(scrape_dict), status=200)
+    # Create our own job id to pass to the task so it can manipulate and query its own representation 
+    # in the database and Redis.
+    scrape_job_id = f"{scrape_file_data.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+    scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
+                    "start_location": scrape_location,
+                    "file_server_root_index": file_server_root_index,
+                    "exclusion_functions": [exclude_extensions, exclude_filenames],
+                    "scrape_time": scrape_time,
+                    "queue_id": scrape_job_id}
+    scrape_results = scrape_file_data(**scrape_params)
+    scrape_params.pop("exclusion_functions") # remove exclusion_fuctions from scrape_params because it is not JSON serializable
+    scrape_dict = {"scrape_results": scrape_results, "scrape_params": scrape_params}
+    return flask.Response(json.dumps(scrape_dict), status=200)
 
-    except Exception as e:
-        mssg = "Error enqueuing task"
-        if e.__class__.__name__ == "ConnectionError":
-            mssg = "Error connecting to Redis. Is Redis running?"
-        return api_exception_subroutine(response_message=mssg, thrown_exception=e)
-
-
+'''
 @archiver.route("/confirm_file_locations", methods=['GET', 'POST'])
 def confirm_db_file_locations():
     """
     This function will confirm that the file locations in the database are still valid.
     """
     # import task here to avoid circular import
-    from archives_application.archiver.archiver_tasks import  
+    from archives_application.archiver.archiver_tasks import confirm_file_locations
     
     try:
         # Create our own job id to pass to the task so it can manipulate and query its own representation 
@@ -615,7 +611,7 @@ def confirm_db_file_locations():
         confirm_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
                         "queue_id": confirm_job_id}
         confirm_results = verify_db_file_locations(**confirm_params)
-        confirm_dict = {"verify_results": confirm_results, "confirm_params": confirm_params}
+        confirm_dict = {"confirmation_results": confirm_results, "confirmation_params": confirm_params}
         return flask.Response(json.dumps(confirm_dict), status=200)
 
     except Exception as e:
@@ -623,3 +619,22 @@ def confirm_db_file_locations():
         if e.__class__.__name__ == "ConnectionError":
             mssg = "Error connecting to Redis. Is Redis running?"
         return api_exception_subroutine(response_message=mssg, thrown_exception=e)
+'''
+
+@archiver.route("/test/confirm_files", methods=['GET', 'POST'])
+@utilities.roles_required(['ADMIN'])
+def test_confirm_files():
+    """
+    Endpoint for testing archiver_tasks.confirm_file_locations function in development.
+    """
+
+    from archives_application.archiver.archiver_tasks import confirm_file_locations
+
+    #confirm_file_locations(archive_location: str, confirming_time: timedelta, queue_id: str)
+    confirm_job_id = f"{confirm_file_locations.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+    confirm_task_params = {"archive_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
+                           "confirming_time": timedelta(minutes=8),
+                            "queue_id": confirm_job_id}
+    confirm_results = confirm_file_locations(**confirm_task_params)
+    confirm_dict = {"confirmation_results": confirm_results, "confirmation_params": confirm_params}
+    return flask.Response(json.dumps(confirm_dict), status=200)

@@ -11,7 +11,7 @@ from typing import Callable
 # Create the app context so that tasks can access app extensions even though
 # they are not running in the main thread.
 app = create_app()
-app.app_context().push()
+#app.app_context().push()
 
 
 def get_db():
@@ -144,4 +144,49 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
     return scrape_log
 
 
-def confirm_file_locations(archive_location: str, initial_index: int, confirming_time: timedelta, queue_id: str):
+def confirm_file_locations(archive_location: str, confirming_time: timedelta, queue_id: str):
+    db = get_db()
+    start_time = time.time()
+    confirm_locations_log = {"Confirm Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"), "Errors": []}
+    file_location_entries = db.session.query(FileLocationModel).order_by(db.desc(FileLocationModel.existence_confirmed)).yield_per(1000)
+    files_missing = 0
+    files_removed = 0
+    for file_location in file_location_entries:
+        try:
+            if timedelta(seconds=(time.time() - start_time)) >= confirming_time:
+                break
+            
+            file_location_path = os.path.join(archive_location, file_location.file_server_directories, file_location.filename)
+            
+            # if the file no longer exists, we delete the entry in the database
+            if not os.path.exists(file_location_path):
+                files_missing += 1
+                file_id = file_location.file_id
+                db.session.delete(file_location)
+                db.session.commit()
+                
+                # if there are no other locations for this file, we delete entry in the files table
+                other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
+                if other_locations == []:
+                    db.session.query(FileModel).filter(FileModel.id == file_id).delete()
+                    db.session.commit()
+                    files_removed += 1
+            
+            else:
+                # if the file exists, we update the existence_confirmed date of this file_locations entry
+                db.session.query(FileLocationModel).filter(FileLocationModel.id == file_location.id).update({"existence_confirmed": datetime.now()})
+                db.session.commit()
+        
+        except Exception as e:
+            e_dict = {"Location": file_location.file_server_directories,
+                      "filename": file_location.filename,
+                      "Exception": str(e)}
+            confirm_locations_log["Errors"].append(e_dict)
+            
+    
+    # update the task entry in the database
+    confirm_locations_log["Time Elapsed"] = str(time.time() - start_time) + "s"
+    task_db_updates = {"status": 'finished', "task_results": confirm_locations_log, "time_completed":datetime.now()}
+    db.session.query(WorkerTask).filter(WorkerTask.task_id == queue_id).update(task_db_updates)
+    db.session.commit()
+    return confirm_locations_log

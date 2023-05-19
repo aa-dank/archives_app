@@ -4,7 +4,6 @@ import logging
 import os
 import subprocess
 import time
-from logging.handlers import RotatingFileHandler
 
 
 
