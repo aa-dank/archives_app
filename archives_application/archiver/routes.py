@@ -591,7 +591,10 @@ def test_scrape_files():
                     "scrape_time": scrape_time,
                     "queue_id": scrape_job_id}
     scrape_results = scrape_file_data(**scrape_params)
+    
+    # prepare scrape results for JSON serialization
     scrape_params.pop("exclusion_functions") # remove exclusion_fuctions from scrape_params because it is not JSON serializable
+    scrape_params["scrape_time"] = str(scrape_params["scrape_time"])
     scrape_dict = {"scrape_results": scrape_results, "scrape_params": scrape_params}
     return flask.Response(json.dumps(scrape_dict), status=200)
 
@@ -636,7 +639,7 @@ def test_confirm_files():
         confirmation_params = {"archive_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
                             "confirming_time": timedelta(minutes=8),
                                 "queue_id": confirm_job_id}
-        confirm_results = confirm_file_locations(**confirm_task_params)
+        confirm_results = confirm_file_locations(**confirmation_params)
         confirm_dict = {"confirmation_results": confirm_results, "confirmation_params": confirmation_params}
 
     except Exception as e:

@@ -14,12 +14,6 @@ app = create_app()
 #app.app_context().push()
 
 
-def get_db():
-    """Get the database object from the app context."""
-    with app.app_context():
-        db = flask.current_app.extensions['sqlalchemy'].db
-        return db
-
 
 def scrape_file_data(archives_location: str, start_location: str, file_server_root_index: int,
                      exclusion_functions: list[Callable[[str], bool]], scrape_time: timedelta,
@@ -36,157 +30,159 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
     :param queue_id: The id of task in the worker queue.
     """
     
-    
-    db = get_db()
+    with app.app_context():
+        db = flask.current_app.extensions['sqlalchemy'].db
 
-    scrape_log = {"Scrape Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
-                "This Start  Location": start_location,
-                "Files Added":0,
-                "File Locations Added":0,
-                "Errors":[],
-                "Time Elapsed":0,
-                "Next Start Location": start_location}
-    start_time = time.time()
-    start_location_found = False
+        scrape_log = {"Scrape Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
+                    "This Start  Location": start_location,
+                    "Files Added":0,
+                    "File Locations Added":0,
+                    "Files Confirmed":0,
+                    "Errors":[],
+                    "Time Elapsed":0,
+                    "Next Start Location": start_location}
+        start_time = time.time()
+        start_location_found = False
 
-    for root, _, files in os.walk(archives_location):
+        for root, _, files in os.walk(archives_location):
 
-        # if the time limit for scraping has passed, we end the scraping loop
-        if timedelta(seconds=(time.time() - start_time)) >= scrape_time:
-            # process root to be agnostic to where the archives location is mounted
-            next_start = utilities.split_path(root)[file_server_root_index:]
-            scrape_log["Next Start Location"] = os.path.join(*next_start)
-            break
+            # if the time limit for scraping has passed, we end the scraping loop
+            if timedelta(seconds=(time.time() - start_time)) >= scrape_time:
+                # process root to be agnostic to where the archives location is mounted
+                next_start = utilities.split_path(root)[file_server_root_index:]
+                scrape_log["Next Start Location"] = os.path.join(*next_start)
+                break
 
-        # We iterate through the archives folder structure until we find the location from which we want to start
-        # scraping file data.
-        if root == start_location:
-            start_location_found = True
+            # We iterate through the archives folder structure until we find the location from which we want to start
+            # scraping file data.
+            if root == start_location:
+                start_location_found = True
 
-        if not start_location_found:
-            continue
+            if not start_location_found:
+                continue
 
-        filepaths = [os.path.join(root, f) for f in files]
-        for file in filepaths:
-            try:
-                # if the file is excluded by one of the exclusion functions, move to next file
-                if any([fun(file) for fun in exclusion_functions]):
-                    continue
-                
-                # if the file is empty, move to next file
-                file_size = os.path.getsize(file)
-                if file_size == 0:
-                    continue
-
-                # if there is not an equivalent entry in database, we add it.
-                file_is_new = False # flag to indicate if the file is new to the database
-                file_hash = utilities.get_hash(filepath=file)
-                db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
-                if not db_file_entry:
-                    file_is_new = True
-                    path_list = utilities.split_path(file)
-                    extension = path_list[-1].split(".")[-1].lower()
-                    model = FileModel(hash=file_hash,
-                                    size=file_size,
-                                    extension=extension)
-                    db.session.add(model)
-                    db.session.commit()
-                    db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
-                    scrape_log["Files Added"] += 1
-
-                path_list = utilities.split_path(file)
-                # This is for if there is a file in the root directory of the share (eg R:\some_file.pdf) )
-                file_server_dirs = ""
-                if path_list[file_server_root_index:-1] != []:
-                    file_server_dirs = os.path.join(*path_list[file_server_root_index:-1])
-                filename = path_list[-1]
-                confirmed_exists_dt = datetime.now()
-                confirmed_hash_dt = datetime.now()
-                
-                # If the file is not new, we check if the path is already represented in the database
-                # and update the file database entryto reflect that the file has been checked.
-                if not file_is_new:
-
-                    # query to see if the current path is already represented in the database
-                    db_path_entry = db.session.query(FileLocationModel).filter(
-                        FileLocationModel.file_server_directories == file_server_dirs,
-                        FileLocationModel.filename == filename).first()
-
-                    # If there is an entry for this path in the database update the dates now we have confirmed location and
-                    # that the file has not changed (hash is same.)
-                    if db_path_entry:
-                        entry_updates = {"existence_confirmed": confirmed_exists_dt,
-                                        "hash_confirmed": confirmed_hash_dt}
-                        db.session.query(FileLocationModel).filter(
-                            FileLocationModel.file_server_directories == file_server_dirs,
-                            FileLocationModel.filename == filename).update(entry_updates)
-
-                        db.session.commit()
+            filepaths = [os.path.join(root, f) for f in files]
+            for file in filepaths:
+                try:
+                    # if the file is excluded by one of the exclusion functions, move to next file
+                    if any([fun(file) for fun in exclusion_functions]):
+                        continue
+                    
+                    # if the file is empty, move to next file
+                    file_size = os.path.getsize(file)
+                    if file_size == 0:
                         continue
 
-                new_location = FileLocationModel(file_id=db_file_entry.id,
-                                                file_server_directories=file_server_dirs,
-                                                filename=filename, existence_confirmed=confirmed_exists_dt,
-                                                hash_confirmed=confirmed_hash_dt)
-                db.session.add(new_location)
-                db.session.commit()
-                scrape_log["File Locations Added"] += 1
+                    # if there is not an equivalent entry in database, we add it.
+                    file_is_new = False # flag to indicate if the file is new to the database
+                    file_hash = utilities.get_hash(filepath=file)
+                    db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
+                    if not db_file_entry:
+                        file_is_new = True
+                        path_list = utilities.split_path(file)
+                        extension = path_list[-1].split(".")[-1].lower()
+                        model = FileModel(hash=file_hash,
+                                        size=file_size,
+                                        extension=extension)
+                        db.session.add(model)
+                        db.session.commit()
+                        db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
+                        scrape_log["Files Added"] += 1
 
-            except Exception as e:
-                e_dict = {"Filepath": file, "Exception": str(e)}
-                scrape_log["Errors"].append(e_dict)
+                    path_list = utilities.split_path(file)
+                    # This is for if there is a file in the root directory of the share (eg R:\some_file.pdf) )
+                    file_server_dirs = ""
+                    if path_list[file_server_root_index:-1] != []:
+                        file_server_dirs = os.path.join(*path_list[file_server_root_index:-1])
+                    filename = path_list[-1]
+                    confirmed_exists_dt = datetime.now()
+                    confirmed_hash_dt = datetime.now()
+                    
+                    # If the file is not new, we check if the path is already represented in the database
+                    # and update the file database entryto reflect that the file has been checked.
+                    if not file_is_new:
 
-    # update the task entry in the database
-    scrape_log["Time Elapsed"] = str(time.time() - start_time) + "s"
-    task_db_updates = {"status": 'finished', "task_results": scrape_log, "time_completed":datetime.now()}
-    db.session.query(WorkerTask).filter(WorkerTask.task_id == queue_id).update(task_db_updates)
-    db.session.commit()
-    return scrape_log
+                        # query to see if the current path is already represented in the database
+                        db_path_entry = db.session.query(FileLocationModel).filter(
+                            FileLocationModel.file_server_directories == file_server_dirs,
+                            FileLocationModel.filename == filename).first()
+
+                        # If there is an entry for this path in the database update the dates now we have confirmed location and
+                        # that the file has not changed (hash is same.)
+                        if db_path_entry:
+                            entry_updates = {"existence_confirmed": confirmed_exists_dt,
+                                            "hash_confirmed": confirmed_hash_dt}
+                            db.session.query(FileLocationModel).filter(
+                                FileLocationModel.file_server_directories == file_server_dirs,
+                                FileLocationModel.filename == filename).update(entry_updates)
+                            db.session.commit()
+                            scrape_log["Files Confirmed"] += 1
+                            continue
+
+                    new_location = FileLocationModel(file_id=db_file_entry.id,
+                                                    file_server_directories=file_server_dirs,
+                                                    filename=filename, existence_confirmed=confirmed_exists_dt,
+                                                    hash_confirmed=confirmed_hash_dt)
+                    db.session.add(new_location)
+                    db.session.commit()
+                    scrape_log["File Locations Added"] += 1
+
+                except Exception as e:
+                    e_dict = {"Filepath": file, "Exception": str(e)}
+                    scrape_log["Errors"].append(e_dict)
+
+        # update the task entry in the database
+        scrape_log["Time Elapsed"] = str(time.time() - start_time) + "s"
+        task_db_updates = {"status": 'finished', "task_results": scrape_log, "time_completed":datetime.now()}
+        db.session.query(WorkerTask).filter(WorkerTask.task_id == queue_id).update(task_db_updates)
+        db.session.commit()
+        return scrape_log
 
 
 def confirm_file_locations(archive_location: str, confirming_time: timedelta, queue_id: str):
-    db = get_db()
-    start_time = time.time()
-    confirm_locations_log = {"Confirm Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"), "Errors": []}
-    file_location_entries = db.session.query(FileLocationModel).order_by(db.desc(FileLocationModel.existence_confirmed)).yield_per(1000)
-    files_missing = 0
-    files_removed = 0
-    for file_location in file_location_entries:
-        try:
-            if timedelta(seconds=(time.time() - start_time)) >= confirming_time:
-                break
-            
-            file_location_path = os.path.join(archive_location, file_location.file_server_directories, file_location.filename)
-            
-            # if the file no longer exists, we delete the entry in the database
-            if not os.path.exists(file_location_path):
-                files_missing += 1
-                file_id = file_location.file_id
-                db.session.delete(file_location)
-                db.session.commit()
+    with app.app_context():
+        db = flask.current_app.extensions['sqlalchemy'].db
+        start_time = time.time()
+        confirm_locations_log = {"Confirm Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"), "Errors": []}
+        file_location_entries = db.session.query(FileLocationModel).order_by(db.desc(FileLocationModel.existence_confirmed)).yield_per(1000)
+        files_missing = 0
+        files_removed = 0
+        for file_location in file_location_entries:
+            try:
+                if timedelta(seconds=(time.time() - start_time)) >= confirming_time:
+                    break
                 
-                # if there are no other locations for this file, we delete entry in the files table
-                other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
-                if other_locations == []:
-                    db.session.query(FileModel).filter(FileModel.id == file_id).delete()
+                file_location_path = os.path.join(archive_location, file_location.file_server_directories, file_location.filename)
+                
+                # if the file no longer exists, we delete the entry in the database
+                if not os.path.exists(file_location_path):
+                    files_missing += 1
+                    file_id = file_location.file_id
+                    db.session.delete(file_location)
                     db.session.commit()
-                    files_removed += 1
+                    
+                    # if there are no other locations for this file, we delete entry in the files table
+                    other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
+                    if other_locations == []:
+                        db.session.query(FileModel).filter(FileModel.id == file_id).delete()
+                        db.session.commit()
+                        files_removed += 1
+                
+                else:
+                    # if the file exists, we update the existence_confirmed date of this file_locations entry
+                    db.session.query(FileLocationModel).filter(FileLocationModel.id == file_location.id).update({"existence_confirmed": datetime.now()})
+                    db.session.commit()
             
-            else:
-                # if the file exists, we update the existence_confirmed date of this file_locations entry
-                db.session.query(FileLocationModel).filter(FileLocationModel.id == file_location.id).update({"existence_confirmed": datetime.now()})
-                db.session.commit()
+            except Exception as e:
+                e_dict = {"Location": file_location.file_server_directories,
+                        "filename": file_location.filename,
+                        "Exception": str(e)}
+                confirm_locations_log["Errors"].append(e_dict)
+                
         
-        except Exception as e:
-            e_dict = {"Location": file_location.file_server_directories,
-                      "filename": file_location.filename,
-                      "Exception": str(e)}
-            confirm_locations_log["Errors"].append(e_dict)
-            
-    
-    # update the task entry in the database
-    confirm_locations_log["Time Elapsed"] = str(time.time() - start_time) + "s"
-    task_db_updates = {"status": 'finished', "task_results": confirm_locations_log, "time_completed":datetime.now()}
-    db.session.query(WorkerTask).filter(WorkerTask.task_id == queue_id).update(task_db_updates)
-    db.session.commit()
-    return confirm_locations_log
+        # update the task entry in the database
+        confirm_locations_log["Time Elapsed"] = str(time.time() - start_time) + "s"
+        task_db_updates = {"status": 'finished', "task_results": confirm_locations_log, "time_completed":datetime.now()}
+        db.session.query(WorkerTask).filter(WorkerTask.task_id == queue_id).update(task_db_updates)
+        db.session.commit()
+        return confirm_locations_log
