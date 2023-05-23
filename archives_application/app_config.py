@@ -176,7 +176,7 @@ def setup_sql_logging(log_filepath):
     @param log_filepath:
     @return:
     """
-    handler = RotatingFileHandler(log_filepath, maxBytes=10000, backupCount=1)
+    handler = logging.RotatingFileHandler(log_filepath, maxBytes=10000, backupCount=1)
     handler.setLevel(logging.DEBUG)
     if flask.current_app.config.get('DEFAULT_LOGGING_FORMATTER'):
        formatter = flask.current_app.config.get('DEFAULT_LOGGING_FORMATTER')
