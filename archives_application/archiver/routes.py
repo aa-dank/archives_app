@@ -630,11 +630,16 @@ def test_confirm_files():
 
     from archives_application.archiver.archiver_tasks import confirm_file_locations
 
-    #confirm_file_locations(archive_location: str, confirming_time: timedelta, queue_id: str)
-    confirm_job_id = f"{confirm_file_locations.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
-    confirm_task_params = {"archive_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
-                           "confirming_time": timedelta(minutes=8),
-                            "queue_id": confirm_job_id}
-    confirm_results = confirm_file_locations(**confirm_task_params)
-    confirm_dict = {"confirmation_results": confirm_results, "confirmation_params": confirm_params}
+    try:
+        #confirm_file_locations(archive_location: str, confirming_time: timedelta, queue_id: str)
+        confirm_job_id = f"{confirm_file_locations.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+        confirmation_params = {"archive_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
+                            "confirming_time": timedelta(minutes=8),
+                                "queue_id": confirm_job_id}
+        confirm_results = confirm_file_locations(**confirm_task_params)
+        confirm_dict = {"confirmation_results": confirm_results, "confirmation_params": confirmation_params}
+
+    except Exception as e:
+        print(e)
+    
     return flask.Response(json.dumps(confirm_dict), status=200)
