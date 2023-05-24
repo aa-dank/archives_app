@@ -32,7 +32,13 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
     
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy'].db
+        
+        # update the database to indicate that the task has started
+        start_task_db_updates = {"status": 'started'}
+        db.session.query(WorkerTask).filter(WorkerTask.task_id == queue_id).update(start_task_db_updates)
+        db.session.commit()
 
+        # create a log of the scraping process
         scrape_log = {"Scrape Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
                     "This Start  Location": start_location,
                     "Files Added":0,
@@ -142,11 +148,19 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
 def confirm_file_locations(archive_location: str, confirming_time: timedelta, queue_id: str):
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy'].db
+        
+        # update the database to indicate that the task has started
+        start_task_db_updates = {"status": 'started'}
+        db.session.query(WorkerTask).filter(WorkerTask.task_id == queue_id).update(start_task_db_updates)
+        db.session.commit()
+
         start_time = time.time()
-        confirm_locations_log = {"Confirm Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"), "Errors": []}
+        confirm_locations_log = {"Confirm Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
+                                 "Errors": [],
+                                 "Files Missing": 0,
+                                 "Files Removed": 0,
+                                 "Files Confirmed": 0}
         file_location_entries = db.session.query(FileLocationModel).order_by(db.desc(FileLocationModel.existence_confirmed)).yield_per(1000)
-        files_missing = 0
-        files_removed = 0
         for file_location in file_location_entries:
             try:
                 if timedelta(seconds=(time.time() - start_time)) >= confirming_time:
@@ -156,7 +170,7 @@ def confirm_file_locations(archive_location: str, confirming_time: timedelta, qu
                 
                 # if the file no longer exists, we delete the entry in the database
                 if not os.path.exists(file_location_path):
-                    files_missing += 1
+                    confirm_locations_log["Files Missing"] += 1
                     file_id = file_location.file_id
                     db.session.delete(file_location)
                     db.session.commit()
@@ -166,12 +180,13 @@ def confirm_file_locations(archive_location: str, confirming_time: timedelta, qu
                     if other_locations == []:
                         db.session.query(FileModel).filter(FileModel.id == file_id).delete()
                         db.session.commit()
-                        files_removed += 1
+                        confirm_locations_log["Files Removed"] += 1
                 
                 else:
                     # if the file exists, we update the existence_confirmed date of this file_locations entry
                     db.session.query(FileLocationModel).filter(FileLocationModel.id == file_location.id).update({"existence_confirmed": datetime.now()})
                     db.session.commit()
+                    confirm_locations_log["Files Confirmed"] += 1
             
             except Exception as e:
                 e_dict = {"Location": file_location.file_server_directories,
