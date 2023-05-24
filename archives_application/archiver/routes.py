@@ -552,6 +552,7 @@ def scrape_files():
                                         function_name=task.func.__name__, status="queued")
             db.session.add(new_task_record)
             db.session.commit()
+            return flask.Response(json.dumps(task_dict), status=200)
 
         except Exception as e:
             mssg = "Error enqueuing task"
@@ -559,7 +560,7 @@ def scrape_files():
                 mssg = "Error connecting to Redis. Is Redis running?"
             return api_exception_subroutine(response_message=mssg, thrown_exception=e)   
         
-        return flask.Response(json.dumps(task_dict), status=200)
+        
     
     return flask.Response("Unauthorized", status=401)
 
@@ -581,9 +582,13 @@ def test_scrape_files():
         scrape_time = int(flask.request.args.get('scrape_time'))
     scrape_time = timedelta(minutes=scrape_time)
     
-    # Create our own job id to pass to the task so it can manipulate and query its own representation 
-    # in the database and Redis.
+    # Record test task in database
     scrape_job_id = f"{scrape_file_data.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+    new_task_record = WorkerTask(task_id=scrape_job_id, time_enqueued=str(datetime.now()), origin="test",
+                        function_name=scrape_file_data.__name__, status="queued")
+    db.session.add(new_task_record)
+    db.session.commit()
+
     scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
                     "start_location": scrape_location,
                     "file_server_root_index": file_server_root_index,
@@ -598,7 +603,7 @@ def test_scrape_files():
     scrape_dict = {"scrape_results": scrape_results, "scrape_params": scrape_params}
     return flask.Response(json.dumps(scrape_dict), status=200)
 
-'''
+
 @archiver.route("/confirm_file_locations", methods=['GET', 'POST'])
 def confirm_db_file_locations():
     """
@@ -607,22 +612,68 @@ def confirm_db_file_locations():
     # import task here to avoid circular import
     from archives_application.archiver.archiver_tasks import confirm_file_locations
     
-    try:
-        # Create our own job id to pass to the task so it can manipulate and query its own representation 
-        # in the database and Redis.
-        confirm_job_id = f"{confirm_file_locations.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
-        confirm_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
-                        "queue_id": confirm_job_id}
-        confirm_results = verify_db_file_locations(**confirm_params)
-        confirm_dict = {"confirmation_results": confirm_results, "confirmation_params": confirm_params}
-        return flask.Response(json.dumps(confirm_dict), status=200)
+    # Check if the request includes user credentials or is from a logged in user. 
+    # User needs to have ADMIN role.
+    request_is_authenticated = False
+    has_admin_role = lambda usr: any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
+    if flask.request.args.get('user'):
+        user_param = flask.request.args.get('user')
+        password_param = flask.request.args.get('password')
+        user = UserModel.query.filter_by(email=user_param).first()
 
-    except Exception as e:
-        mssg = "Error enqueuing task"
-        if e.__class__.__name__ == "ConnectionError":
-            mssg = "Error connecting to Redis. Is Redis running?"
-        return api_exception_subroutine(response_message=mssg, thrown_exception=e)
-'''
+        # If there is a matching user to the request parameter, the password matches and that account has admin role...
+        if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
+            request_is_authenticated = True
+
+    elif current_user:
+        if current_user.is_authenticated and has_admin_role(current_user):
+            request_is_authenticated = True
+    
+    if request_is_authenticated:
+        try:
+            confirming_time = 10
+            if flask.request.args.get('confirming_time'):
+                confirming_time = int(flask.request.args.get('confirming_time'))
+
+            # Create our own job id to pass to the task so it can manipulate and query its own representation 
+            # in the database and Redis.
+            confirm_job_id = f"{confirm_file_locations.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+            new_task_record = WorkerTask(task_id=confirm_job_id, time_enqueued=str(datetime.now()), origin="test",
+                        function_name=confirm_file_locations.__name__, status="queued")
+            db.session.add(new_task_record)
+            db.session.commit()
+
+            confirm_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
+                              "confirming_time": timedelta(minutes=confirming_time),
+                              "queue_id": confirm_job_id}
+            
+            task = flask.current_app.q.enqueue_call(func=confirm_file_locations,
+                                                    kwargs=confirm_params,
+                                                    job_id= confirm_job_id,
+                                                    result_ttl=43200)
+            task_dict = {"task_id": task.id,
+                         "enqueued_at":str(task.enqueued_at),
+                         "origin": task.origin,
+                         "func_name": task.func.__name__}
+            
+            new_task_record = WorkerTask(task_id=task.id, time_enqueued=str(task.enqueued_at), origin=task.origin,
+                                         function_name=task.func.__name__, status="queued")
+            db.session.add(new_task_record)
+            db.session.commit()
+            
+            # prepare task enqueuement info for for JSON serialization
+            confirm_params['confirming_time'] = str(confirm_params['confirming_time'])
+            confirm_dict = {"confirmation_task_info": task_dict, "confirmation_task_params": confirm_params}
+            return flask.Response(json.dumps(confirm_dict), status=200)
+
+        except Exception as e:
+            mssg = "Error enqueuing task"
+            if e.__class__.__name__ == "ConnectionError":
+                mssg = "Error connecting to Redis. Is Redis running?"
+            return api_exception_subroutine(response_message=mssg, thrown_exception=e)
+    
+    return flask.Response("Unauthorized", status=401)
+
 
 @archiver.route("/test/confirm_files", methods=['GET', 'POST'])
 @utilities.roles_required(['ADMIN'])
@@ -634,12 +685,18 @@ def test_confirm_files():
     from archives_application.archiver.archiver_tasks import confirm_file_locations
 
     try:
-        #confirm_file_locations(archive_location: str, confirming_time: timedelta, queue_id: str)
+        # Record test task in database
         confirm_job_id = f"{confirm_file_locations.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+        new_task_record = WorkerTask(task_id=confirm_job_id, time_enqueued=str(datetime.now()), origin="test",
+                            function_name=confirm_file_locations.__name__, status="queued")
+        db.session.add(new_task_record)
+        db.session.commit()
+    
         confirmation_params = {"archive_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
-                            "confirming_time": timedelta(minutes=8),
-                                "queue_id": confirm_job_id}
+                               "confirming_time": timedelta(minutes=3),
+                               "queue_id": confirm_job_id}
         confirm_results = confirm_file_locations(**confirmation_params)
+        confirmation_params['confirming_time'] = str(confirmation_params['confirming_time'])
         confirm_dict = {"confirmation_results": confirm_results, "confirmation_params": confirmation_params}
 
     except Exception as e:
