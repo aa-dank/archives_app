@@ -56,18 +56,6 @@ DIRECTORY_CHOICES = ['A - General', 'B - Administrative Reviews and Approvals', 
                      'G9 - Testing and Inspection Reports. Testing Laboratory']
 
 
-def get_test_config_path(prefix: str = "test_config"):
-    """
-    Function that allows to switch out config files without having to update the config filename as long as the filename
-    starts with the prefix.
-    For example might have a config for use with local database cluster, 'test_config_local_db.json' and one for postgresql,
-    'test_config_postgres.json'. If the prefix is set to "test_config" then any confid that starts with that prefix.
-    @param prefix: prefix string that identifies a test config
-    @return:
-    """
-    filename = [filename for filename in os.listdir(os.getcwd()) if filename.startswith(prefix)][0]
-    return filename
-
 def google_creds_from_creds_json(creds_path):
     with open(creds_path) as creds_json:
         creds_dict = json.load(creds_json)['web']

@@ -73,7 +73,7 @@ class FileModel(db.Model):
     __tablename__ = "files"
     id = db.Column(db.Integer, primary_key=True)
     hash = db.Column(db.String, unique=True, index=True, nullable=False)
-    size = db.Column(db.Integer, nullable=False)
+    size = db.Column(db.BigInteger, nullable=False)
     extension = db.Column(db.String)
 
     def __repr__(self):
