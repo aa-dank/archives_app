@@ -192,6 +192,11 @@ def get_db_uri():
 @main.route("/admin/sql_logging", methods=['GET', 'POST'])
 @roles_required(['ADMIN'])
 def toggle_sql_logging():
+    """
+    The purpose of this endpoint is to toggle the logging of sql statements to the console.
+    This is useful for debugging, but should not be left on in production.
+    """
+    
     # "If set to True SQLAlchemy will log all the statements issued to stderr which can be useful for debugging"
     # https://flask-sqlalchemy.palletsprojects.com/en/2.x/config/
     current_echo = flask.current_app.config.get("SQLALCHEMY_ECHO", False)

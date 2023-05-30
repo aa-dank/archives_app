@@ -1,5 +1,6 @@
 import os
 import flask
+import glob
 import logging
 import redis
 import rq
@@ -17,8 +18,8 @@ login_manager.login_view = 'users.choose_login'
 login_manager.login_message_category = 'info'
 google_creds_json = r'google_client_secret.json'
 
-# use pound to choose between config json files
-config_json = app_config.get_test_config_path()
+
+config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
 #config_json = r'deploy_app_config.json'
 
 def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,
@@ -54,7 +55,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.2.11'
+    app.config['VERSION'] = '1.2.12'
 
     # If the SQLALCHEMY_ECHO parameter is true, need to set up logs for logging sql
     if app.config.get("SQLALCHEMY_ECHO"):
