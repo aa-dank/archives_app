@@ -26,6 +26,7 @@ class UserModel(db.Model, UserMixin):
 class ArchivedFileModel(db.Model):
     __tablename__ = 'archived_files'
     id = db.Column(db.Integer, primary_key=True)
+    file_id = db.Column(db.Integer, db.ForeignKey('files.id'))
     destination_path = db.Column(db.String, nullable=False)
     project_number = db.Column(db.String)
     document_date = db.Column(db.String)
@@ -38,7 +39,6 @@ class ArchivedFileModel(db.Model):
     filename = db.Column(db.String)
 
     def __repr__(self):
-        # TODO does date_archived need to be changed to string
         return f"Archived File('{self.destination_path}', '{self.project_number}', '{self.file_size}')"
 
 

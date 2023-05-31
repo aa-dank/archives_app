@@ -55,7 +55,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.2.12'
+    app.config['VERSION'] = '1.2.13'
 
     # If the SQLALCHEMY_ECHO parameter is true, need to set up logs for logging sql
     if app.config.get("SQLALCHEMY_ECHO"):
@@ -67,7 +67,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
 
     # add redis queue for asynchronous tasks
     if app.config.get("REDIS_URL"):
-        app.q = rq.Queue(connection=redis.from_url(app.config.get("REDIS_URL")), default_timeout=1800)
+        app.q = rq.Queue(connection=redis.from_url(app.config.get("REDIS_URL")))
 
     # add blueprints
     from archives_application.users.routes import users

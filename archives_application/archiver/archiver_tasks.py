@@ -11,7 +11,6 @@ from typing import Callable
 # Create the app context so that tasks can access app extensions even though
 # they are not running in the main thread.
 app = create_app()
-#app.app_context().push()
 
 
 
@@ -134,6 +133,7 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
                     scrape_log["File Locations Added"] += 1
 
                 except Exception as e:
+                    print(str(e) + "\n" + file)
                     e_dict = {"Filepath": file, "Exception": str(e)}
                     scrape_log["Errors"].append(e_dict)
 
