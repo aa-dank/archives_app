@@ -29,7 +29,7 @@ def web_exception_subroutine(flash_message, thrown_exception, app_obj):
     @param app_obj:
     @return:
     """
-    flash_message = flash_message + f": {thrown_exception}"
+    flash_message = flash_message + f": {str(thrown_exception)}"
     flask.flash(flash_message, 'error')
     app_obj.logger.error(thrown_exception, exc_info=True)
     return flask.redirect(flask.url_for('main.home'))
@@ -44,13 +44,45 @@ def api_exception_subroutine(response_message, thrown_exception):
     @return:
     """
     flask.current_app.logger.error(thrown_exception, exc_info=True)
-    return flask.Response(response_message + "\n" + thrown_exception, status=500)
+    return flask.Response(response_message + "\n" + str(thrown_exception), status=500)
 
 
 def db_query_to_df(query: flask_sqlalchemy.query.Query):
     results = query.all()
     df = pd.DataFrame([row.__dict__ for row in results])
     return df
+
+def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
+    """
+    Removes a file from the server and deletes the entry from the database
+    :param db: SQLAlchemy object
+    :param file_path: path to file on the server
+    :return: None
+    """
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    
+    # extract the directories it is nested within and the filename; use these to query the database
+    path_list = utilities.split_path(file_path)
+    file_server_root_index = os.path.join(*path_list[:-1]) 
+    server_dirs_list = path_list[file_server_root_index:-1]
+    server_dirs = os.path.join(*server_dirs_list)
+    file_loc = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories == server_dirs,
+                                                          FileLocationModel.filename == path_list[-1]).first()
+    
+    if not file_loc:
+        return True
+    
+    other_locations = len(db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_loc.file_id).all()) > 1
+    file_deleted = db.session.delete(file_loc)
+    if not other_locations:
+        file_to_delete = db.session.query(FileModel).filter(FileModel.id == file_loc.file_id)
+        db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_to_delete.id).update({"file_id": None})
+        db.session.delete(file_to_delete)
+    
+    db.session.commit()
+    return file_deleted
+    
 
 
 def get_user_handle():
@@ -176,12 +208,47 @@ def upload_file():
                                                     archival_filename)
                 arch_file.cached_destination_path = destination_path
 
+
+            remove_file_location(db=db, file_path= arch_file.get_destination_path())
+            
             archiving_successful, archiving_exception = arch_file.archive_in_destination()
 
             # if the file was successfully moved to its destination, we will save the data to the database
             if archiving_successful:
+                # need to determine if the file already exists in the database
+                db_file_entry = None
+                file_hash = utilities.get_file_hash(temp_path)
+                
+                # if the file already exists in the database, we will use that entry
+                while not db_file_entry:
+                    db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
+                    if not db_file_entry:
+                        file_extension = archival_filename.split('.')[-1]
+                        db_file_entry = FileModel(hash=file_hash, extension=file_extension, size=upload_size)
+                        db.session.add(db_file_entry)
+                        db.session.commit()
+                
+                # check if the file_location already exists in the database
+                file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+                # remove the filename from the path to get the server directories
+                server_dirs = arch_file.get_destination_path()[:len(arch_file.new_filename)+1] 
+                server_dirs_list = utilities.split_path(server_dirs)[file_server_root_index:]
+                server_dirs = os.path.join(*server_dirs_list)
+                file_loc = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories == server_dirs,
+                                                                      FileLocationModel.filename == arch_file.new_filename).first()
+                if not file_loc:
+                
+                    # add file_location to the database and retrieve file_locations id
+                    file_loc = FileLocationModel(file_id=db_file_entry.id,
+                                                file_server_directories='',
+                                                filename=archival_filename,
+                                                existence_confirmed=datetime.now(),
+                                                hash_confirmed=datetime.now())
+                    db.session.add(file_loc) # should I commit this within the conditional?
+                
                 archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
                                                   project_number=arch_file.project_number,
+                                                  file_id=db_file_entry.id,
                                                   document_date=form.document_date.data,
                                                   destination_directory=arch_file.destination_dir,
                                                   file_code=arch_file.file_code, archivist_id=current_user.id,
@@ -357,6 +424,36 @@ def inbox_item():
                                                     archival_filename)
                 arch_file.cached_destination_path = destination_path
                 arch_file.destination_dir = None
+            
+            # populate database with file info, retrieve the file index from file
+            file_hash = utilities.get_file_hash(arch_file_path)
+            db_file_entry = None
+            while not db_file_entry:
+                    db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
+                    if not db_file_entry:
+                        db_file_entry = FileModel(hash=file_hash, extension=file_ext, size=upload_size)
+                        db.session.add(db_file_entry)
+                        db.session.commit()
+
+            # if the file_location already exists in the database remove it because the file will be overwritten
+            file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+            # remove the filename from the path to get the server directories
+            server_dirs = arch_file.get_destination_path()[:len(arch_file.new_filename)+1] 
+            server_dirs_list = utilities.split_path(server_dirs)[file_server_root_index:]
+            server_dirs = os.path.join(*server_dirs_list)
+            file_loc = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories == server_dirs,
+                                                                    FileLocationModel.filename == arch_file.new_filename).first()
+            if file_loc:
+                remove_file_location(file_path=arch_file.get_destination_path(), db=db)
+
+            # add file_location to the database and retrieve file_locations id
+            file_loc = FileLocationModel(file_id=db_file_entry.id,
+                                        file_server_directories='',
+                                        filename=archival_filename,
+                                        existence_confirmed=datetime.now(),
+                                        hash_confirmed=datetime.now())
+            db.session.add(file_loc) # should I commit this within the conditional?
+            db.session.commit()
 
             # archive the file in the destination and attempt to record the archival in the database    
             archiving_successful, archiving_exception = arch_file.archive_in_destination()
@@ -540,7 +637,8 @@ def scrape_files():
             task = flask.current_app.q.enqueue_call(func=scrape_file_data,
                                                     kwargs=scrape_params,
                                                     job_id= scrape_job_id,
-                                                    result_ttl=43200)
+                                                    result_ttl=43200,
+                                                    timeout=scrape_time.seconds + 60)
         
             task_dict = {"task_id": task.id,
                         "enqueued_at":str(task.enqueued_at),
@@ -560,8 +658,6 @@ def scrape_files():
                 mssg = "Error connecting to Redis. Is Redis running?"
             return api_exception_subroutine(response_message=mssg, thrown_exception=e)   
         
-        
-    
     return flask.Response("Unauthorized", status=401)
 
 
