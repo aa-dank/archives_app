@@ -115,6 +115,7 @@ def roles_required(roles: list[str]):
             # if the user has at least a single role and at least one of the user roles is in roles...
             if hasattr(current_user, 'roles') and [role for role in roles if role in current_user.roles.split(",")]:
                 return func(*args, **kwargs)
+            
             else:
                 mssg = "Access Denied. Are you logged in? Do you have the correct account role to access this?"
                 flask.flash(mssg, 'warning')

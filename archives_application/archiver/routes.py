@@ -195,7 +195,8 @@ def upload_file():
                                      destination_dir=form.destination_directory.data,
                                      directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
                                      archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'))
-
+            destination_filename = arch_file.assemble_destination_filename()
+            
             # If a user enters a path to destination directory instead of File code and project number...
             if form.destination_path.data:
                 destination_path_list = utilities.split_path(form.destination_path.data)
@@ -207,6 +208,7 @@ def upload_file():
                     destination_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
                                                     archival_filename)
                 arch_file.cached_destination_path = destination_path
+                destination_filename = archival_filename
 
 
             remove_file_location(db=db, file_path= arch_file.get_destination_path())
@@ -231,17 +233,17 @@ def upload_file():
                 # check if the file_location already exists in the database
                 file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
                 # remove the filename from the path to get the server directories
-                server_dirs = arch_file.get_destination_path()[:len(arch_file.new_filename)+1] 
-                server_dirs_list = utilities.split_path(server_dirs)[file_server_root_index:]
-                server_dirs = os.path.join(*server_dirs_list)
-                file_loc = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories == server_dirs,
-                                                                      FileLocationModel.filename == arch_file.new_filename).first()
+                server_directories = arch_file.get_destination_path()[:-len(destination_filename)-1] 
+                server_dirs_list = utilities.split_path(server_directories)[file_server_root_index:]
+                server_directories = os.path.join(*server_dirs_list)
+                file_loc = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories == server_directories,
+                                                                      FileLocationModel.filename == destination_filename).first()
                 if not file_loc:
                 
                     # add file_location to the database and retrieve file_locations id
                     file_loc = FileLocationModel(file_id=db_file_entry.id,
-                                                file_server_directories='',
-                                                filename=archival_filename,
+                                                file_server_directories=server_directories,
+                                                filename=destination_filename,
                                                 existence_confirmed=datetime.now(),
                                                 hash_confirmed=datetime.now())
                     db.session.add(file_loc) # should I commit this within the conditional?
@@ -253,7 +255,7 @@ def upload_file():
                                                   destination_directory=arch_file.destination_dir,
                                                   file_code=arch_file.file_code, archivist_id=current_user.id,
                                                   file_size=upload_size, notes=arch_file.notes,
-                                                  filename=arch_file.assemble_destination_filename())
+                                                  filename=destination_filename)
                 db.session.add(archived_file)
                 db.session.commit()
                 flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
@@ -411,7 +413,8 @@ def inbox_item():
                                      archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'),
                                      directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
                                      destination_path=form.destination_path.data)
-
+            
+            destination_filename = arch_file.assemble_destination_filename()
             # If a user enters a path to destination directory instead of File code and project number...
             if form.destination_path.data:
                 destination_path_list = utilities.split_path(form.destination_path.data)
@@ -424,9 +427,10 @@ def inbox_item():
                                                     archival_filename)
                 arch_file.cached_destination_path = destination_path
                 arch_file.destination_dir = None
+                destination_filename = archival_filename
             
             # populate database with file info, retrieve the file index from file
-            file_hash = utilities.get_file_hash(arch_file_path)
+            file_hash = utilities.get_hash(arch_file_path)
             db_file_entry = None
             while not db_file_entry:
                     db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
@@ -438,18 +442,20 @@ def inbox_item():
             # if the file_location already exists in the database remove it because the file will be overwritten
             file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
             # remove the filename from the path to get the server directories
-            server_dirs = arch_file.get_destination_path()[:len(arch_file.new_filename)+1] 
-            server_dirs_list = utilities.split_path(server_dirs)[file_server_root_index:]
-            server_dirs = os.path.join(*server_dirs_list)
-            file_loc = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories == server_dirs,
-                                                                    FileLocationModel.filename == arch_file.new_filename).first()
+            server_directories = arch_file.get_destination_path()[:-len(destination_filename)-1] # filepath without filename
+            server_dirs_list = utilities.split_path(server_directories)[file_server_root_index:]
+            server_directories = os.path.join(*server_dirs_list)
+            file_loc = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories == server_directories,
+                                                                    FileLocationModel.filename == destination_filename).first()
+            
+            # if archiving this file will overwrite an existing file, remove the existing file_location from the database
             if file_loc:
                 remove_file_location(file_path=arch_file.get_destination_path(), db=db)
 
             # add file_location to the database and retrieve file_locations id
             file_loc = FileLocationModel(file_id=db_file_entry.id,
-                                        file_server_directories='',
-                                        filename=archival_filename,
+                                        file_server_directories=server_directories,
+                                        filename=destination_filename,
                                         existence_confirmed=datetime.now(),
                                         hash_confirmed=datetime.now())
             db.session.add(file_loc) # should I commit this within the conditional?
@@ -466,7 +472,7 @@ def inbox_item():
                                                       destination_directory=arch_file.destination_dir,
                                                       file_code=arch_file.file_code, archivist_id=current_user.id,
                                                       file_size=upload_size, notes=arch_file.notes,
-                                                      filename=arch_file.assemble_destination_filename())
+                                                      filename=destination_filename)
                     db.session.add(archived_file)
                     db.session.commit()
 
