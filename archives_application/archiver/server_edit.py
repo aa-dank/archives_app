@@ -57,11 +57,11 @@ class ServerEdit:
         """
 
         def check_against_limits():
-            if self.data_effected and self.data_effected > effected_data_limit:
+            if effected_data_limit and self.data_effected and self.data_effected > effected_data_limit:
                 raise Exception(
                     f"ServerEdit data limit breached. Too much data effected by change type '{self.change_type}'.\nOld path: {self.old_path}\nNew path: {self.new_path}")
 
-            if self.files_effected and self.files_effected > files_limit:
+            if files_limit and self.files_effected and self.files_effected > files_limit:
                 raise Exception(
                     f"ServerEdit file limit breached. Too many files effected by change type '{self.change_type}.'\nOld path: {self.old_path}\nNew path: {self.new_path}")
 
