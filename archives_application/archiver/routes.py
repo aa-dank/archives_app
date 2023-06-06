@@ -145,6 +145,8 @@ def server_change():
             # there are no limits and they are set to zero
             files_limit = flask.current_app.config.get('SERVER_CHANGE_FILES_LIMIT')
             data_limit = flask.current_app.config.get('SERVER_CHANGE_DATA_LIMIT')
+            
+            # if the user has admin credentials, there are no limits
             if 'ADMIN' in current_user.roles:
                 files_limit, data_limit = 0, 0
 

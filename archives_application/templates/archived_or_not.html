@@ -5,7 +5,7 @@
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Check for file...</legend>
-                <p>This tool checks the complete contents of the specified destination for the uploaded file. It does this by checking the file against every other file in the specified directory; thus, it can take a very long time if there are many files to compare.</p>
+                <p>This tool checks the contents of the chosen file against the contents of all other files in the application database (which should be nearly all files on the records server) and returns a table of all the locations found for the chosen file on the records server. The time it takes depends on the size of the chosen file; larger files can take awhile.</p>
                 <div class="form-group">
                     <h6>{{ form.upload.label(class="form-control-file") }}</h6>
                     {% if form.upload.errors %}

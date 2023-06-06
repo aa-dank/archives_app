@@ -332,6 +332,9 @@ def pdf_preview_image(pdf_path, image_destination, max_width=1080):
 
 
 def get_hash(filepath, hash_algo=hashlib.sha1):
+    """"
+    This function takes a filepath and a hash algorithm as input and returns the hash of the file at the filepath
+    """
     def chunk_reader(fobj, chunk_size=1024):
         """ Generator that reads a file in chunks of bytes """
         while True:
