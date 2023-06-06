@@ -1,5 +1,5 @@
 from archives_application import utilities, create_app
-from archives_application.models import FileLocationModel, FileModel, WorkerTask
+from archives_application.models import ArchivedFileModel, FileLocationModel, FileModel, WorkerTask
 
 import flask
 import os
@@ -12,16 +12,93 @@ from typing import Callable
 # they are not running in the main thread.
 app = create_app()
 
-def add_file_to_db(filepath: str):
+def initiate_task_subroutine(q_id, s_db):
+    # update the database to indicate that the task has started
+    start_task_db_updates = {"status": 'started'}
+    s_db.session.query(WorkerTask).filter(WorkerTask.task_id == q_id).update(start_task_db_updates)
+    s_db.session.commit()
+
+def complete_task_subroutine(q_id, s_db, task_result):
+    # update the database to indicate that the task has completed
+    task_db_updates = {"status": 'finished', "task_results": task_result, "time_completed":datetime.now()}
+    s_db.session.query(WorkerTask).filter(WorkerTask.task_id == q_id).update(task_db_updates)
+    s_db.session.commit()
+
+
+def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
     """
     This function adds a file to the database.
     """
     with app.app_context():
-        pass
+        db = flask.current_app.extensions['sqlalchemy'].db
+        initiate_task_subroutine(q_id=queue_id, s_db=db)
+        
+        file_hash = utilities.get_hash(filepath)
+        file_id = None
+        filename = utilities.split_path(filepath)[-1]
+        
+        # check if the file is already in the database and add it if it is not
+        while not file_id:
+            db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
+            if not db_file_entry:
+                file_ext = filename.split('.')[-1]
+                file_size = os.path.getsize(filepath)
+                new_file = FileModel(hash=file_hash, size=file_size, extension=file_ext)
+                db.session.add(new_file)
+                db.session.commit()
+                file_id = new_file.id #TODO does this value exist after the commit?
+            else:
+                file_id = db_file_entry.id
+        
+        # extract the path from the root of the windows share
+        file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+        server_directories = filepath[:-len(filename)-1]
+        server_dirs_list = utilities.split_path(server_directories)[file_server_root_index:]
+        server_directories = os.path.join(*server_dirs_list)
 
-def scrape_file_data(archives_location: str, start_location: str, file_server_root_index: int,
-                     exclusion_functions: list[Callable[[str], bool]], scrape_time: timedelta,
-                     queue_id: str):
+        # check if the file location is already in the database and add it if it is not
+        db_file_location_entry = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories == server_directories,
+                                                                            FileLocationModel.filename == filename).first()
+        
+        # if there is already already a file location that is the same as this loction,
+        # but the files are different, we remove the old file location and add the new one.
+        if db_file_location_entry and (db_file_location_entry.file_id != file_id):
+            db.session.delete(db_file_location_entry)
+            db.session.commit()
+            db_file_location_entry = None
+        
+        if not db_file_location_entry:
+            new_file_location = FileLocationModel(file_server_directories=server_directories,
+                                                  filename=filename,
+                                                  file_id=file_id,
+                                                  existence_confirmed = datetime.now(),
+                                                  hash_confirmed = datetime.now())
+            db.session.add(new_file_location)
+            db.session.commit()
+
+        # if the file is already in the database, update the existence_confirmed and hash_confirmed fields
+        else:
+            db_file_location_entry.existence_confirmed = datetime.now()
+            db_file_location_entry.hash_confirmed = datetime.now()
+            db.session.commit()
+
+        # if adding the file to database is connected to archiving event, update associated archived_files entry   
+        if archiving:
+            search_path = os.path.join(server_directories, filename)
+            archived_file = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.destination_path.endswith(search_path),
+                                                                       ArchivedFileModel.filename == filename).first()
+            archived_file.file_id = file_id
+            db.session.commit()
+        task_results = {"file_id": file_id, "filepath": filepath}
+        complete_task_subroutine(q_id=queue_id, s_db=db, task_result=task_results)
+        return file_id
+
+
+
+
+def scrape_file_data_task(archives_location: str, start_location: str, file_server_root_index: int,
+                          exclusion_functions: list[Callable[[str], bool]], scrape_time: timedelta,
+                          queue_id: str):
     """
     This function scrapes file data from the archives file server and adds it to the database.
     
@@ -36,11 +113,7 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
     
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy'].db
-        
-        # update the database to indicate that the task has started
-        start_task_db_updates = {"status": 'started'}
-        db.session.query(WorkerTask).filter(WorkerTask.task_id == queue_id).update(start_task_db_updates)
-        db.session.commit()
+        initiate_task_subroutine(q_id=queue_id, s_db=db)
 
         # create a log of the scraping process
         scrape_log = {"Scrape Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
@@ -139,25 +212,20 @@ def scrape_file_data(archives_location: str, start_location: str, file_server_ro
 
                 except Exception as e:
                     print(str(e) + "\n" + file)
+                    db.session.rollback()
                     e_dict = {"Filepath": file, "Exception": str(e)}
                     scrape_log["Errors"].append(e_dict)
 
         # update the task entry in the database
         scrape_log["Time Elapsed"] = str(time.time() - start_time) + "s"
-        task_db_updates = {"status": 'finished', "task_results": scrape_log, "time_completed":datetime.now()}
-        db.session.query(WorkerTask).filter(WorkerTask.task_id == queue_id).update(task_db_updates)
-        db.session.commit()
+        complete_task_subroutine(q_id=queue_id, s_db=db, task_result=scrape_log)
         return scrape_log
 
 
-def confirm_file_locations(archive_location: str, confirming_time: timedelta, queue_id: str):
+def confirm_file_locations_task(archive_location: str, confirming_time: timedelta, queue_id: str):
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy'].db
-        
-        # update the database to indicate that the task has started
-        start_task_db_updates = {"status": 'started'}
-        db.session.query(WorkerTask).filter(WorkerTask.task_id == queue_id).update(start_task_db_updates)
-        db.session.commit()
+        initiate_task_subroutine(q_id=queue_id, s_db=db)
 
         start_time = time.time()
         confirm_locations_log = {"Confirm Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
@@ -194,6 +262,7 @@ def confirm_file_locations(archive_location: str, confirming_time: timedelta, qu
                     confirm_locations_log["Files Confirmed"] += 1
             
             except Exception as e:
+                db.session.rollback()
                 e_dict = {"Location": file_location.file_server_directories,
                         "filename": file_location.filename,
                         "Exception": str(e)}
@@ -202,7 +271,5 @@ def confirm_file_locations(archive_location: str, confirming_time: timedelta, qu
         
         # update the task entry in the database
         confirm_locations_log["Time Elapsed"] = str(time.time() - start_time) + "s"
-        task_db_updates = {"status": 'finished', "task_results": confirm_locations_log, "time_completed":datetime.now()}
-        db.session.query(WorkerTask).filter(WorkerTask.task_id == queue_id).update(task_db_updates)
-        db.session.commit()
+        complete_task_subroutine(q_id=queue_id, s_db=db, task_result=confirm_locations_log)
         return confirm_locations_log

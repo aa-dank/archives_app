@@ -8,6 +8,7 @@ import re
 import shutil
 import pandas as pd
 from datetime import timedelta
+from typing import Union, Callable
 from archives_application.archiver.archival_file import ArchivalFile
 from archives_application import utilities
 
@@ -83,6 +84,27 @@ def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
     db.session.commit()
     return file_deleted
     
+
+def enqueue_new_task(enqueued_function: callable, function_kwargs: dict = {}, timeout: Union[int, None] = None):
+    """
+    Adds a function to the rq task queue to be executed asynchronously
+    :param function: function to be executed
+    :param function_kwargs: keyword arguments for the function
+    :param timeout: timeout for the function
+    :return: None
+    """
+
+    
+    job_id = f"{enqueued_function.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
+    function_kwargs['queue_id'] = job_id
+    task = flask.current_app.q.enqueue_call(func=enqueued_function, kwargs=function_kwargs, job_id=job_id, timeout=timeout)
+    new_task_record = WorkerTask(task_id=job_id, time_enqueued=str(datetime.now()), origin=task.origin,
+                                 function_name=enqueued_function.__name__, status="queued")
+    db.session.add(new_task_record)
+    db.session.commit()
+    results = task.__dict__
+    results["task_id"] = job_id
+    return results
 
 
 def get_user_handle():
@@ -172,6 +194,9 @@ def upload_file():
     """
     This function handles the upload of a single file to the server.
     """
+    # import task function here to avoid circular import
+    from archives_application.archiver.archiver_tasks import add_file_to_db_task
+
     form = UploadFileForm()
     # set filing code choices from app config
     form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
@@ -181,9 +206,8 @@ def upload_file():
             archival_filename = form.upload.data.filename
             temp_path = os.path.join(temp_files_directory, archival_filename)
             form.upload.data.save(temp_path)
-            upload_size = os.path.getsize(temp_path)
 
-            # raise exception if there is not the requiored fields filled out in the submitted form.
+            # raise exception if there is not the required fields filled out in the submitted form.
             if not ((form.project_number.data and form.destination_directory.data) or form.destination_path.data):
                 raise Exception(
                     "Missing required fields -- either project_number and Destination_directory or destination_path")
@@ -195,7 +219,6 @@ def upload_file():
                                      destination_dir=form.destination_directory.data,
                                      directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
                                      archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'))
-            destination_filename = arch_file.assemble_destination_filename()
             
             # If a user enters a path to destination directory instead of File code and project number...
             if form.destination_path.data:
@@ -208,62 +231,27 @@ def upload_file():
                     destination_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
                                                     archival_filename)
                 arch_file.cached_destination_path = destination_path
-                destination_filename = archival_filename
-
-
-            remove_file_location(db=db, file_path= arch_file.get_destination_path())
             
             archiving_successful, archiving_exception = arch_file.archive_in_destination()
 
-            # if the file was successfully moved to its destination, we will save the data to the database
+            # If the file was successfully moved to its destination, we will save the data to the database
             if archiving_successful:
-                # need to determine if the file already exists in the database
-                db_file_entry = None
-                file_hash = utilities.get_file_hash(temp_path)
+                # enqueue the task of adding the file to the database
+                add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': False} #TODO add archiving functionality
+                enqueue_new_task(enqueued_function=add_file_to_db_task,
+                                 function_kwargs=add_file_kwargs,
+                                 timeout=None)
                 
-                # if the file already exists in the database, we will use that entry
-                while not db_file_entry:
-                    db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
-                    if not db_file_entry:
-                        file_extension = archival_filename.split('.')[-1]
-                        db_file_entry = FileModel(hash=file_hash, extension=file_extension, size=upload_size)
-                        db.session.add(db_file_entry)
-                        db.session.commit()
-                
-                # check if the file_location already exists in the database
-                file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
-                # remove the filename from the path to get the server directories
-                server_directories = arch_file.get_destination_path()[:-len(destination_filename)-1] 
-                server_dirs_list = utilities.split_path(server_directories)[file_server_root_index:]
-                server_directories = os.path.join(*server_dirs_list)
-                file_loc = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories == server_directories,
-                                                                      FileLocationModel.filename == destination_filename).first()
-                if not file_loc:
-                
-                    # add file_location to the database and retrieve file_locations id
-                    file_loc = FileLocationModel(file_id=db_file_entry.id,
-                                                file_server_directories=server_directories,
-                                                filename=destination_filename,
-                                                existence_confirmed=datetime.now(),
-                                                hash_confirmed=datetime.now())
-                    db.session.add(file_loc) # should I commit this within the conditional?
-                
-                archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
-                                                  project_number=arch_file.project_number,
-                                                  file_id=db_file_entry.id,
-                                                  document_date=form.document_date.data,
-                                                  destination_directory=arch_file.destination_dir,
-                                                  file_code=arch_file.file_code, archivist_id=current_user.id,
-                                                  file_size=upload_size, notes=arch_file.notes,
-                                                  filename=destination_filename)
-                db.session.add(archived_file)
-                db.session.commit()
+                # for testing, run the task immediately
+                #add_file_kwargs['queue_id'] = f"test_{add_file_to_db_task.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
+                #add_file_to_db_task(**add_file_kwargs)
+
                 flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
                 return flask.redirect(flask.url_for('archiver.upload_file'))
 
             else:
                 raise Exception(
-                    f"Following error while trying to archive file, {form.new_filename.data}:\n{archiving_exception}")
+                    f"Following error while trying to archive file, {form.new_filename.data}:\nException: {archiving_exception}")
 
         except Exception as e:
             m = "Error occurred while trying to read form data, move the asset, or record asset info in database: "
@@ -600,7 +588,7 @@ def scrape_files():
     Use the 'scrape_time' to specify how long the scrape should run for.
     """
     # import task here to avoid circular import
-    from archives_application.archiver.archiver_tasks import scrape_file_data
+    from archives_application.archiver.archiver_tasks import scrape_file_data_task
     
     # Check if the request includes user credentials or is from a logged in user. 
     # User needs to have ADMIN role.
@@ -632,7 +620,7 @@ def scrape_files():
             scrape_time = timedelta(minutes=scrape_time)
             # Create our own job id to pass to the task so it can manipulate and query its own representation 
             # in the database and Redis.
-            scrape_job_id = f"{scrape_file_data.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+            scrape_job_id = f"{scrape_file_data_task.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
             scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
                             "start_location": scrape_location,
                             "file_server_root_index": file_server_root_index,
@@ -640,7 +628,7 @@ def scrape_files():
                             "scrape_time": scrape_time,
                             "queue_id": scrape_job_id}
 
-            task = flask.current_app.q.enqueue_call(func=scrape_file_data,
+            task = flask.current_app.q.enqueue_call(func=scrape_file_data_task,
                                                     kwargs=scrape_params,
                                                     job_id= scrape_job_id,
                                                     result_ttl=43200,
@@ -674,7 +662,7 @@ def test_scrape_files():
     Endpoint for testing archiver_tasks.scrape_file_data function in development.
     """
     # import task here to avoid circular import
-    from archives_application.archiver.archiver_tasks import scrape_file_data
+    from archives_application.archiver.archiver_tasks import scrape_file_data_task
 
     # Retrieve scrape parameters
     scrape_location = retrieve_location_to_start_scraping()
@@ -685,9 +673,9 @@ def test_scrape_files():
     scrape_time = timedelta(minutes=scrape_time)
     
     # Record test task in database
-    scrape_job_id = f"{scrape_file_data.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+    scrape_job_id = f"{scrape_file_data_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
     new_task_record = WorkerTask(task_id=scrape_job_id, time_enqueued=str(datetime.now()), origin="test",
-                        function_name=scrape_file_data.__name__, status="queued")
+                        function_name=scrape_file_data_task.__name__, status="queued")
     db.session.add(new_task_record)
     db.session.commit()
 
@@ -697,7 +685,7 @@ def test_scrape_files():
                     "exclusion_functions": [exclude_extensions, exclude_filenames],
                     "scrape_time": scrape_time,
                     "queue_id": scrape_job_id}
-    scrape_results = scrape_file_data(**scrape_params)
+    scrape_results = scrape_file_data_task(**scrape_params)
     
     # prepare scrape results for JSON serialization
     scrape_params.pop("exclusion_functions") # remove exclusion_fuctions from scrape_params because it is not JSON serializable
@@ -712,7 +700,7 @@ def confirm_db_file_locations():
     This function will confirm that the file locations in the database are still valid.
     """
     # import task here to avoid circular import
-    from archives_application.archiver.archiver_tasks import confirm_file_locations
+    from archives_application.archiver.archiver_tasks import confirm_file_locations_task
     
     # Check if the request includes user credentials or is from a logged in user. 
     # User needs to have ADMIN role.
@@ -739,9 +727,9 @@ def confirm_db_file_locations():
 
             # Create our own job id to pass to the task so it can manipulate and query its own representation 
             # in the database and Redis.
-            confirm_job_id = f"{confirm_file_locations.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+            confirm_job_id = f"{confirm_file_locations_task.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
             new_task_record = WorkerTask(task_id=confirm_job_id, time_enqueued=str(datetime.now()), origin="test",
-                        function_name=confirm_file_locations.__name__, status="queued")
+                        function_name=confirm_file_locations_task.__name__, status="queued")
             db.session.add(new_task_record)
             db.session.commit()
 
@@ -749,7 +737,7 @@ def confirm_db_file_locations():
                               "confirming_time": timedelta(minutes=confirming_time),
                               "queue_id": confirm_job_id}
             
-            task = flask.current_app.q.enqueue_call(func=confirm_file_locations,
+            task = flask.current_app.q.enqueue_call(func=confirm_file_locations_task,
                                                     kwargs=confirm_params,
                                                     job_id= confirm_job_id,
                                                     result_ttl=43200)
@@ -784,20 +772,20 @@ def test_confirm_files():
     Endpoint for testing archiver_tasks.confirm_file_locations function in development.
     """
 
-    from archives_application.archiver.archiver_tasks import confirm_file_locations
+    from archives_application.archiver.archiver_tasks import confirm_file_locations_task
 
     try:
         # Record test task in database
-        confirm_job_id = f"{confirm_file_locations.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+        confirm_job_id = f"{confirm_file_locations_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
         new_task_record = WorkerTask(task_id=confirm_job_id, time_enqueued=str(datetime.now()), origin="test",
-                            function_name=confirm_file_locations.__name__, status="queued")
+                            function_name=confirm_file_locations_task.__name__, status="queued")
         db.session.add(new_task_record)
         db.session.commit()
     
         confirmation_params = {"archive_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
                                "confirming_time": timedelta(minutes=3),
                                "queue_id": confirm_job_id}
-        confirm_results = confirm_file_locations(**confirmation_params)
+        confirm_results = confirm_file_locations_task(**confirmation_params)
         confirmation_params['confirming_time'] = str(confirmation_params['confirming_time'])
         confirm_dict = {"confirmation_results": confirm_results, "confirmation_params": confirmation_params}
 
