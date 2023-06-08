@@ -271,6 +271,14 @@ def upload_file():
 @archiver.route("/inbox_item", methods=['GET', 'POST'])
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def inbox_item():
+    """
+    This function handles the archivist inbox mechanism for iterating (through each request) over the files in the user's inbox,
+    presenting the user with a preview of the file, and processing the file according to the user's input.
+    """
+    
+    # import task function here to avoid circular import
+    from archives_application.archiver.archiver_tasks import add_file_to_db_task
+
 
     def get_no_preview_placeholder_url():
         """
@@ -424,43 +432,14 @@ def inbox_item():
                 arch_file.cached_destination_path = destination_path
                 arch_file.destination_dir = None
                 destination_filename = archival_filename
-            
-            # populate database with file info, retrieve the file index from file
-            file_hash = utilities.get_hash(arch_file_path)
-            db_file_entry = None
-            while not db_file_entry:
-                    db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
-                    if not db_file_entry:
-                        db_file_entry = FileModel(hash=file_hash, extension=file_ext, size=upload_size)
-                        db.session.add(db_file_entry)
-                        db.session.commit()
-
-            # if the file_location already exists in the database remove it because the file will be overwritten
-            file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
-            # remove the filename from the path to get the server directories
-            server_directories = arch_file.get_destination_path()[:-len(destination_filename)-1] # filepath without filename
-            server_dirs_list = utilities.split_path(server_directories)[file_server_root_index:]
-            server_directories = os.path.join(*server_dirs_list)
-            file_loc = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories == server_directories,
-                                                                    FileLocationModel.filename == destination_filename).first()
-            
-            # if archiving this file will overwrite an existing file, remove the existing file_location from the database
-            if file_loc:
-                remove_file_location(file_path=arch_file.get_destination_path(), db=db)
-
-            # add file_location to the database and retrieve file_locations id
-            file_loc = FileLocationModel(file_id=db_file_entry.id,
-                                        file_server_directories=server_directories,
-                                        filename=destination_filename,
-                                        existence_confirmed=datetime.now(),
-                                        hash_confirmed=datetime.now())
-            db.session.add(file_loc) # should I commit this within the conditional?
-            db.session.commit()
 
             # archive the file in the destination and attempt to record the archival in the database    
             archiving_successful, archiving_exception = arch_file.archive_in_destination()
+            
+            # if the file was successfully archived, add the archiving event and the file to the application database
             if archiving_successful:
                 try:
+                    # add the archiving event to the database
                     archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
                                                       project_number=arch_file.project_number,
                                                       date_archived=datetime.now(),
@@ -471,6 +450,12 @@ def inbox_item():
                                                       filename=destination_filename)
                     db.session.add(archived_file)
                     db.session.commit()
+
+                    # add the file to the database
+                    add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': True}
+                    enqueue_new_task(enqueued_function=add_file_to_db_task,
+                                     function_kwargs=add_file_kwargs,
+                                     timeout=None)
 
                     # make sure that the old file has been removed
                     if os.path.exists(arch_file_path):
