@@ -233,40 +233,43 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
                                  "Files Missing": 0,
                                  "Files Removed": 0,
                                  "Files Confirmed": 0}
-        file_location_entries = db.session.query(FileLocationModel).order_by(db.desc(FileLocationModel.existence_confirmed)).yield_per(1000)
-        for file_location in file_location_entries:
-            try:
-                if timedelta(seconds=(time.time() - start_time)) >= confirming_time:
-                    break
-                
-                file_location_path = os.path.join(archive_location, file_location.file_server_directories, file_location.filename)
-                
-                # if the file no longer exists, we delete the entry in the database
-                if not os.path.exists(file_location_path):
-                    confirm_locations_log["Files Missing"] += 1
-                    file_id = file_location.file_id
-                    db.session.delete(file_location)
-                    db.session.commit()
+        
+        # We iterate through the file locations in the database, 1000 at a time, and check if the file still exists.
+        while timedelta(seconds=(time.time() - start_time)) < confirming_time:
+            file_location_entries = db.session.query(FileLocationModel).order_by(db.desc(FileLocationModel.existence_confirmed)).limit(1000)
+            for file_location in file_location_entries:
+                try:
+                    if timedelta(seconds=(time.time() - start_time)) >= confirming_time:
+                        break
                     
-                    # if there are no other locations for this file, we delete entry in the files table
-                    other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
-                    if other_locations == []:
-                        db.session.query(FileModel).filter(FileModel.id == file_id).delete()
+                    file_location_path = os.path.join(archive_location, file_location.file_server_directories, file_location.filename)
+                    
+                    # if the file no longer exists, we delete the entry in the database
+                    if not os.path.exists(file_location_path):
+                        confirm_locations_log["Files Missing"] += 1
+                        file_id = file_location.file_id
+                        db.session.delete(file_location)
                         db.session.commit()
-                        confirm_locations_log["Files Removed"] += 1
+                        
+                        # if there are no other locations for this file, we delete entry in the files table
+                        other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
+                        if other_locations == []:
+                            db.session.query(FileModel).filter(FileModel.id == file_id).delete()
+                            db.session.commit()
+                            confirm_locations_log["Files Removed"] += 1
+                    
+                    else:
+                        # if the file exists, we update the existence_confirmed date of this file_locations entry
+                        db.session.query(FileLocationModel).filter(FileLocationModel.id == file_location.id).update({"existence_confirmed": datetime.now()})
+                        db.session.commit()
+                        confirm_locations_log["Files Confirmed"] += 1
                 
-                else:
-                    # if the file exists, we update the existence_confirmed date of this file_locations entry
-                    db.session.query(FileLocationModel).filter(FileLocationModel.id == file_location.id).update({"existence_confirmed": datetime.now()})
-                    db.session.commit()
-                    confirm_locations_log["Files Confirmed"] += 1
-            
-            except Exception as e:
-                db.session.rollback()
-                e_dict = {"Location": file_location.file_server_directories,
-                        "filename": file_location.filename,
-                        "Exception": str(e)}
-                confirm_locations_log["Errors"].append(e_dict)
+                except Exception as e:
+                    db.session.rollback()
+                    e_dict = {"Location": file_location.file_server_directories,
+                            "filename": file_location.filename,
+                            "Exception": str(e)}
+                    confirm_locations_log["Errors"].append(e_dict)
                 
         
         # update the task entry in the database

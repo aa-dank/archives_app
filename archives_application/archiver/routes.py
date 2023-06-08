@@ -90,16 +90,22 @@ def enqueue_new_task(enqueued_function: callable, function_kwargs: dict = {}, ti
     Adds a function to the rq task queue to be executed asynchronously
     :param function: function to be executed
     :param function_kwargs: keyword arguments for the function
-    :param timeout: timeout for the function
+    :param timeout: timeout for the function. Measured in minutes.
     :return: None
     """
 
     
     job_id = f"{enqueued_function.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
     function_kwargs['queue_id'] = job_id
-    task = flask.current_app.q.enqueue_call(func=enqueued_function, kwargs=function_kwargs, job_id=job_id, timeout=timeout)
-    new_task_record = WorkerTask(task_id=job_id, time_enqueued=str(datetime.now()), origin=task.origin,
-                                 function_name=enqueued_function.__name__, status="queued")
+    task = flask.current_app.q.enqueue_call(func=enqueued_function, 
+                                            kwargs=function_kwargs, 
+                                            job_id=job_id, 
+                                            timeout=timeout)
+    new_task_record = WorkerTask(task_id=job_id, 
+                                 time_enqueued=str(datetime.now()),
+                                 origin=task.origin,
+                                 function_name=enqueued_function.__name__,
+                                 status="queued")
     db.session.add(new_task_record)
     db.session.commit()
     results = task.__dict__
@@ -634,7 +640,7 @@ def scrape_files():
                                                     kwargs=scrape_params,
                                                     job_id= scrape_job_id,
                                                     result_ttl=43200,
-                                                    timeout=scrape_time.seconds + 60)
+                                                    timeout=scrape_time.seconds + 600)
         
             task_dict = {"task_id": task.id,
                         "enqueued_at":str(task.enqueued_at),
@@ -726,36 +732,18 @@ def confirm_db_file_locations():
             confirming_time = 10
             if flask.request.args.get('confirming_time'):
                 confirming_time = int(flask.request.args.get('confirming_time'))
-
-            # Create our own job id to pass to the task so it can manipulate and query its own representation 
-            # in the database and Redis.
-            confirm_job_id = f"{confirm_file_locations_task.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
-            new_task_record = WorkerTask(task_id=confirm_job_id, time_enqueued=str(datetime.now()), origin="test",
-                        function_name=confirm_file_locations_task.__name__, status="queued")
-            db.session.add(new_task_record)
-            db.session.commit()
-
-            confirm_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
-                              "confirming_time": timedelta(minutes=confirming_time),
-                              "queue_id": confirm_job_id}
             
-            task = flask.current_app.q.enqueue_call(func=confirm_file_locations_task,
-                                                    kwargs=confirm_params,
-                                                    job_id= confirm_job_id,
-                                                    result_ttl=43200)
-            task_dict = {"task_id": task.id,
-                         "enqueued_at":str(task.enqueued_at),
-                         "origin": task.origin,
-                         "func_name": task.func.__name__}
+            confirming_time = timedelta(minutes=confirming_time)
+            confirm_params = {"archive_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
+                              "confirming_time": confirming_time}
+            nk_results = enqueue_new_task(enqueued_function=confirm_file_locations_task,
+                                          function_kwargs=confirm_params,
+                                          timeout=confirming_time.seconds + 600)
             
-            new_task_record = WorkerTask(task_id=task.id, time_enqueued=str(task.enqueued_at), origin=task.origin,
-                                         function_name=task.func.__name__, status="queued")
-            db.session.add(new_task_record)
-            db.session.commit()
-            
-            # prepare task enqueuement info for for JSON serialization
+            # prepare task enqueueing info for for JSON serialization
+            nk_results = {k: v.strftime('%Y-%m-%d %H:%M:%S') if isinstance(v, datetime) else str(v) for k, v in nk_results.items()}
             confirm_params['confirming_time'] = str(confirm_params['confirming_time'])
-            confirm_dict = {"confirmation_task_info": task_dict, "confirmation_task_params": confirm_params}
+            confirm_dict = {"enqueueing_results": nk_results, "confirmation_task_params": confirm_params}
             return flask.Response(json.dumps(confirm_dict), status=200)
 
         except Exception as e:
@@ -790,8 +778,9 @@ def test_confirm_files():
         confirm_results = confirm_file_locations_task(**confirmation_params)
         confirmation_params['confirming_time'] = str(confirmation_params['confirming_time'])
         confirm_dict = {"confirmation_results": confirm_results, "confirmation_params": confirmation_params}
-
+        return flask.Response(json.dumps(confirm_dict), status=200)
+    
     except Exception as e:
         print(e)
-    
-    return flask.Response(json.dumps(confirm_dict), status=200)
+        flask.flash(f"Confirm file locations error: {e}", 'warning')
+        return flask.redirect(flask.url_for('main.home'))
