@@ -86,7 +86,7 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
         if archiving:
             search_path = os.path.join(server_directories, filename)
             archived_file = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.destination_path.endswith(search_path),
-                                                                       ArchivedFileModel.filename == filename).first()
+                                                                       ArchivedFileModel.filename == filename).order_by(db.asc(ArchivedFileModel.date_archived)).first()
             archived_file.file_id = file_id
             db.session.commit()
         task_results = {"file_id": file_id, "filepath": filepath}
@@ -236,7 +236,7 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
         
         # We iterate through the file locations in the database, 1000 at a time, and check if the file still exists.
         while timedelta(seconds=(time.time() - start_time)) < confirming_time:
-            file_location_entries = db.session.query(FileLocationModel).order_by(db.desc(FileLocationModel.existence_confirmed)).limit(1000)
+            file_location_entries = db.session.query(FileLocationModel).order_by(db.asc(FileLocationModel.existence_confirmed)).limit(1000)
             for file_location in file_location_entries:
                 try:
                     if timedelta(seconds=(time.time() - start_time)) >= confirming_time:
