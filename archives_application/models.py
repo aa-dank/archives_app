@@ -106,7 +106,7 @@ class FileLocationModel(db.Model):
         return f"File Location: {self.id}, {self.file_id}, {self.file_server_directories}, {self.filename}, {self.existence_confirmed}, {self.hash_confirmed}, {self.project_id}"
     
 
-class WorkerTask(db.Model):
+class WorkerTaskModel(db.Model):
     __tablename__ = 'worker_tasks'
     
     id = db.Column(db.Integer, primary_key=True)

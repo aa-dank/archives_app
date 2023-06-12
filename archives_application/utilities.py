@@ -1,4 +1,3 @@
-import datetime
 import fitz
 import flask
 import hashlib
@@ -6,10 +5,13 @@ import subprocess
 import re
 import os
 import sys
+from datetime import datetime
 from flask_login import current_user
 from functools import wraps
 from PIL import Image
 from pathlib import Path, PureWindowsPath
+from typing import Union 
+from archives_application.models import WorkerTaskModel
 
 
 
@@ -352,5 +354,57 @@ def get_hash(filepath, hash_algo=hashlib.sha1):
 
 
 def debug_printing(to_print):
-    dt_stamp = datetime.datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+    dt_stamp = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
     print(dt_stamp + "\n" + str(to_print), file=sys.stderr)
+
+
+def enqueue_new_task(db, enqueued_function: callable, function_kwargs: dict = {}, timeout: Union[int, None] = None):
+    """
+    Adds a function to the rq task queue to be executed asynchronously
+    :param function: function to be executed
+    :param function_kwargs: keyword arguments for the function
+    :param timeout: timeout for the function. Measured in minutes.
+    :return: None
+    """
+
+
+    job_id = f"{enqueued_function.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
+    function_kwargs['queue_id'] = job_id
+    task = flask.current_app.q.enqueue_call(func=enqueued_function, 
+                                            kwargs=function_kwargs, 
+                                            job_id=job_id, 
+                                            timeout=timeout)
+    new_task_record = WorkerTaskModel(task_id=job_id, 
+                                 time_enqueued=str(datetime.now()),
+                                 origin=task.origin,
+                                 function_name=enqueued_function.__name__,
+                                 status="queued")
+    db.session.add(new_task_record)
+    db.session.commit()
+    results = task.__dict__
+    results["task_id"] = job_id
+    return results
+
+
+def initiate_task_subroutine(q_id, sql_db):
+    """
+    Updates the database to indicate that the task has started. 
+    This is meant to be called at the begining of a task sent to the rq worker.
+    :param q_id: the task id of the task being executed
+    :param sql_db: the database object
+    """
+    start_task_db_updates = {"status": 'started'}
+    sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(start_task_db_updates)
+    sql_db.session.commit()
+
+def complete_task_subroutine(q_id, sql_db, task_result):
+    """
+    Updates the database to indicate that the task has completed.
+    This is meant to be called at the end of a task sent to the rq worker.
+    :param q_id: the task id of the task being executed
+    :param sql_db: the database object
+    """
+    # update the database to indicate that the task has completed
+    task_db_updates = {"status": 'finished', "task_results": task_result, "time_completed":datetime.now()}
+    sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(task_db_updates)
+    sql_db.session.commit()

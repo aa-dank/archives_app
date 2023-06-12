@@ -9,10 +9,10 @@ import shutil
 import pandas as pd
 from datetime import timedelta
 from typing import Union, Callable
+
 from archives_application.archiver.archival_file import ArchivalFile
 from archives_application import utilities
 
-from archives_application.archiver.server_edit import ServerEdit
 from archives_application.archiver.forms import *
 from flask_login import login_required, current_user
 from archives_application.models import *
@@ -101,7 +101,7 @@ def enqueue_new_task(enqueued_function: callable, function_kwargs: dict = {}, ti
                                             kwargs=function_kwargs, 
                                             job_id=job_id, 
                                             timeout=timeout)
-    new_task_record = WorkerTask(task_id=job_id, 
+    new_task_record = WorkerTaskModel(task_id=job_id, 
                                  time_enqueued=str(datetime.now()),
                                  origin=task.origin,
                                  function_name=enqueued_function.__name__,
@@ -124,6 +124,10 @@ def get_user_handle():
 @archiver.route("/server_change", methods=['GET', 'POST'])
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def server_change():
+    
+    # import here to avoid circular import
+    from archives_application.archiver.server_edit import ServerEdit
+    
     def save_server_change(executed_edit: ServerEdit):
         """
         Subroutine for saving server changes to database
@@ -182,10 +186,10 @@ def server_change():
                 new_path = form.new_directory.data
                 edit_type = 'CREATE'
 
-            creation = ServerEdit(server_location=archives_location, change_type=edit_type, user=user_email,
+            server_edit = ServerEdit(server_location=archives_location, change_type=edit_type, user=user_email,
                                   new_path=new_path, old_path=old_path)
-            creation.execute(files_limit=files_limit, effected_data_limit=data_limit)
-            save_server_change(creation)
+            server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit)
+            save_server_change(server_edit)
 
             flask.flash(f'Requested change executed and recorded.', 'success')
             return flask.redirect(flask.url_for('archiver.server_change'))
@@ -543,10 +547,10 @@ def retrieve_location_to_start_scraping():
     """
     location = flask.current_app.config.get("ARCHIVES_LOCATION")
 
-    most_recent_scrape = db.session.query(WorkerTask).filter(
-        db.cast(WorkerTask.task_results, db.String).like('%Next Start Location%'),
-        WorkerTask.time_completed.isnot(None)
-    ).order_by(db.desc(WorkerTask.time_completed)).first()
+    most_recent_scrape = db.session.query(WorkerTaskModel).filter(
+        db.cast(WorkerTaskModel.task_results, db.String).like('%Next Start Location%'),
+        WorkerTaskModel.time_completed.isnot(None)
+    ).order_by(db.desc(WorkerTaskModel.time_completed)).first()
 
     if most_recent_scrape is not None:
         previous_scrape_location = most_recent_scrape.task_results["Next Start Location"]  
@@ -633,7 +637,7 @@ def scrape_files():
                         "func_name": task.func.__name__}
             
             # Add task to database
-            new_task_record = WorkerTask(task_id=task.id, time_enqueued=str(task.enqueued_at), origin=task.origin,
+            new_task_record = WorkerTaskModel(task_id=task.id, time_enqueued=str(task.enqueued_at), origin=task.origin,
                                         function_name=task.func.__name__, status="queued")
             db.session.add(new_task_record)
             db.session.commit()
@@ -667,7 +671,7 @@ def test_scrape_files():
     
     # Record test task in database
     scrape_job_id = f"{scrape_file_data_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
-    new_task_record = WorkerTask(task_id=scrape_job_id, time_enqueued=str(datetime.now()), origin="test",
+    new_task_record = WorkerTaskModel(task_id=scrape_job_id, time_enqueued=str(datetime.now()), origin="test",
                         function_name=scrape_file_data_task.__name__, status="queued")
     db.session.add(new_task_record)
     db.session.commit()
@@ -752,7 +756,7 @@ def test_confirm_files():
     try:
         # Record test task in database
         confirm_job_id = f"{confirm_file_locations_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
-        new_task_record = WorkerTask(task_id=confirm_job_id, time_enqueued=str(datetime.now()), origin="test",
+        new_task_record = WorkerTaskModel(task_id=confirm_job_id, time_enqueued=str(datetime.now()), origin="test",
                             function_name=confirm_file_locations_task.__name__, status="queued")
         db.session.add(new_task_record)
         db.session.commit()
