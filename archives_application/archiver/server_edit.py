@@ -1,6 +1,13 @@
+import flask
 import os
 import shutil
-from .. import utilities
+from sqlalchemy import text, func
+from archives_application import utilities, create_app
+from archives_application.models import  FileLocationModel, FileModel, WorkerTaskModel, ServerChangeModel
+
+# Create the app context so that tasks can access app extensions even though
+# they are not running in the main thread.
+app = create_app()
 
 
 class ServerEdit:
@@ -35,6 +42,11 @@ class ServerEdit:
         self.change_executed = False
         self.data_effected = 0
         self.files_effected = 0
+        
+        # if the serveredit is a move, change, or edit, determine if the change is to a file or directory
+        self.is_file = False
+        if self.old_path:
+            self.is_file = os.path.isfile(self.old_path)
 
     def execute(self, files_limit = 500, effected_data_limit=500000000):
         """
@@ -67,6 +79,8 @@ class ServerEdit:
 
 
         def get_quantity_effected(dir_path):
+            
+            
             for root, _, files in os.walk(dir_path):
                 for file in files:
                     self.files_effected += 1
@@ -75,11 +89,16 @@ class ServerEdit:
 
         # If the change type is 'DELETE'
         if self.change_type.upper() == self.change_type_possibilities[0]:
-            if os.path.isfile(self.old_path):
+            enqueueing_results = {}
+            if self.is_file:
                 self.data_effected = os.path.getsize(self.old_path)
                 os.remove(self.old_path)
                 self.change_executed = True
                 self.files_effected = 1
+                #self.add_deletion_to_db_task(task_id=f"{self.add_deletion_to_db_task.__name__}_test01")
+                enqueueing_results = utilities.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
+                                                                enqueued_function=self.add_deletion_to_db_task)
+                enqueueing_results['change_executed'] = self.change_executed
                 return self.change_executed
 
             # if the deleted asset is a dir we need to add up all the files and their sizes before removing
@@ -91,7 +110,11 @@ class ServerEdit:
             # remove directory and contents
             shutil.rmtree(self.old_path)
             self.change_executed = True
-            return self.change_executed
+            enqueueing_results = utilities.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
+                                                            enqueued_function=self.add_deletion_to_db_task)
+            enqueueing_results['change_executed'] = self.change_executed
+            #self.add_deletion_to_db_task(task_id=f"{self.add_deletion_to_db_task.__name__}_test01")
+            return enqueueing_results
 
         # If the change type is 'RENAME'
         if self.change_type.upper() == self.change_type_possibilities[1]:
@@ -100,8 +123,7 @@ class ServerEdit:
             new_path_list = utilities.split_path(self.new_path)
             if not len(old_path_list) == len(new_path_list):
                 raise Exception(
-                    f"Attempt at renaming paths failed. Paths are not the same length: \n {self.new_path}\n{self.old_path}")
-                return self.change_executed
+                    f"Attempt at renaming paths failed. Parent directories are not the same: \n {self.new_path}\n{self.old_path}")
 
             # if this a change of a filepath, we need to cleanse the filename
             if os.path.isfile(old_path):
@@ -167,4 +189,57 @@ class ServerEdit:
 
         return self.change_executed
 
+    
+    def add_deletion_to_db_task(self, queue_id):
+        
+        with app.app_context():
+            db = flask.current_app.extensions['sqlalchemy'].db
+            utilities.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+            deletion_log = {}
+            deletion_log['task_id'] = queue_id
+            deletion_log['location_entries_effected'] = 0
+            deletion_log['files_entries_effected'] = 0
+            deletion_log['old_path'] = self.old_path
 
+            if self.is_file:
+                server_dirs = utilities.split_path(self.old_path)[file_server_root_index:-1]
+                filename = utilities.split_path(self.old_path)[-1]
+                server_path = os.path.join(*server_dirs)
+                file_location_entry = db.session.query(FileLocationModel)\
+                    .filter(FileLocationModel.file_server_directories == server_path,
+                            FileLocationModel.filename == filename).first()
+
+                if file_location_entry:
+                    file_id = file_location_entry.file_id
+                    db.session.delete(file_location_entry)
+                    db.session.commit()
+                    deletion_log['location_entries_effected'] = 1
+
+                    other_locations = db.session.query(FileLocationModel).filter_by(FileLocationModel.file_id == file_id).all()
+                    if not other_locations:
+                        file_entry = db.session.query(FileModel).filter_by(FileModel.id == file_id).first()
+                        db.session.delete(file_entry)
+                        db.session.commit()
+                        deletion_log['files_entries_effected'] = 1
+
+
+            else:
+                server_dirs = utilities.split_path(self.old_path)[file_server_root_index:]
+                server_path = os.path.join(*server_dirs)
+                file_location_entries = db.session.query(FileLocationModel)\
+                    .filter(FileLocationModel.file_server_directories.like(func.concat(server_path, '%'))).all()
+                for file_location_entry in file_location_entries:
+                    file_id = file_location_entry.file_id
+                    db.session.delete(file_location_entry)
+                    db.session.commit()
+                    deletion_log['location_entries_effected'] += 1
+                    other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
+                    if not other_locations:
+                        file_entry = db.session.query(FileModel).filter(FileModel.id == file_id).first()
+                        db.session.delete(file_entry)
+                        db.session.commit()
+                        deletion_log['files_entries_effected'] += 1
+            
+            utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=deletion_log)
+            return deletion_log

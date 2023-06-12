@@ -1,5 +1,5 @@
 from archives_application import utilities, create_app
-from archives_application.models import ArchivedFileModel, FileLocationModel, FileModel, WorkerTask
+from archives_application.models import ArchivedFileModel, FileLocationModel, FileModel, WorkerTaskModel
 
 import flask
 import os
@@ -12,18 +12,6 @@ from typing import Callable
 # they are not running in the main thread.
 app = create_app()
 
-def initiate_task_subroutine(q_id, s_db):
-    # update the database to indicate that the task has started
-    start_task_db_updates = {"status": 'started'}
-    s_db.session.query(WorkerTask).filter(WorkerTask.task_id == q_id).update(start_task_db_updates)
-    s_db.session.commit()
-
-def complete_task_subroutine(q_id, s_db, task_result):
-    # update the database to indicate that the task has completed
-    task_db_updates = {"status": 'finished', "task_results": task_result, "time_completed":datetime.now()}
-    s_db.session.query(WorkerTask).filter(WorkerTask.task_id == q_id).update(task_db_updates)
-    s_db.session.commit()
-
 
 def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
     """
@@ -31,7 +19,7 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
     """
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy'].db
-        initiate_task_subroutine(q_id=queue_id, s_db=db)
+        utilities.initiate_task_subroutine(q_id=queue_id, sql_db=db)
         
         file_hash = utilities.get_hash(filepath)
         file_id = None
@@ -86,11 +74,12 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
         if archiving:
             search_path = os.path.join(server_directories, filename)
             archived_file = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.destination_path.endswith(search_path),
-                                                                       ArchivedFileModel.filename == filename).order_by(db.asc(ArchivedFileModel.date_archived)).first()
+                                                                       ArchivedFileModel.filename == filename)\
+                                                                        .order_by(db.asc(ArchivedFileModel.date_archived)).first()
             archived_file.file_id = file_id
             db.session.commit()
         task_results = {"file_id": file_id, "filepath": filepath}
-        complete_task_subroutine(q_id=queue_id, s_db=db, task_result=task_results)
+        utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_results)
         return file_id
 
 
@@ -113,7 +102,7 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
     
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy'].db
-        initiate_task_subroutine(q_id=queue_id, s_db=db)
+        utilities.initiate_task_subroutine(q_id=queue_id, sql_db=db)
 
         # create a log of the scraping process
         scrape_log = {"Scrape Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
@@ -218,14 +207,14 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
 
         # update the task entry in the database
         scrape_log["Time Elapsed"] = str(time.time() - start_time) + "s"
-        complete_task_subroutine(q_id=queue_id, s_db=db, task_result=scrape_log)
+        utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=scrape_log)
         return scrape_log
 
 
 def confirm_file_locations_task(archive_location: str, confirming_time: timedelta, queue_id: str):
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy'].db
-        initiate_task_subroutine(q_id=queue_id, s_db=db)
+        utilities.initiate_task_subroutine(q_id=queue_id, sql_db=db)
 
         start_time = time.time()
         confirm_locations_log = {"Confirm Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
@@ -274,5 +263,5 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
         
         # update the task entry in the database
         confirm_locations_log["Time Elapsed"] = str(time.time() - start_time) + "s"
-        complete_task_subroutine(q_id=queue_id, s_db=db, task_result=confirm_locations_log)
+        utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=confirm_locations_log)
         return confirm_locations_log
