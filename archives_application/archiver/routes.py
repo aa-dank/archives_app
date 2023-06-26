@@ -191,7 +191,7 @@ def server_change():
             server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit)
             save_server_change(server_edit)
 
-            flask.flash(f'Requested change executed and recorded.', 'success')
+            flask.flash(f"Requested '{edit_type}' change executed and recorded.", 'success')
             return flask.redirect(flask.url_for('archiver.server_change'))
 
         except Exception as e:
@@ -497,7 +497,7 @@ def archived_or_not():
         # New df is only the columns we want, 'file_server_directories' and 'filename'
         df = df[['file_server_directories', 'filename']]
         # New row  'filepath' which joins the directories and the filename
-        df['filepath'] = df.apply(lambda row: (row['file_server_directories'] + "\\" + row['filename']), axis=1)
+        df['filepath'] = df.apply(lambda row: (row['file_server_directories'] + "/" + row['filename']), axis=1)
         return df[['filepath']]
 
 
@@ -729,7 +729,7 @@ def confirm_db_file_locations():
                                           function_kwargs=confirm_params,
                                           timeout=confirming_time.seconds + 600)
             
-            # prepare task enqueueing info for for JSON serialization
+            # prepare task enqueueing info for JSON serialization
             nk_results = {k: v.strftime('%Y-%m-%d %H:%M:%S') if isinstance(v, datetime) else str(v) for k, v in nk_results.items()}
             confirm_params['confirming_time'] = str(confirm_params['confirming_time'])
             confirm_dict = {"enqueueing_results": nk_results, "confirmation_task_params": confirm_params}

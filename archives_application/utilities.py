@@ -360,7 +360,8 @@ def debug_printing(to_print):
 
 def enqueue_new_task(db, enqueued_function: callable, function_kwargs: dict = {}, timeout: Union[int, None] = None):
     """
-    Adds a function to the rq task queue to be executed asynchronously
+    Adds a function to the rq task queue to be executed asynchronously. The function must have a paramater called 'queue_id' which will
+    give the function access to the task id of the rq task. This can be used for updating the status of the task in the database.
     :param function: function to be executed
     :param function_kwargs: keyword arguments for the function
     :param timeout: timeout for the function. Measured in minutes.

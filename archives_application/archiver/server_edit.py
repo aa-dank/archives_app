@@ -1,5 +1,7 @@
+import datetime
 import flask
 import os
+import random
 import shutil
 from sqlalchemy import text, func
 from archives_application import utilities, create_app
@@ -21,7 +23,6 @@ class ServerEdit:
         :param user:
         :return:
         """
-        self.change_type_possibilities = ('DELETE', 'RENAME', 'MOVE', 'CREATE')
         self.change_type = change_type
         self.new_path = None
         if new_path:
@@ -79,7 +80,7 @@ class ServerEdit:
 
 
         def get_quantity_effected(dir_path):
-            
+            #TODO this should be a database query, not a loop
             
             for root, _, files in os.walk(dir_path):
                 for file in files:
@@ -88,7 +89,7 @@ class ServerEdit:
 
 
         # If the change type is 'DELETE'
-        if self.change_type.upper() == self.change_type_possibilities[0]:
+        if self.change_type.upper() == 'DELETE':
             enqueueing_results = {}
             if self.is_file:
                 self.data_effected = os.path.getsize(self.old_path)
@@ -112,12 +113,14 @@ class ServerEdit:
             self.change_executed = True
             enqueueing_results = utilities.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
                                                             enqueued_function=self.add_deletion_to_db_task)
-            enqueueing_results['change_executed'] = self.change_executed
+            # for testing:
             #self.add_deletion_to_db_task(task_id=f"{self.add_deletion_to_db_task.__name__}_test01")
+            enqueueing_results['change_executed'] = self.change_executed
             return enqueueing_results
 
         # If the change type is 'RENAME'
-        if self.change_type.upper() == self.change_type_possibilities[1]:
+        if self.change_type.upper() == 'RENAME':
+            enqueueing_results = {}
             old_path = self.old_path
             old_path_list = utilities.split_path(old_path)
             new_path_list = utilities.split_path(self.new_path)
@@ -126,7 +129,7 @@ class ServerEdit:
                     f"Attempt at renaming paths failed. Parent directories are not the same: \n {self.new_path}\n{self.old_path}")
 
             # if this a change of a filepath, we need to cleanse the filename
-            if os.path.isfile(old_path):
+            if self.is_file:
                 self.files_effected = 1
                 self.data_effected = os.path.getsize(old_path) #bytes
                 new_path_list[-1] = utilities.cleanse_filename(new_path_list[-1])
@@ -136,26 +139,24 @@ class ServerEdit:
 
             # make sure change is not in excess of limits set
             check_against_limits()
-            while True:
-                if old_path == self.new_path:
-                    break
-                for idx, new_path_dir in enumerate(new_path_list):
-                    if new_path_dir != old_path_list[idx]:
-                        new_change_path = os.path.join(*new_path_list[:idx+1])
-                        old_change_path = os.path.join(*old_path_list[:idx+1])
-                        try:
-                            os.rename(old_change_path, new_change_path)
-                            old_path = os.path.join(new_change_path, *old_path_list[idx+1:])
-                            old_path_list = utilities.split_path(old_path)
-                        except Exception as e:
-                            raise Exception(f"There was an issue trying to change the name. If it is permissions issue, consider that it might be someone using a directory that would be changed \n{e}")
-                        break
+            if old_path == self.new_path:
+                return self.change_executed
+                
+            try:
+                os.rename(self.old_path, self.new_path)
+                self.change_executed = True
+                # for testing:
+                # db_mod_results = self.add_renaming_to_db_task(queue_id=f"{self.add_deletion_to_db_task.__name__}_test{random.randint(1, 1000)}")
+                enqueueing_results = utilities.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
+                                                                enqueued_function=self.add_renaming_to_db_task)
+                enqueueing_results['change_executed'] = self.change_executed
+            except Exception as e:
+                raise Exception(f"There was an issue trying to change the name. If it is permissions issue, consider that it might be someone using a directory that would be changed \n{e}")
 
-            self.change_executed = True
-            return self.change_executed
+            return enqueueing_results
 
         # if the change_type is 'MOVE'
-        if self.change_type.upper() == self.change_type_possibilities[2]:
+        if self.change_type.upper() == 'MOVE':
             filename = utilities.split_path(self.old_path)[-1]
             destination_path = os.path.join(self.new_path, filename)
             if os.path.isfile(self.old_path):
@@ -178,7 +179,7 @@ class ServerEdit:
             return self.change_executed
 
         # if the change_type is 'MAKE'
-        if self.change_type.upper() == self.change_type_possibilities[3]:
+        if self.change_type.upper() == 'MAKE':
             if os.path.exists(self.new_path):
                 raise Warning(f"Trying to make a directory that already exists: {self.new_path}")
             os.makedirs(self.new_path)
@@ -189,7 +190,43 @@ class ServerEdit:
 
         return self.change_executed
 
-    
+    @staticmethod
+    def remove_file_from_db(db, root_index, file_path):
+        """
+        Removes a file location from database and if it is the last entry for that file_id, removes the file db entry too.
+        :param db: SQLAlchemy database object
+        :param root_index: index of the server share directory in the file path
+        :param file_path: path to the file
+        """
+
+        filename = utilities.split_path(file_path)[-1]
+        db_path = os.path.join(*utilities.split_path(file_path)[root_index:-1])   
+        location_entry_removed = False
+        file_entry_removed = False
+        location_entry = db.session.query(FileLocationModel)\
+            .filter(FileLocationModel.file_server_directories == db_path,
+                    FileLocationModel.filename == filename)\
+            .first()
+        
+        if location_entry:
+            file_id = location_entry.file_id
+            db.session.delete(location_entry)
+            location_entry_removed = True
+
+            other_entries = db.session.query(FileModel)\
+                .filter(FileModel.file_id == file_id)\
+                .all()
+            
+            # If this was the last entry for this file_id, delete the file_id entry
+            if not other_entries:
+                db.session.query(FileModel)\
+                    .filter(FileModel.file_id == file_id)\
+                    .delete()
+            db.session.commit()
+            file_entry_removed = True
+        return location_entry_removed, file_entry_removed
+            
+
     def add_deletion_to_db_task(self, queue_id):
         
         with app.app_context():
@@ -243,3 +280,81 @@ class ServerEdit:
             
             utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=deletion_log)
             return deletion_log
+
+    def add_renaming_to_db_task(self, queue_id):
+
+        with app.app_context():
+            db = flask.current_app.extensions['sqlalchemy'].db
+            utilities.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+            rename_log = {}
+            rename_log['task_id'] = queue_id
+            rename_log['location_entries_effected'] = 0
+            rename_log['files_entries_effected'] = 0
+            rename_log['old_path'] = self.old_path
+            rename_log['new_path'] = self.new_path
+
+            if self.is_file:
+                rename_log['is_file'] = True
+                server_dirs = utilities.split_path(self.old_path)[file_server_root_index:-1]
+                old_filename = utilities.split_path(self.old_path)[-1]
+                new_filename = utilities.split_path(self.new_path)[-1]
+                server_path = os.path.join(*server_dirs)
+                
+                # first make sure that if there is already a file with the new name, it is deleted,
+                # because it will have been replaced by the renamed file
+                new_location_entry_removed, some_file_entry_removed = self.remove_file_from_db(db, file_server_root_index, self.new_path)
+                if new_location_entry_removed:
+                    rename_log['location_entries_effected'] += 1
+                if some_file_entry_removed:
+                    rename_log['files_entries_effected'] += 1
+                
+                old_file_location_entry = db.session.query(FileLocationModel)\
+                    .filter(FileLocationModel.file_server_directories == server_path,
+                            FileLocationModel.filename == old_filename).first()
+
+                if old_file_location_entry:
+                    old_file_location_entry.filename = new_filename
+                    db.session.commit()
+                    rename_log['location_entries_effected'] += 1
+
+            # If the asset being renamed is a directory, we need to reflect the changed path 
+            # for all files within the directory
+            else:
+                rename_log['is_file'] = False
+                old_server_dirs = utilities.split_path(self.old_path)[file_server_root_index:]
+                old_server_path = os.path.join(*old_server_dirs)
+                new_server_dirs = utilities.split_path(self.new_path)[file_server_root_index:]
+                new_server_path = os.path.join(*new_server_dirs)
+                file_location_entries = db.session.query(FileLocationModel)\
+                    .filter(FileLocationModel.file_server_directories.like(func.concat(old_server_path, '%'))).all()
+                
+
+                for file_location_entry in file_location_entries:
+                    old_file_path = file_location_entry.file_server_directories
+                    old_path_list = utilities.split_path(old_file_path)
+                    new_server_path = os.path.join(*new_server_dirs, *old_path_list[len(new_server_dirs):])
+                    
+                    #TODO what if a file with the same name already exists in the new location?
+                    existing_file_location_entry = db.session.query(FileLocationModel)\
+                        .filter(FileLocationModel.file_server_directories == new_server_path,
+                                FileLocationModel.filename == file_location_entry.filename).first()
+                    
+                    if existing_file_location_entry:
+                        existing_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), new_server_path)
+                        remove_file_entry, remove_location_entry = self.remove_file_from_db(db, file_server_root_index, file_path=existing_path)   
+                        if remove_file_entry:
+                            rename_log['files_entries_effected'] += 1
+                        if remove_location_entry:
+                            rename_log['location_entries_effected'] += 1
+                    
+                    file_location_entry.file_server_directories = new_server_path
+                    file_location_entry.existence_confirmed = datetime.datetime.now()
+                    db.session.commit()
+                    rename_log['location_entries_effected'] += 1
+            
+            utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=rename_log)
+            return rename_log
+                
+
+
