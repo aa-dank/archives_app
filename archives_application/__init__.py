@@ -55,7 +55,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.2.20'
+    app.config['VERSION'] = '1.2.21'
 
     # If the SQLALCHEMY_ECHO parameter is true, need to set up logs for logging sql
     if app.config.get("SQLALCHEMY_ECHO"):
