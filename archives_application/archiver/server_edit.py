@@ -100,7 +100,7 @@ class ServerEdit:
                 enqueueing_results = utilities.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
                                                                 enqueued_function=self.add_deletion_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
-                return self.change_executed
+                return enqueueing_results
 
             # if the deleted asset is a dir we need to add up all the files and their sizes before removing
             get_quantity_effected(self.old_path)
@@ -145,8 +145,6 @@ class ServerEdit:
             try:
                 os.rename(self.old_path, self.new_path)
                 self.change_executed = True
-                # for testing:
-                # db_mod_results = self.add_renaming_to_db_task(queue_id=f"{self.add_deletion_to_db_task.__name__}_test{random.randint(1, 1000)}")
                 enqueueing_results = utilities.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
                                                                 enqueued_function=self.add_renaming_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
@@ -157,26 +155,39 @@ class ServerEdit:
 
         # if the change_type is 'MOVE'
         if self.change_type.upper() == 'MOVE':
-            filename = utilities.split_path(self.old_path)[-1]
-            destination_path = os.path.join(self.new_path, filename)
-            if os.path.isfile(self.old_path):
-                self.files_effected = 1
-                self.data_effected = os.path.getsize(self.old_path)
-                shutil.copyfile(src=self.old_path, dst=destination_path)
-                os.remove(self.old_path)
-                self.change_executed = True
-                return self.change_executed
+            try:
+                if os.path.isfile(self.old_path):
+                    filename = utilities.split_path(self.old_path)[-1]
+                    destination_path = os.path.join(self.new_path, filename)
+                    self.files_effected = 1
+                    self.data_effected = os.path.getsize(self.old_path)
+                    shutil.copyfile(src=self.old_path, dst=destination_path)
+                    os.remove(self.old_path)
+                    self.change_executed = True
+                
+                else:
+                    # make sure change is not in excess of limits set
+                    get_quantity_effected(self.old_path)
+                    check_against_limits()
 
-            else:
-                get_quantity_effected(self.old_path)
+                    # cannot move a directory within itself
+                    if self.new_path.startswith(self.old_path):
+                        raise Exception(
+                            f"Cannot move a directory within itself. \nOld path: {self.old_path}\nNew path: {self.new_path}")
 
-            # make sure change is not in excess of limits set
-            check_against_limits()
-
-            # move directory and contents
-            shutil.move(self.old_path, destination_path, copy_function=shutil.copytree)
-            self.change_executed = True
-            return self.change_executed
+                    # move directory and contents
+                    shutil.move(self.old_path, self.new_path, copy_function=shutil.copytree)
+                    self.change_executed = True
+                
+                # for testing:
+                # db_edit = self.add_move_to_db_task(queue_id=f"{self.add_deletion_to_db_task.__name__}_test{random.randint(1, 1000)}")
+                enqueueing_results = utilities.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
+                                                                enqueued_function=self.add_move_to_db_task)
+                return enqueueing_results
+            except Exception as e:
+                if type(e) == shutil.Error:
+                    e_str = f"Exception trying to move the directory. Is there a collision with an existing file/directory? If it is permissions issue, consider that it might be someone using a directory that would be changed \n{e}"
+                    raise Exception(e_str)
 
         # if the change_type is 'MAKE'
         if self.change_type.upper() == 'MAKE':
@@ -190,6 +201,7 @@ class ServerEdit:
 
         return self.change_executed
 
+    
     @staticmethod
     def remove_file_from_db(db, root_index, file_path):
         """
@@ -280,6 +292,7 @@ class ServerEdit:
             
             utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=deletion_log)
             return deletion_log
+    
 
     def add_renaming_to_db_task(self, queue_id):
 
@@ -356,5 +369,104 @@ class ServerEdit:
             utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=rename_log)
             return rename_log
                 
+    
+    def add_move_to_db_task(self, queue_id):
 
+        with app.app_context():
+            db = flask.current_app.extensions['sqlalchemy'].db
+            utilities.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+            move_log = {}
+            move_log['task_id'] = queue_id
+            move_log['location_entries_effected'] = 0
+            move_log['files_entries_effected'] = 0
+            move_log['old_path'] = self.old_path
+            move_log['new_path'] = self.new_path
+
+            old_path_list = utilities.split_path(self.old_path)
+            new_path_list = utilities.split_path(self.new_path)
+            if self.is_file:
+                old_server_dirs_list = old_path_list[file_server_root_index:-1]
+                filename = old_path_list[-1]
+                old_server_path = os.path.join(*old_server_dirs_list)
+                new_server_path = os.path.join(*new_path_list[file_server_root_index:])
+
+                # first make sure that if there is already a file with the new name, it is deleted,
+                # because it will have been replaced by the moved file
+                new_location_entry_removed, some_file_entry_removed = self.remove_file_from_db(db, file_server_root_index, os.path.join(self.new_path, filename))
+                if new_location_entry_removed:
+                    move_log['location_entries_effected'] += 1
+                if some_file_entry_removed:
+                    move_log['files_entries_effected'] += 1
+
+                location_entry = db.session.query(FileLocationModel)\
+                    .filter(FileLocationModel.file_server_directories == old_server_path,
+                            FileLocationModel.filename == filename)\
+                    .first()
+                
+                if location_entry:
+                    location_entry.file_server_directories = new_server_path
+                    if os.path.exists(os.path.join(self.new_path, filename)):
+                        location_entry.existence_confirmed = datetime.datetime.now()
+                    db.session.commit()
+                    move_log['files_entries_effected'] += 1
+
+                # if there is not an entry for the file in db, add it.
+                else:
+                    file_hash = utilities.get_file_hash(os.path.join(self.new_path, filename))
+                    file_entry = None
+                    while not file_entry:
+                        
+                        file_entry = db.session.query(FileModel)\
+                            .filter(FileModel.file_hash == file_hash).first()
+                        if not file_entry:
+                            file_entry = FileModel(file_hash=file_hash,
+                                                size=os.path.getsize(os.path.join(self.new_path, filename)),
+                                                extension=filename.split('.')[-1])
+                            db.session.add(file_entry)
+                            db.session.commit()
+                            move_log['files_entries_effected'] += 1
+                    
+                    location_entry = FileLocationModel(file_server_directories=new_server_path,
+                                                       filename=filename,
+                                                       file_id=file_entry.id,
+                                                       existence_confirmed=datetime.datetime.now(),
+                                                       hash_confirmed=datetime.datetime.now())
+                    db.session.add(location_entry)
+                    db.session.commit()
+                    move_log['location_entries_effected'] += 1
+                    return move_log
+            
+            # if we are moving a directory, we need to move all files within the directory
+            else:
+                old_server_dirs_list = old_path_list[file_server_root_index:]
+                old_server_path = os.path.join(*old_server_dirs_list)
+                effected_location_entries = db.session.query(FileLocationModel)\
+                    .filter(FileLocationModel.file_server_directories.like(func.concat(old_server_path, '%'))).all()
+                
+                for location_entry in effected_location_entries:
+                    entry_dir_list = utilities.split_path(location_entry.file_server_directories)
+                    new_location_list = new_path_list[file_server_root_index:] + entry_dir_list[len(old_server_dirs_list)-1:]
+                    new_location_server_dirs = os.path.join(*new_location_list)
+
+                    # remove any entries that are already in the new location
+                    existing_loc_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), new_location_server_dirs, existing_location_entry.filename)
+                    remove_file_entry, remove_location_entry = self.remove_file_from_db(db, file_server_root_index, file_path=existing_loc_path)
+                    if remove_file_entry:
+                        move_log['files_entries_effected'] += 1
+                    if remove_location_entry:
+                        move_log['location_entries_effected'] += 1
+
+                    file_exists = os.path.exists(os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), new_location_server_dirs, location_entry.filename))
+                    if file_exists:
+                        location_entry.file_server_directories = new_location_server_dirs
+                        location_entry.existence_confirmed = datetime.datetime.now()
+                        move_log['location_entries_effected'] += 1
+                    else:
+                        db.session.delete(location_entry)
+                        move_log['location_entries_effected'] += 1
+                    db.session.commit()
+
+            utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=move_log)
+            return move_log
 

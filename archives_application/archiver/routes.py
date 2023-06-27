@@ -125,7 +125,7 @@ def get_user_handle():
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def server_change():
     
-    # import here to avoid circular import
+    # imported here to avoid circular import
     from archives_application.archiver.server_edit import ServerEdit
     
     def save_server_change(executed_edit: ServerEdit):
@@ -253,11 +253,6 @@ def upload_file():
                 enqueue_new_task(enqueued_function=add_file_to_db_task,
                                  function_kwargs=add_file_kwargs,
                                  timeout=None)
-                
-                # for testing, run the task immediately
-                #add_file_kwargs['queue_id'] = f"test_{add_file_to_db_task.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
-                #add_file_to_db_task(**add_file_kwargs)
-
                 flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
                 return flask.redirect(flask.url_for('archiver.upload_file'))
 
