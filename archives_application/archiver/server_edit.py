@@ -183,6 +183,7 @@ class ServerEdit:
                 # db_edit = self.add_move_to_db_task(queue_id=f"{self.add_deletion_to_db_task.__name__}_test{random.randint(1, 1000)}")
                 enqueueing_results = utilities.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
                                                                 enqueued_function=self.add_move_to_db_task)
+                enqueueing_results['change_executed'] = self.change_executed
                 return enqueueing_results
             except Exception as e:
                 if type(e) == shutil.Error:
@@ -197,9 +198,11 @@ class ServerEdit:
             self.change_executed = True
             self.files_effected = 0
             self.data_effected = 0
-            return self.change_executed
+            results = {'change_executed': self.change_executed}
+            return results
 
-        return self.change_executed
+        results = {'change_executed': self.change_executed}
+        return results
 
     
     @staticmethod
