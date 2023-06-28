@@ -55,9 +55,11 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.2.21'
+    app.config['VERSION'] = '1.2.22'
 
-    # If the SQLALCHEMY_ECHO parameter is true, need to set up logs for logging sql
+    # If the SQLALCHEMY_ECHO parameter is true, need to set up logs for logging sql.
+    # This is useful for debugging sql queries and postgresql errors.
+    # https://docs.sqlalchemy.org/en/13/core/engines.html#sqlalchemy.create_engine.params.echo
     if app.config.get("SQLALCHEMY_ECHO"):
         log_path = os.path.join(app.config.get("DATABASE_BACKUP_LOCATION"), app.config.get("SQLALCHEMY_LOG_FILE"))
         app_config.setup_sql_logging(log_filepath=log_path)

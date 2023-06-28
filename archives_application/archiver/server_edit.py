@@ -374,7 +374,11 @@ class ServerEdit:
                 
     
     def add_move_to_db_task(self, queue_id):
+        """
+        Reconciles the database with a file move operation. Basically, it changes the file_server_directories
+        for each file_location entry that is effected by the move. If the move is a file move, it also changes.
 
+        """
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy'].db
             utilities.initiate_task_subroutine(q_id=queue_id, sql_db=db)
