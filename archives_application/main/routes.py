@@ -211,3 +211,8 @@ def toggle_sql_logging():
         db_logger.handlers.clear()
         db_logger.disabled = True
     return flask.jsonify(**{"sql logging":flask.current_app.config['SQLALCHEMY_ECHO'], "log location":log_path})
+
+
+@main.route("/maintenance", methods=['GET', 'POST'])
+def app_maintenance():
+    
