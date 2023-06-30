@@ -21,6 +21,7 @@ class AppCustodian:
             self.temporary_files_location = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
             self.temporary_file_lifespan = temp_file_lifespan
             self.task_records_lifespan_map = task_records_lifespan_map
+            self.db_backup_file_lifespan = db_backup_file_lifespan
 
 
     def enqueue_maintenance_tasks(self, db: flask_sqlalchemy.SQLAlchemy):
@@ -102,7 +103,7 @@ class AppCustodian:
             db_backup_files = [f for f in os.listdir(db_backup_location) if f.startswith(DB_BACKUP_FILE_PREFIX)]
             for db_file in db_backup_files:
                 db_file_timestamp = re.search(r'\d+', db_file).group() # Retrieves all digits from db_file as a string
-                db_file_dt = datetime.datetime.strptime(db_file_timestamp, DB_BACKUP_FILE_TIMESTAMP_FORMAT)
+                db_file_dt = datetime.strptime(db_file_timestamp, DB_BACKUP_FILE_TIMESTAMP_FORMAT)
                 if db_file_dt < expiration_date:
                     path = os.path.join(db_backup_location, db_file)
                     try:
