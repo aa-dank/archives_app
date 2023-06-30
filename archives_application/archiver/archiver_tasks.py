@@ -251,7 +251,7 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
                     
                     # if the file no longer exists, we delete the entry in the database
                     if not os.path.exists(file_location_path):
-                        confirm_locations_log["Files Missing"] += 1
+                        confirm_locations_log["Locations Missing"] += 1
                         file_id = file_location.file_id
                         db.session.delete(file_location)
                         db.session.commit()

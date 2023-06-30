@@ -16,6 +16,9 @@ from archives_application.models import *
 
 main = flask.Blueprint('main', __name__)
 
+DB_BACKUP_FILE_PREFIX = "db_backup_"
+DB_BACKUP_FILE_TIMESTAMP_FORMAT = r"%Y%m%d%H%M%S"
+
 
 def web_exception_subroutine(flash_message, thrown_exception, app_obj):
     """
@@ -31,37 +34,6 @@ def web_exception_subroutine(flash_message, thrown_exception, app_obj):
     return flask.redirect(flask.url_for('main.home'))
 
 
-def make_postgresql_backup():
-
-    """
-    Subroutine for sending pg_dump command to shell
-    Resources:
-    https://stackoverflow.com/questions/63299534/backup-postgres-from-python-on-win10
-    https://stackoverflow.com/questions/43380273/pg-dump-pg-restore-password-using-python-module-subprocess
-    https://medium.com/poka-techblog/5-different-ways-to-backup-your-postgresql-database-using-python-3f06cea4f51
-
-    An example of desired command:
-    pg_dump postgresql://archives:password@localhost:5432/archives > /opt/app/data/Archive_Data/backup101.sql
-    """
-    db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
-    db_backup_destination = flask.current_app.config.get("DATABASE_BACKUP_LOCATION")
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    db_backup_destination = db_backup_destination + f"/db_backup_{timestamp}.sql"
-    db_backup_cmd = fr"""sudo pg_dump {db_url} > {db_backup_destination}"""
-
-    # If running on windows, remove sudo from command...
-    if sys.platform.lower() not in ['linux', 'linux2', 'darwin']:
-        db_backup_cmd = db_backup_cmd[5:]
-
-    cmd_result = subprocess.run(db_backup_cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True)
-
-    # if passing the pg_dump command to the shell failed...
-    if cmd_result.stderr:
-        raise Exception(
-            f"Backup command failed: Stderr from attempt to call pg_dump back-up command:\n{cmd_result.stderr}")
-    return cmd_result.stdout, cmd_result.stderr
-
 @main.route("/")
 @main.route("/home")
 def home():
@@ -74,6 +46,7 @@ def main_admin():
     flask.flash("Admin enpoint hit.")
     return flask.redirect(flask.url_for('main.home'))
 
+
 @main.route("/admin/db_backup", methods=['GET', 'POST'])
 def backup_database():
     """
@@ -81,6 +54,37 @@ def backup_database():
     or one can pass credentials to it in the request which is useful for a scheduled process
     @return:
     """
+
+    def make_postgresql_backup():
+
+        """
+        Subroutine for sending pg_dump command to shell
+        Resources:
+        https://stackoverflow.com/questions/63299534/backup-postgres-from-python-on-win10
+        https://stackoverflow.com/questions/43380273/pg-dump-pg-restore-password-using-python-module-subprocess
+        https://medium.com/poka-techblog/5-different-ways-to-backup-your-postgresql-database-using-python-3f06cea4f51
+
+        An example of desired command:
+        pg_dump postgresql://archives:password@localhost:5432/archives > /opt/app/data/Archive_Data/backup101.sql
+        """
+        db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
+        db_backup_destination = flask.current_app.config.get("DATABASE_BACKUP_LOCATION")
+        timestamp = datetime.now().strftime(DB_BACKUP_FILE_TIMESTAMP_FORMAT)
+        db_backup_destination = db_backup_destination + f"/{DB_BACKUP_FILE_PREFIX}{timestamp}.sql"
+        db_backup_cmd = fr"""sudo pg_dump {db_url} > {db_backup_destination}"""
+
+        # If running on windows, remove sudo from command...
+        if sys.platform.lower() not in ['linux', 'linux2', 'darwin']:
+            db_backup_cmd = db_backup_cmd[5:]
+
+        cmd_result = subprocess.run(db_backup_cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True)
+
+        # if passing the pg_dump command to the shell failed...
+        if cmd_result.stderr:
+            raise Exception(
+                f"Backup command failed: Stderr from attempt to call pg_dump back-up command:\n{cmd_result.stderr}")
+        return cmd_result.stdout, cmd_result.stderr
 
     def api_exception_subroutine(response_message, thrown_exception):
         """
@@ -189,6 +193,7 @@ def get_db_uri():
     }
     return info
 
+
 @main.route("/admin/sql_logging", methods=['GET', 'POST'])
 @roles_required(['ADMIN'])
 def toggle_sql_logging():
@@ -216,3 +221,19 @@ def toggle_sql_logging():
 @main.route("/maintenance", methods=['GET', 'POST'])
 def app_maintenance():
     
+    from archives_application.main.main_tasks import AppCustodian
+
+    task_entry_lifespans = {'add_file_to_db_task': 22,
+                            'scrape_file_data_task': 22,
+                            'confirm_file_locations_task': 22,
+                            'add_deletion_to_db_task':22,
+                            'add_move_to_db_task': 22,
+                            'add_renaming_to_db_task': 22,
+                            'db_backup_clean_up_task':22}
+    
+    custodian = AppCustodian(temp_file_lifespan=3,
+                             task_records_lifespan_map=task_entry_lifespans,
+                             db_backup_file_lifespan=2)
+    import uuid
+    test_result  = custodian.task_records_clean_up_task(queue_id=f"temp_file_clean_up_task_test_{str(uuid.uuid4())[-5:]}")
+    return flask.jsonify(**test_result)
