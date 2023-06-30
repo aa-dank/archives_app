@@ -457,7 +457,7 @@ class ServerEdit:
                     new_location_server_dirs = os.path.join(*new_location_list)
 
                     # remove any entries that are already in the new location
-                    existing_loc_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), new_location_server_dirs, existing_location_entry.filename)
+                    existing_loc_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), new_location_server_dirs, location_entry.filename)
                     remove_file_entry, remove_location_entry = self.remove_file_from_db(db, file_server_root_index, file_path=existing_loc_path)
                     if remove_file_entry:
                         move_log['files_entries_effected'] += 1
