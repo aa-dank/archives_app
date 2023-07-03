@@ -115,5 +115,3 @@ class AppCustodian:
             
             utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
             return log
-
-

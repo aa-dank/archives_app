@@ -16,6 +16,7 @@ from archives_application.models import *
 
 main = flask.Blueprint('main', __name__)
 
+
 DB_BACKUP_FILE_PREFIX = "db_backup_"
 DB_BACKUP_FILE_TIMESTAMP_FORMAT = r"%Y%m%d%H%M%S"
 
@@ -86,6 +87,7 @@ def backup_database():
                 f"Backup command failed: Stderr from attempt to call pg_dump back-up command:\n{cmd_result.stderr}")
         return cmd_result.stdout, cmd_result.stderr
 
+
     def api_exception_subroutine(response_message, thrown_exception):
         """
         Subroutine for handling an exception and returning response code to api call
@@ -124,6 +126,72 @@ def backup_database():
 
             flask.flash("Database backup successs.", 'info')
             return flask.redirect(flask.url_for('main.home'))
+
+
+@main.route("/admin/maintenance", methods=['GET', 'POST'])
+def app_maintenance():
+    """
+    This endpoint is used to perform regular maintenance tasks on the application and database.
+    """
+
+    # import task here to avoid circular import
+    from archives_application.main.main_tasks import AppCustodian
+    
+    def str_dictionary_values(some_dict):
+        """
+        This function takes a dictionary and converts all values to strings.
+        """
+        for key, value in some_dict.items():
+            if isinstance(value, dict):
+                str_dictionary_values(value)
+            elif isinstance(value, list):
+                some_dict[key] = [str(item) for item in value]
+            else:
+                some_dict[key] = str(value)
+        return some_dict
+
+
+    task_entry_lifespans = {'add_file_to_db_task': 90,
+                            'scrape_file_data_task': 365,
+                            'confirm_file_locations_task': 365,
+                            'add_deletion_to_db_task':180,
+                            'add_move_to_db_task': 180,
+                            'add_renaming_to_db_task': 180,
+                            'db_backup_clean_up_task': 90,
+                            'task_records_clean_up_task': 90,
+                            'temp_file_clean_up_task': 90}
+    
+    custodian = AppCustodian(temp_file_lifespan=3,
+                             task_records_lifespan_map=task_entry_lifespans,
+                             db_backup_file_lifespan=2)
+    
+    has_admin_role = lambda usr: any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
+
+    if flask.request.args.get('user'):
+        user_param = flask.request.args.get('user')
+        password_param = flask.request.args.get('password')
+        user = UserModel.query.filter_by(email=user_param).first()
+
+        # If there is a matching user to the request parameter, the password matches and that account has admin role...
+        if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
+            task_enqueueing_result = custodian.enqueue_maintenance_tasks(db=db)
+            task_enqueueing_result = str_dictionary_values(task_enqueueing_result)
+            return flask.Response(response=json.dumps(task_enqueueing_result),
+                                  status=200,
+                                  mimetype="application/json")
+        
+    elif current_user:
+        if current_user.is_authenticated and has_admin_role(current_user):
+            task_enqueueing_result = custodian.enqueue_maintenance_tasks(db=db)
+            task_enqueueing_result = str_dictionary_values(task_enqueueing_result)
+            return flask.Response(response=json.dumps(task_enqueueing_result),
+                                  status=200,
+                                  mimetype="application/json")
+    
+    no_user_msg = {"error":"You must be logged in as an admin to perform maintenance."}
+    return flask.Response(response=flask.jsonify(no_user_msg),
+                          status=401,
+                          mimetype="application/json")
 
 
 @main.route("/admin/config", methods=['GET', 'POST'])
@@ -218,67 +286,3 @@ def toggle_sql_logging():
     return flask.jsonify(**{"sql logging":flask.current_app.config['SQLALCHEMY_ECHO'], "log location":log_path})
 
 
-@main.route("/maintenance", methods=['GET', 'POST'])
-def app_maintenance():
-    """
-    This endpoint is used to perform regular maintenance tasks on the application and database.
-    """
-
-    # import task here to avoid circular import
-    from archives_application.main.main_tasks import AppCustodian
-    
-    def str_dictionary_values(some_dict):
-        """
-        This function takes a dictionary and converts all values to strings.
-        """
-        for key, value in some_dict.items():
-            if isinstance(value, dict):
-                str_dictionary_values(value)
-            elif isinstance(value, list):
-                some_dict[key] = [str(item) for item in value]
-            else:
-                some_dict[key] = str(value)
-        return some_dict
-
-
-    task_entry_lifespans = {'add_file_to_db_task': 90,
-                            'scrape_file_data_task': 365,
-                            'confirm_file_locations_task': 365,
-                            'add_deletion_to_db_task':180,
-                            'add_move_to_db_task': 180,
-                            'add_renaming_to_db_task': 180,
-                            'db_backup_clean_up_task': 90,
-                            'task_records_clean_up_task': 90,
-                            'temp_file_clean_up_task': 90}
-    
-    custodian = AppCustodian(temp_file_lifespan=3,
-                             task_records_lifespan_map=task_entry_lifespans,
-                             db_backup_file_lifespan=2)
-    
-    has_admin_role = lambda usr: any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
-
-    if flask.request.args.get('user'):
-        user_param = flask.request.args.get('user')
-        password_param = flask.request.args.get('password')
-        user = UserModel.query.filter_by(email=user_param).first()
-
-        # If there is a matching user to the request parameter, the password matches and that account has admin role...
-        if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
-            task_enqueueing_result = custodian.enqueue_maintenance_tasks(db=db)
-            task_enqueueing_result = str_dictionary_values(task_enqueueing_result)
-            return flask.Response(response=json.dumps(task_enqueueing_result),
-                                  status=200,
-                                  mimetype="application/json")
-        
-    elif current_user:
-        if current_user.is_authenticated and has_admin_role(current_user):
-            task_enqueueing_result = custodian.enqueue_maintenance_tasks(db=db)
-            task_enqueueing_result = str_dictionary_values(task_enqueueing_result)
-            return flask.Response(response=json.dumps(task_enqueueing_result),
-                                  status=200,
-                                  mimetype="application/json")
-    
-    no_user_msg = {"error":"You must be logged in as an admin to perform maintenance."}
-    return flask.Response(response=flask.jsonify(no_user_msg),
-                          status=401,
-                          mimetype="application/json")
