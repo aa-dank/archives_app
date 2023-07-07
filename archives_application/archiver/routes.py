@@ -768,3 +768,8 @@ def test_confirm_files():
         print(e)
         flask.flash(f"Confirm file locations error: {e}", 'warning')
         return flask.redirect(flask.url_for('main.home'))
+
+
+@archiver.route("/filename_search", methods=['GET', 'POST'])
+def filename_search():
+    
