@@ -3,12 +3,10 @@ import json
 import logging
 import os
 import subprocess
-import shutil
-import sys
 import archives_application.app_config as app_config
 from flask_login import current_user
 from archives_application.main import forms
-from archives_application.utilities import roles_required
+from archives_application.utilities import roles_required, enqueue_new_task
 from archives_application import db, bcrypt
 from archives_application.models import *
 
@@ -73,10 +71,6 @@ def backup_database():
         timestamp = datetime.now().strftime(DB_BACKUP_FILE_TIMESTAMP_FORMAT)
         db_backup_destination = db_backup_destination + f"/{DB_BACKUP_FILE_PREFIX}{timestamp}.sql"
         db_backup_cmd = fr"""sudo pg_dump {db_url} > {db_backup_destination}"""
-
-        # If running on windows, remove sudo from command...
-        if sys.platform.lower() not in ['linux', 'linux2', 'darwin']:
-            db_backup_cmd = db_backup_cmd[5:]
 
         cmd_result = subprocess.run(db_backup_cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE, text=True)
@@ -226,7 +220,10 @@ def change_config_settings():
             with open(config_filepath, 'w') as config_file:
                 json.dump(config_dict, config_file)
 
-            flask.flash("Values entered were stored in the config file.", 'success')
+            restart_params = {'delay': 15}
+            enqueueing_result = enqueue_new_task(db=db, task_name='restart_app_task', function_kwargs=restart_params)
+            
+            flask.flash("Values entered were stored in the config file. Application restart is immenent.", 'success')
             return flask.redirect(flask.url_for('main.home'))
 
         except Exception as e:

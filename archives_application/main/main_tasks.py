@@ -1,7 +1,9 @@
 import flask
+import flask_sqlalchemy
 import os
 import re
-import flask_sqlalchemy
+import subprocess
+import time
 from datetime import datetime, timedelta
 from typing import Dict
 from archives_application import utilities, create_app
@@ -69,6 +71,9 @@ class AppCustodian:
 
 
     def task_records_clean_up_task(self, queue_id: str):
+        """
+        This task will remove all files in the temp_files directory that are older than the specified lifespan.
+        """
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy'].db
             utilities.initiate_task_subroutine(q_id=queue_id, sql_db=db)
@@ -115,3 +120,24 @@ class AppCustodian:
             
             utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
             return log
+
+
+def restart_app_task(queue_id: str, delay: int = 0):
+    with app.app_context():
+        db = flask.current_app.extensions['sqlalchemy'].db
+        utilities.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+        log = {"task_id": queue_id, "errors": []}
+        cmd = "sudo supervisorctl restart archives_app"
+        time.sleep(delay)
+        try:
+            cmd_result = subprocess.run(cmd,
+                                        shell=True,
+                                        stdin=subprocess.PIPE,
+                                        stdout=subprocess.PIPE, # This is necessary to capture the output of the command
+                                        stderr=subprocess.PIPE,
+                                        text=True)
+            log["cmd_result"] = cmd_result
+        except Exception as e:
+            log["errors"].append(e)
+        utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+        return log
