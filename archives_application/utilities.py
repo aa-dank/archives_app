@@ -1,15 +1,20 @@
 import fitz
 import flask
+import flask_sqlalchemy
 import hashlib
 import subprocess
 import re
 import os
+import pandas as pd
+import psutil
 import sys
 from datetime import datetime
 from flask_login import current_user
 from functools import wraps
 from PIL import Image
 from pathlib import Path, PureWindowsPath
+from sqlalchemy import select
+from sqlalchemy.sql.expression import func
 from typing import Union 
 from archives_application.models import WorkerTaskModel
 
@@ -398,6 +403,7 @@ def initiate_task_subroutine(q_id, sql_db):
     sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(start_task_db_updates)
     sql_db.session.commit()
 
+
 def complete_task_subroutine(q_id, sql_db, task_result):
     """
     Updates the database to indicate that the task has completed.
@@ -409,3 +415,42 @@ def complete_task_subroutine(q_id, sql_db, task_result):
     task_db_updates = {"status": 'finished', "task_results": task_result, "time_completed":datetime.now()}
     sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(task_db_updates)
     sql_db.session.commit()
+
+
+def db_query_to_df(query: flask_sqlalchemy.query.Query, dataframe_size_limit= None, query_count_concern_threshold = 100000):
+    """
+    Converts a sqlalchemy query to a pandas dataframe. checks the size of the dataframe and raises a ValueError if it is too large.
+    :param query: the sqlalchemy query to be converted
+    :param dataframe_size_limit: the maximum size of the dataframe in bytes. If the dataframe is larger than this, a ValueError will be raised.
+    :param query_count_concern_threshold: the number of rows in the query that will trigger an estimation of the query size.
+    """
+    
+    def get_row_size_estimate(sample_size = 50):
+        """
+        Creates a random sample of rows from the query and returns the average size of the rows in bytes.
+        """
+        subquery = query.order_by(func.random()).limit(sample_size).subquery()
+        sample = select(subquery).execute().fetchall()
+        sample_df = pd.DataFrame([row.__dict__ for row in sample])
+        sample_average = sample_df.memory_usage(deep=True).sum() / sample_size
+        return sample_average 
+    
+    # calculate a sensible dataframe size limit if one is not provided
+    if not dataframe_size_limit:
+        available_memory = psutil.virtual_memory().available
+        memory_usage_buffer = 10000000 if (available_memory * .1) < 10000000 else available_memory * .1
+        dataframe_size_limit = psutil.virtual_memory().available - memory_usage_buffer
+    
+    # check if the query results are too large to be returned as a dataframe
+    query_results_count = query.count()
+    if query_results_count > query_count_concern_threshold:
+        total_df_size_estimate = get_row_size_estimate() * query_results_count
+        if total_df_size_estimate > dataframe_size_limit:
+            e_str = f"Query results are too large to be returned as a dataframe. \n Estimated size: {total_df_size_estimate} bytes \n Limit: {dataframe_size_limit} bytes \n Query results count: {query_results_count} \n Query: {query.statement}"
+            raise ValueError(e_str)
+    
+    results = query.all()
+    df = pd.DataFrame([row.__dict__ for row in results])
+    if '_sa_instance_state' in df.columns:
+        df = df.drop(columns=['_sa_instance_state'])
+    return df

@@ -8,13 +8,14 @@ import re
 import shutil
 import pandas as pd
 from datetime import timedelta
-from typing import Union, Callable
+from flask_login import login_required, current_user
+from sqlalchemy import func
+from typing import Union
 
+# imports from this application
 from archives_application.archiver.archival_file import ArchivalFile
 from archives_application import utilities
-
 from archives_application.archiver.forms import *
-from flask_login import login_required, current_user
 from archives_application.models import *
 from archives_application import db, bcrypt
 
@@ -196,7 +197,8 @@ def server_change():
 
         except Exception as e:
             return web_exception_subroutine(flash_message="Error processing or executing change: ",
-                                              thrown_exception=e, app_obj=flask.current_app)
+                                            thrown_exception=e,
+                                            app_obj=flask.current_app)
     return flask.render_template('server_change.html', title='Make change to file server', form=form)
 
 
@@ -262,7 +264,9 @@ def upload_file():
 
         except Exception as e:
             m = "Error occurred while trying to read form data, move the asset, or record asset info in database: "
-            return web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
+            return web_exception_subroutine(flash_message=m,
+                                            thrown_exception=e,
+                                            app_obj=flask.current_app)
 
     return flask.render_template('upload_file.html', title='Upload File to Archive', form=form)
 
@@ -376,8 +380,9 @@ def inbox_item():
             flask.session['inbox_form_data'] = None
 
     except Exception as e:
-        web_exception_subroutine(flash_message="Issue setting up inbox item for archiving: ", thrown_exception=e,
-                                   app_obj=flask.current_app)
+        return web_exception_subroutine(flash_message="Issue setting up inbox item for archiving: ",
+                                        thrown_exception=e,
+                                        app_obj=flask.current_app)
 
     try:
         if form.validate_on_submit():
@@ -473,15 +478,17 @@ def inbox_item():
                 return flask.redirect(flask.url_for('archiver.inbox_item'))
             else:
                 message = f'Failed to archive file:{arch_file.current_path} Destination: {arch_file.get_destination_path()} Error:'
-                return web_exception_subroutine(flash_message=message, thrown_exception=archiving_exception,
-                                           app_obj=flask.current_app)
+                return web_exception_subroutine(flash_message=message,
+                                                thrown_exception=archiving_exception,
+                                                app_obj=flask.current_app)
 
         return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename,
                                      preview_image=preview_image_url)
 
     except Exception as e:
-        return web_exception_subroutine(flash_message="Issue archiving document: ", thrown_exception=e,
-                                   app_obj=flask.current_app)
+        return web_exception_subroutine(flash_message="Issue archiving document: ",
+                                        thrown_exception=e,
+                                        app_obj=flask.current_app)
 
 
 @archiver.route("/archived_or_not", methods=['GET', 'POST'])
@@ -513,7 +520,7 @@ def archived_or_not():
             
             # Create html table of all locations that match the hash
             locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == matching_file.id)
-            locations_df = db_query_to_df(locations)
+            locations_df = utilities.db_query_to_df(locations)
             os.remove(temp_path)
             if locations_df.empty:
                 raise Exception(f"No locations found for file, {filename}, with hash {file_hash}, though file was found in database.")
@@ -770,6 +777,86 @@ def test_confirm_files():
         return flask.redirect(flask.url_for('main.home'))
 
 
-@archiver.route("/filename_search", methods=['GET', 'POST'])
-def filename_search():
+@archiver.route("/file_search", methods=['GET', 'POST'])
+def file_search():
+    def user_path_from_db_data(file_server_directories, filename):
+        server_directories_list = utilities.split_path(file_server_directories)
+        archives_network_location_list = utilities.split_path(flask.current_app.config.get("ARCHIVES_NETWORK_LOCATION"))
+        user_file_path_list = archives_network_location_list + server_directories_list + [filename]
+        user_file_path = "\\".join(user_file_path_list)
+        return user_file_path
+
+
+    form = FileSearchForm()
+    temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
+    csv_filename_prefix = "search_results_"
+    timestamp_format = r'%Y%m%d%H%M%S'
+    html_table_row_limit = 1000
     
+    # if the request includes a timestamp for a previous search results, then we will return the spreadsheet of the search results.
+    # If there is not a corresponding file, then we will raise an error.
+    if flask.request.args.get('timestamp'):
+        try:
+            timestamp = flask.request.args.get('timestamp')
+            csv_filepath = os.path.join(temp_files_directory, f'{csv_filename_prefix}{timestamp}.csv')
+            if not os.path.exists(csv_filepath):
+                # reformat timestamp to be more human-readable
+                timestamp = datetime.strftime(datetime.strptime(timestamp, timestamp_format), r'%Y-%m-%d %H:%M:%S')
+                message = f"Search results from {timestamp} not found. Expected file at {csv_filepath}"
+                raise FileNotFoundError(message)
+            
+            return flask.send_file(csv_filepath, as_attachment=True)
+        
+        except Exception as e:
+            message = f"Error retrieving search results:\n{e}"
+            return web_exception_subroutine(flash_message=message,
+                                            thrown_exception=e,
+                                            app_obj=flask.current_app)
+    
+    if form.validate_on_submit():
+        try:
+            search_query = None
+            if form.search_location.data:
+                search_term = str(form.search_term.data).lower()
+                search_location = utilities.user_path_to_app_path(path_from_user=form.search_location.data,
+                                                                location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
+                search_location_list = utilities.split_path(search_location)
+                mount_path_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+                search_location_search_term = os.path.join(*search_location_list[mount_path_index:])
+                search_query = FileLocationModel.query.filter(FileLocationModel.file_server_directories.like(f"%{search_location_search_term}%"), func.lower(FileLocationModel.filename).like(f"%{search_term}%"))
+            else:
+                search_query = FileLocationModel.query.filter(func.lower(FileLocationModel.filename).like(f"%{search_term}%"))
+
+            search_df = utilities.db_query_to_df(search_query)
+            if search_df.empty:
+                flask.flash(f"No files found matching search term: {search_term}", 'warning')
+                return flask.redirect(flask.url_for('archiver.file_search'))
+            
+            search_df['Filepath'] = search_df.apply(lambda row: user_path_from_db_data(row['file_location'], row['filename']), axis=1)
+            cols_to_remove = ['id', 'file_id', 'file_server_directories', 'existence_confirmed', 'hash_confirmed']
+            search_df.drop(columns=cols_to_remove, inplace=True)
+            search_df.rename(columns={'filename': 'Filename'}, inplace=True)
+            timestamp = datetime.now().strftime(r'%Y%m%d%H%M%S')
+            csv_filepath = os.path.join(temp_files_directory, f'{csv_filename_prefix}{timestamp}.csv')
+            search_df.to_csv(csv_filepath, index=False)
+            search_df = search_df.head(html_table_row_limit)
+            #classes="table-hover table-dark"
+            search_df_html = search_df.to_html(classes='table table-striped table-bordered table-hover table-sm',
+                                               index=False,
+                                               justify='left')
+            
+            return flask.render_template('file_search_results.html',
+                                         search_df_html=search_df_html,
+                                         timestamp=timestamp)
+            
+        except Exception as e:
+            web_exception_subroutine(flash_message="Error processing query, searching database, and/or processing search results: ",
+                                     thrown_exception=e,
+                                     app_obj=flask.current_app)
+    
+    return flask.render_template('file_search.html', form=form)
+            
+
+        
+
+        
