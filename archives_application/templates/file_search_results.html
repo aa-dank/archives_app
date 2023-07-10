@@ -1,0 +1,21 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <h2>File Search Results</h2>
+            
+        <p>
+            <!-- adds the csv file timestamp  as parameter to the url -->
+            <a href="{{ url_for('file_search', timestamp=timestamp) }}">Download CSV</a>
+        </p>
+        <div>
+            <!-- If there is result table, display it here. -->
+            {% if search_results_table %}
+                {{ search_results_table | safe }}
+            {% endif %}
+            {% if not search_results_table %}
+            No HTML table to display.
+            {% endif %}
+        </div>
+    </div>
+
+{% endblock content %}

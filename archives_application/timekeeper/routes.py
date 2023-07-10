@@ -236,8 +236,8 @@ def user_timesheet(employee_id):
 
     except Exception as e:
         web_exception_subroutine(flash_message=f"Error trying to get user info from the database for user id {employee_id}",
-                                   thrown_exception=e,
-                                   app_obj=flask.current_app)
+                                 thrown_exception=e,
+                                 app_obj=flask.current_app)
 
     try:
  
@@ -283,8 +283,8 @@ def user_timesheet(employee_id):
             # get the daily archiving metrics if applicable
             if 'ARCHIVIST' in current_user.roles or 'ADMIN' in current_user.roles:
                 archived_files_query = ArchivedFileModel.query.filter(ArchivedFileModel.archivist_id == employee_id,
-                                                         ArchivedFileModel.date_archived >= range_date,
-                                                         ArchivedFileModel.date_archived <= range_date + timedelta(days=1))
+                                                                      ArchivedFileModel.date_archived >= range_date,
+                                                                      ArchivedFileModel.date_archived <= range_date + timedelta(days=1))
                 arched_files_df = db_query_to_df(query=archived_files_query)
                 day_data["Archived Files"] = arched_files_df.shape[0]
                 day_data["Archived Megabytes"] = 0
@@ -583,8 +583,7 @@ def archived_metrics_dashboard():
         plot_jpg_path = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", plot_jpg_filename])
         production_plot.savefig(plot_jpg_path)
 
-    plot_jpg_url = flask.url_for(r"static",
-                                      filename="temp_files/" + utilities.split_path(plot_jpg_path)[-1])
+    plot_jpg_url = flask.url_for(r"static", filename="temp_files/" + utilities.split_path(plot_jpg_path)[-1])
 
     # Record image path to session so it can be deleted upon logout
     if not flask.session[current_user.email].get('temporary files'):

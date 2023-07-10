@@ -36,9 +36,9 @@ class InboxItemForm(FlaskForm):
     submit = SubmitField('Archive File')
 
 
-class FilenameSearchForm(FlaskForm):
+class FileSearchForm(FlaskForm):
     search_location = StringField('Search Location')
-    search_term = StringField('Search Term')
+    search_term = StringField('Search Term', validators=[DataRequired()])
     submit = SubmitField('Search')
 
     def validate_search_location(self, search_location):
@@ -67,6 +67,7 @@ class ServerChangeForm(FlaskForm):
     # Form field for adding a new directory
     new_directory = StringField('New Directory Path')
     submit = SubmitField('Execute Change(s)')
+
 
     def validate_path_delete(self, path_delete):
         """

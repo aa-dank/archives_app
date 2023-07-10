@@ -268,7 +268,7 @@ class ServerEdit:
                     db.session.commit()
                     deletion_log['location_entries_effected'] = 1
 
-                    other_locations = db.session.query(FileLocationModel).filter_by(FileLocationModel.file_id == file_id).all()
+                    other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
                     if not other_locations:
                         file_entry = db.session.query(FileModel).filter_by(FileModel.id == file_id).first()
                         db.session.delete(file_entry)
