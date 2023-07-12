@@ -779,11 +779,16 @@ def test_confirm_files():
 
 @archiver.route("/file_search", methods=['GET', 'POST'])
 def file_search():
-    def user_path_from_db_data(file_server_directories, filename):
+    def user_path_from_db_data(file_server_directories, filename = None):
         server_directories_list = utilities.split_path(file_server_directories)
         archives_network_location_list = utilities.split_path(flask.current_app.config.get("ARCHIVES_NETWORK_LOCATION"))
-        user_file_path_list = archives_network_location_list + server_directories_list + [filename]
+        archives_network_location_list = [d for d in archives_network_location_list if d not in ['//', '']]
+        user_file_path_list = archives_network_location_list + server_directories_list
+        if filename:
+            user_file_path_list = user_file_path_list + [filename]
         user_file_path = "\\".join(user_file_path_list)
+        while not user_file_path.startswith("\\\\"):
+            user_file_path = "\\" + user_file_path
         return user_file_path
 
 
@@ -816,8 +821,8 @@ def file_search():
     if form.validate_on_submit():
         try:
             search_query = None
+            search_term = str(form.search_term.data).lower()
             if form.search_location.data:
-                search_term = str(form.search_term.data).lower()
                 search_location = utilities.user_path_to_app_path(path_from_user=form.search_location.data,
                                                                 location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
                 search_location_list = utilities.split_path(search_location)
@@ -832,22 +837,35 @@ def file_search():
                 flask.flash(f"No files found matching search term: {search_term}", 'warning')
                 return flask.redirect(flask.url_for('archiver.file_search'))
             
-            search_df['Filepath'] = search_df.apply(lambda row: user_path_from_db_data(row['file_location'], row['filename']), axis=1)
-            cols_to_remove = ['id', 'file_id', 'file_server_directories', 'existence_confirmed', 'hash_confirmed']
+            search_df['Location'] = search_df.apply(lambda row: user_path_from_db_data(row['file_server_directories']), axis=1)
+            cols_to_remove = ['id', 'file_id', 'file_server_directories', 'existence_confirmed', 'hash_confirmed', 'project_id']
             search_df.drop(columns=cols_to_remove, inplace=True)
             search_df.rename(columns={'filename': 'Filename'}, inplace=True)
             timestamp = datetime.now().strftime(r'%Y%m%d%H%M%S')
+            too_many_results = len(search_df) > html_table_row_limit
             csv_filepath = os.path.join(temp_files_directory, f'{csv_filename_prefix}{timestamp}.csv')
             search_df.to_csv(csv_filepath, index=False)
             search_df = search_df.head(html_table_row_limit)
-            #classes="table-hover table-dark"
-            search_df_html = search_df.to_html(classes='table table-striped table-bordered table-hover table-sm',
-                                               index=False,
-                                               justify='left')
             
-            return flask.render_template('file_search_results.html',
-                                         search_df_html=search_df_html,
-                                         timestamp=timestamp)
+            # The following lines of code are to resolve an issue where html collapses multiple spaces into one space but 
+            # to_html() escapes the non-collapsing html space character. The solution is to replace spaces in filepaths with 
+            # a uncommon char sequence during the to_html() render and then replace the char sequence with the non-collapsing
+            # html space character after the to_html() render.
+            space_holder = '1spc_hldr1' # character sequence unlikely to be in a filepath.
+            html_spaces = lambda pth: pth.replace(' ', space_holder)
+            search_df['Location'] = search_df['Location'].apply(html_spaces)
+            search_df_html = search_df.to_html(classes='table-dark table-striped table-bordered table-hover table-sm',
+                                               index=False,
+                                               justify='left',
+                                               render_links=True)
+            
+            search_results_html = flask.render_template('file_search_results.html',
+                                                        search_results_table=search_df_html,
+                                                        timestamp=timestamp,
+                                                        search_term=form.search_term.data,
+                                                        too_many_results=too_many_results)
+            search_results_html = search_results_html.replace(space_holder, '&nbsp;')
+            return search_results_html
             
         except Exception as e:
             web_exception_subroutine(flash_message="Error processing query, searching database, and/or processing search results: ",
