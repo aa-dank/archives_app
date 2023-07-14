@@ -492,7 +492,6 @@ def inbox_item():
 
 
 @archiver.route("/archived_or_not", methods=['GET', 'POST'])
-@login_required
 def archived_or_not():
 
     def cleanse_locations_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -849,7 +848,7 @@ def file_search():
             
             # The following lines of code are to resolve an issue where html collapses multiple spaces into one space but 
             # to_html() escapes the non-collapsing html space character. The solution is to replace spaces in filepaths with 
-            # a uncommon char sequence during the to_html() render and then replace the char sequence with the non-collapsing
+            # a uncommon char sequence durinwg the to_html() render and then replace the char sequence with the non-collapsing
             # html space character after the to_html() render.
             space_holder = '1spc_hldr1' # character sequence unlikely to be in a filepath.
             html_spaces = lambda pth: pth.replace(' ', space_holder)
@@ -858,6 +857,10 @@ def file_search():
                                                index=False,
                                                justify='left',
                                                render_links=True)
+            
+            # These lines add some css to the html table to format it to sit neatly within the div container.
+            search_df_html = search_df_html.replace('<table', '<table style="table-layout: auto; width: 100%;"')
+            search_df_html = search_df_html.replace('<td', '<td style="word-break: break-word;"')
             
             search_results_html = flask.render_template('file_search_results.html',
                                                         search_results_table=search_df_html,

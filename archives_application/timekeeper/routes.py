@@ -151,7 +151,7 @@ def timekeeper_event():
         """
         user_id = int(user_id)
 
-        #TODO query by datetime: todays_events_query2 = TimekeeperEventModel.query.filter_by(user_id=1, datetime=datetime.now().date())
+        #TODO query by datetime: todays_events_query2 = TimekeeperEventModel.query.filter(user_id=1, datetime=datetime.now().date())
         start_of_today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         db.session.commit()
         todays_events_query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == user_id,
