@@ -192,10 +192,15 @@ def app_maintenance():
 @roles_required(['ADMIN'])
 def change_config_settings():
 
+    # import task here to avoid circular import
+    from archives_application.main.main_tasks import restart_app_task
+
+
     config_dict = {}
     config_filepath = flask.current_app.config.get('CONFIG_JSON_PATH')
     form = None
     try:
+        # open the config file and create a form from it
         with open(config_filepath) as config_json_file:
             config_dict = json.load(config_json_file)
         dynamic_form_class = forms.form_factory(fields_dict=config_dict, form_class_name="ConfigChange")
@@ -221,7 +226,7 @@ def change_config_settings():
                 json.dump(config_dict, config_file)
 
             restart_params = {'delay': 15}
-            enqueueing_result = enqueue_new_task(db=db, task_name='restart_app_task', function_kwargs=restart_params)
+            enqueueing_result = enqueue_new_task(db=db, enqueued_function=restart_app_task, function_kwargs=restart_params)
             
             flask.flash("Values entered were stored in the config file. Application restart is immenent.", 'success')
             return flask.redirect(flask.url_for('main.home'))

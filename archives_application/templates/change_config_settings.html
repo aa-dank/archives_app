@@ -5,7 +5,7 @@
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Settings to Change</legend>
-                <p>This form is for making changes to the configuration file. Anything entered here will overwrite the contents of the config file, For the configuration to take effect, the application will require a restart.</p>
+                <p>This form is for making changes to the configuration file. Anything entered here will overwrite the contents of the config file. Before the configuration will take effect, the application will restart.</p>
                 {% for setting, _ in settings_dict.items() %}
                     <div class="form-group">
                         <!╌  ╌>

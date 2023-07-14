@@ -267,10 +267,11 @@ class ServerEdit:
                     db.session.delete(file_location_entry)
                     db.session.commit()
                     deletion_log['location_entries_effected'] = 1
-
+                    
+                    # If this was the last entry for this file_id, delete the file_id entry
                     other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
                     if not other_locations:
-                        file_entry = db.session.query(FileModel).filter_by(FileModel.id == file_id).first()
+                        file_entry = db.session.query(FileModel).filter(FileModel.id == file_id).first()
                         db.session.delete(file_entry)
                         db.session.commit()
                         deletion_log['files_entries_effected'] = 1
