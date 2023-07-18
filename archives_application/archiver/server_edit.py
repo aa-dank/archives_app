@@ -5,7 +5,7 @@ import random
 import shutil
 from sqlalchemy import text, func
 from archives_application import utilities, create_app
-from archives_application.models import  FileLocationModel, FileModel, WorkerTaskModel, ServerChangeModel
+from archives_application.models import  FileLocationModel, FileModel, ArchivedFileModel
 
 # Create the app context so that tasks can access app extensions even though
 # they are not running in the main thread.
@@ -233,6 +233,10 @@ class ServerEdit:
             
             # If this was the last entry for this file_id, delete the file_id entry
             if not other_entries:
+                associated_archival_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_id).all()
+                for archival_event in associated_archival_events:
+                    archival_event.file_id = None
+                
                 db.session.query(FileModel)\
                     .filter(FileModel.file_id == file_id)\
                     .delete()
@@ -270,11 +274,15 @@ class ServerEdit:
                     # If this was the last entry for this file_id, delete the file_id entry
                     other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
                     if not other_locations:
+                        # update any associated archival events so file_id is NULL
+                        associated_archival_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_id).all()
+                        for archival_event in associated_archival_events:
+                            archival_event.file_id = None
+
                         file_entry = db.session.query(FileModel).filter(FileModel.id == file_id).first()
                         db.session.delete(file_entry)
                         db.session.commit()
                         deletion_log['files_entries_effected'] = 1
-
 
             else:
                 server_dirs = utilities.split_path(self.old_path)[file_server_root_index:]
@@ -288,6 +296,11 @@ class ServerEdit:
                     deletion_log['location_entries_effected'] += 1
                     other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
                     if not other_locations:
+                        # update any associated archival events so file_id is NULL
+                        associated_archival_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_id).all()
+                        for archival_event in associated_archival_events:
+                            archival_event.file_id = None
+
                         file_entry = db.session.query(FileModel).filter(FileModel.id == file_id).first()
                         db.session.delete(file_entry)
                         db.session.commit()
