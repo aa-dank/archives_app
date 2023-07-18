@@ -96,7 +96,6 @@ class ServerEdit:
                 os.remove(self.old_path)
                 self.change_executed = True
                 self.files_effected = 1
-                #self.add_deletion_to_db_task(task_id=f"{self.add_deletion_to_db_task.__name__}_test01")
                 enqueueing_results = utilities.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
                                                                 enqueued_function=self.add_deletion_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed

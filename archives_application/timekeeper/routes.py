@@ -594,6 +594,17 @@ def archived_metrics_dashboard():
 
     return flask.render_template('archiving_metrics.html', title='Archiving Metrics', plot_image=plot_jpg_url)
 
+@timekeeper.route('/archiver_welcome', methods=['GET', 'POST'])
+@login_required
+def archiver_metrics(archiver_id):
+
+    def generate_daily_stats_dfs(start_date:datetime=None, end_date:datetime=None, id:int=None):
+        # get all the archive events for the given period
+        period_archiving_events_query = ArchivedFileModel.query.filter(ArchivedFileModel.date_archived.between(start_date_str, end_date_str))
+        period_query_df = utilities.db_query_to_df(query=period_archiving_events_query)
+        pass
+    pass
+
 
 
 
