@@ -256,12 +256,20 @@ def user_path_to_app_path(path_from_user, location_path_prefix):
         """
         def url_regex_matches(pth: str, url_patterns):
             network_re_matches = []
-            [network_re_matches.append(*re.findall(pattern, pth)) for pattern in url_patterns if re.findall(pattern, pth)]
+            [network_re_matches.extend(re.findall(pattern, pth)) for pattern in url_patterns if re.findall(pattern, pth)]
+            network_re_matches = list(set(network_re_matches))
             return network_re_matches
 
         # first find all instances in the path that match one of the network url patterns.
         url_regex_1 = r"([\w]{1,}[.]{1}[\w]{1,}[.]{1}[\w]{1,})"
-        network_url_patterns = [url_regex_1]
+        url_regex_2 = r"""
+        \b                  # Word boundary
+        (smb|nfs|ftp|ftps|)// # Protocol
+        (?:[-\w.]+|[\d.]+)? # Host (domain or IP) 
+        /[-\w.~/]+          # Path
+        \b                  # Word boundary
+        """
+        network_url_patterns = [url_regex_1, url_regex_2]
         pattern_matches = url_regex_matches(pth=some_path, url_patterns=network_url_patterns)
 
         # if no regex patterns match anything, We have confirmed it is not a network path
