@@ -1,3 +1,4 @@
+import bz2
 import flask
 import flask_sqlalchemy
 import os
@@ -8,11 +9,13 @@ from datetime import datetime, timedelta
 from typing import Dict
 from archives_application import utilities, create_app
 from archives_application.models import WorkerTaskModel
-from archives_application.main.routes import DB_BACKUP_FILE_PREFIX, DB_BACKUP_FILE_TIMESTAMP_FORMAT
 
 # Create the app context so that tasks can access app extensions even though
 # they are not running in the main thread.
 app = create_app()
+
+DB_BACKUP_FILE_PREFIX = "db_backup_"
+DB_BACKUP_FILE_TIMESTAMP_FORMAT = r"%Y%m%d%H%M%S"
 
 class AppCustodian:
     def __init__(self, temp_file_lifespan: int, db_backup_file_lifespan: int, task_records_lifespan_map: Dict[str, int]):
@@ -66,7 +69,9 @@ class AppCustodian:
                 except Exception as e:
                      error_dict = {"filepath": filepath, "error": e}
                      log["errors"].append(error_dict)
-            utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+
+            serializable_log = {k: str(v) if not isinstance(str(v), Exception) else v for k, v in log.items()}
+            utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=serializable_log)
             return log
 
 
@@ -141,3 +146,74 @@ def restart_app_task(queue_id: str, delay: int = 0):
             log["errors"].append(e)
         utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
         return log
+
+
+def db_backup_task(queue_id: str):
+    """
+    Worker task for sending pg_dump command to shell and saving a compressed backup to the server.
+    Resources:
+    https://stackoverflow.com/questions/63299534/backup-postgres-from-python-on-win10
+    https://stackoverflow.com/questions/43380273/pg-dump-pg-restore-password-using-python-module-subprocess
+    https://medium.com/poka-techblog/5-different-ways-to-backup-your-postgresql-database-using-python-3f06cea4f51
+
+    """
+    
+    def bz2_compress_file(input_filepath: str, output_filepath: str = None):
+        """
+        Compresses a file using bz2 compression.
+        :param input_filepath: the path to the file to be compressed
+        :param output_filepath: the path to the compressed file. If none is provided, the compressed file will be saved in the same directory as the input file.
+        """
+
+        if not output_filepath:
+            input_filepath_list = utilities.split_path(input_filepath)
+            filename = input_filepath_list[-1]
+            output_filepath = os.path.join(input_filepath_list[:-1], filename + '.bz2')
+
+        with open(input_filepath, 'rb') as f_in:
+            with bz2.open(output_filepath, 'wb') as f_out:
+                f_out.writelines(f_in)
+                return os.path.exists(output_filepath)
+            
+    with app.app_context():
+        try:
+            db = flask.current_app.extensions['sqlalchemy'].db
+            utilities.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            log = {"task_id": queue_id, "errors": []}
+            db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
+            timestamp = datetime.now().strftime(DB_BACKUP_FILE_TIMESTAMP_FORMAT)
+            temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
+            temp_backup_filename = f"{DB_BACKUP_FILE_PREFIX}{timestamp}.sql"
+            temp_backup_path = os.path.join(temp_files_directory, temp_backup_filename)
+            
+            # An example of desired shell pg_dump command:
+            # pg_dump postgresql://archives:password@localhost:5432/archives > /opt/app/data/Archive_Data/backup101.sql
+            db_backup_cmd = fr"""sudo pg_dump {db_url} > {temp_backup_path}"""
+            log["backup_command"] = db_backup_cmd
+            cmd_result = subprocess.run(db_backup_cmd,
+                                        shell=True,
+                                        stdin=subprocess.PIPE,
+                                        stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE,
+                                        text=True)
+            if cmd_result.stderr:
+                raise Exception(
+                    f"Backup command failed. Stderr from attempt to call pg_dump back-up command:\n{cmd_result.stderr}")
+            log["stdout"] = str(cmd_result.stdout)
+            db_backup_destination = flask.current_app.config.get("DATABASE_BACKUP_LOCATION")
+            destination_path = os.path.join(db_backup_destination, f"{DB_BACKUP_FILE_PREFIX}{timestamp}.sql.bz2")
+            log["backup_location"] = destination_path
+            log["uncompressed_size"] = os.path.getsize(temp_backup_path)
+            bz2_compress_file(temp_backup_path, destination_path)
+            os.remove(temp_backup_path)
+            log["compressed_size"] = os.path.getsize(destination_path)
+
+        except Exception as e:
+            log["errors"].append(e)
+
+        log = {k: str(val) for k, val in log.items() if hasattr(val, '__str__')} # Convert all values to strings to avoid JSON serialization errors
+        utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+        return log
+
+        
+    

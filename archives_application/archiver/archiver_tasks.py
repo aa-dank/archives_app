@@ -18,69 +18,77 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
     This function adds a file to the database.
     """
     with app.app_context():
-        db = flask.current_app.extensions['sqlalchemy'].db
-        utilities.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-        
-        file_hash = utilities.get_hash(filepath)
-        file_id = None
-        filename = utilities.split_path(filepath)[-1]
-        
-        # check if the file is already in the database and add it if it is not
-        while not file_id:
-            db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
-            if not db_file_entry:
-                file_ext = filename.split('.')[-1]
-                file_size = os.path.getsize(filepath)
-                new_file = FileModel(hash=file_hash, size=file_size, extension=file_ext)
-                db.session.add(new_file)
+        task_results = {'queue_id': queue_id, 'filepath': filepath}
+        try:
+            db = flask.current_app.extensions['sqlalchemy'].db
+            utilities.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            
+            file_hash = utilities.get_hash(filepath)
+            file_id = None
+            filename = utilities.split_path(filepath)[-1]
+            
+            # check if the file is already in the database and add it if it is not
+            while not file_id:
+                db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
+                if not db_file_entry:
+                    file_ext = filename.split('.')[-1]
+                    file_size = os.path.getsize(filepath)
+                    new_file = FileModel(hash=file_hash, size=file_size, extension=file_ext)
+                    db.session.add(new_file)
+                    db.session.commit()
+                    file_id = new_file.id #TODO does this value exist after the commit?
+                else:
+                    file_id = db_file_entry.id
+            
+            # extract the path from the root of the windows share
+            file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+            server_directories = filepath[:-(len(filename)-1)]
+            task_results['server_directories'] = server_directories # TODO remove this line after debugging
+            task_results['root_index'] = file_server_root_index # TODO remove this line after debugging
+            server_dirs_list = utilities.split_path(server_directories)[file_server_root_index:]
+            server_directories = os.path.join(*server_dirs_list)
+
+            # check if the file location is already in the database and add it if it is not
+            db_file_location_entry = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories == server_directories,
+                                                                                FileLocationModel.filename == filename).first()
+            
+            # if there is already already a file location that is the same as this loction,
+            # but the files are different, we remove the old file location and add the new one.
+            if db_file_location_entry and (db_file_location_entry.file_id != file_id):
+                db.session.delete(db_file_location_entry)
                 db.session.commit()
-                file_id = new_file.id #TODO does this value exist after the commit?
+                db_file_location_entry = None
+            
+            if not db_file_location_entry:
+                new_file_location = FileLocationModel(file_server_directories=server_directories,
+                                                    filename=filename,
+                                                    file_id=file_id,
+                                                    existence_confirmed = datetime.now(),
+                                                    hash_confirmed = datetime.now())
+                db.session.add(new_file_location)
+                db.session.commit()
+
+            # if the file is already in the database, update the existence_confirmed and hash_confirmed fields
             else:
-                file_id = db_file_entry.id
-        
-        # extract the path from the root of the windows share
-        file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
-        server_directories = filepath[:-len(filename)-1]
-        server_dirs_list = utilities.split_path(server_directories)[file_server_root_index:]
-        server_directories = os.path.join(*server_dirs_list)
+                db_file_location_entry.existence_confirmed = datetime.now()
+                db_file_location_entry.hash_confirmed = datetime.now()
+                db.session.commit()
 
-        # check if the file location is already in the database and add it if it is not
-        db_file_location_entry = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories == server_directories,
-                                                                            FileLocationModel.filename == filename).first()
+            # if adding the file to database is connected to archiving event, update associated archived_files entry   
+            if archiving:
+                search_path = os.path.join(server_directories, filename)
+                archived_file = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.destination_path.endswith(search_path),
+                                                                        ArchivedFileModel.filename == filename)\
+                                                                            .order_by(db.asc(ArchivedFileModel.date_archived)).first()
+                archived_file.file_id = file_id
+                db.session.commit()
+            task_results = {"file_id": file_id, "filepath": filepath}
+            utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_results)
+            return file_id
         
-        # if there is already already a file location that is the same as this loction,
-        # but the files are different, we remove the old file location and add the new one.
-        if db_file_location_entry and (db_file_location_entry.file_id != file_id):
-            db.session.delete(db_file_location_entry)
-            db.session.commit()
-            db_file_location_entry = None
-        
-        if not db_file_location_entry:
-            new_file_location = FileLocationModel(file_server_directories=server_directories,
-                                                  filename=filename,
-                                                  file_id=file_id,
-                                                  existence_confirmed = datetime.now(),
-                                                  hash_confirmed = datetime.now())
-            db.session.add(new_file_location)
-            db.session.commit()
-
-        # if the file is already in the database, update the existence_confirmed and hash_confirmed fields
-        else:
-            db_file_location_entry.existence_confirmed = datetime.now()
-            db_file_location_entry.hash_confirmed = datetime.now()
-            db.session.commit()
-
-        # if adding the file to database is connected to archiving event, update associated archived_files entry   
-        if archiving:
-            search_path = os.path.join(server_directories, filename)
-            archived_file = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.destination_path.endswith(search_path),
-                                                                       ArchivedFileModel.filename == filename)\
-                                                                        .order_by(db.asc(ArchivedFileModel.date_archived)).first()
-            archived_file.file_id = file_id
-            db.session.commit()
-        task_results = {"file_id": file_id, "filepath": filepath}
-        utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_results)
-        return file_id
+        except Exception as e:
+            task_results['error'] = str(e)
+            utilities.failed_task_subroutine(q_id=queue_id, sql_db=db, error=e)
 
 
 

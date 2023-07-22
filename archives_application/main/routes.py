@@ -15,9 +15,6 @@ from archives_application.models import *
 main = flask.Blueprint('main', __name__)
 
 
-DB_BACKUP_FILE_PREFIX = "db_backup_"
-DB_BACKUP_FILE_TIMESTAMP_FORMAT = r"%Y%m%d%H%M%S"
-
 
 def web_exception_subroutine(flash_message, thrown_exception, app_obj):
     """
@@ -53,33 +50,9 @@ def backup_database():
     or one can pass credentials to it in the request which is useful for a scheduled process
     @return:
     """
-
-    def make_postgresql_backup():
-
-        """
-        Subroutine for sending pg_dump command to shell
-        Resources:
-        https://stackoverflow.com/questions/63299534/backup-postgres-from-python-on-win10
-        https://stackoverflow.com/questions/43380273/pg-dump-pg-restore-password-using-python-module-subprocess
-        https://medium.com/poka-techblog/5-different-ways-to-backup-your-postgresql-database-using-python-3f06cea4f51
-
-        An example of desired command:
-        pg_dump postgresql://archives:password@localhost:5432/archives > /opt/app/data/Archive_Data/backup101.sql
-        """
-        db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
-        db_backup_destination = flask.current_app.config.get("DATABASE_BACKUP_LOCATION")
-        timestamp = datetime.now().strftime(DB_BACKUP_FILE_TIMESTAMP_FORMAT)
-        db_backup_destination = db_backup_destination + f"/{DB_BACKUP_FILE_PREFIX}{timestamp}.sql"
-        db_backup_cmd = fr"""sudo pg_dump {db_url} > {db_backup_destination}"""
-
-        cmd_result = subprocess.run(db_backup_cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True)
-
-        # if passing the pg_dump command to the shell failed...
-        if cmd_result.stderr:
-            raise Exception(
-                f"Backup command failed: Stderr from attempt to call pg_dump back-up command:\n{cmd_result.stderr}")
-        return cmd_result.stdout, cmd_result.stderr
+    
+    # import task here to avoid circular import
+    from archives_application.main.main_tasks import db_backup_task
 
 
     def api_exception_subroutine(response_message, thrown_exception):
@@ -91,35 +64,40 @@ def backup_database():
         """
         flask.current_app.logger.error(thrown_exception, exc_info=True)
         return flask.Response(response_message + "\n" + thrown_exception, status=500)
+    try:
+        
+        # first determine if the request is being made by an admin user
+        authenticated_to_make_request = False
+        has_admin_role = lambda usr: any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
 
-    has_admin_role = lambda usr: any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
+        if flask.request.args.get('user'):
+            user_param = flask.request.args.get('user')
+            password_param = flask.request.args.get('password')
+            user = UserModel.query.filter_by(email=user_param).first()
 
-    if flask.request.args.get('user'):
-        user_param = flask.request.args.get('user')
-        password_param = flask.request.args.get('password')
-        user = UserModel.query.filter_by(email=user_param).first()
+            # If there is a matching user to the request parameter, the password matches and that account has admin role...
+            if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
+                authenticated_to_make_request = True
 
-        # If there is a matching user to the request parameter, the password matches and that account has admin role...
-        if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
+        elif current_user:
+            if current_user.is_authenticated and has_admin_role(current_user):
+                authenticated_to_make_request = True
 
-            try:
-                make_postgresql_backup()
-            except Exception as e:
-                msg = "Error during function to backup the database:\n"
-                return api_exception_subroutine(msg, e)
-
-            return flask.Response("Database Back Up Successful", status=200)
-
-    elif current_user:
-        if current_user.is_authenticated and has_admin_role(current_user):
-            try:
-                make_postgresql_backup()
-            except Exception as e:
-                msg = "Error during function to backup the database:\n"
-                return api_exception_subroutine(msg, e)
-
-            flask.flash("Database backup successs.", 'info')
+        if authenticated_to_make_request:
+            enqueueing_result = enqueue_new_task(db=db,
+                                                 enqueued_function=db_backup_task,
+                                                 timeout=60)
+            job_id = enqueueing_result["task_id"]
+            if flask.request.args.get('user'):
+                return flask.Response(f"Database Back-up Task Enqueued. Job ID: {job_id}", status=200)
+            
+            flask.flash("Database Back-up Task Enqueued.", 'info')
             return flask.redirect(flask.url_for('main.home'))
+
+        return flask.Response("Unauthorized", status=401)
+
+    except Exception as e:
+        return api_exception_subroutine("Database Backup Failed", str(e))
 
 
 @main.route("/admin/maintenance", methods=['GET', 'POST'])
@@ -153,7 +131,8 @@ def app_maintenance():
                             'add_renaming_to_db_task': 180,
                             'db_backup_clean_up_task': 90,
                             'task_records_clean_up_task': 90,
-                            'temp_file_clean_up_task': 90}
+                            'temp_file_clean_up_task': 90,
+                            'db_backup_task': 180}
     
     custodian = AppCustodian(temp_file_lifespan=3,
                              task_records_lifespan_map=task_entry_lifespans,
