@@ -76,19 +76,24 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
 
             # if adding the file to database is connected to archiving event, update associated archived_files entry   
             if archiving:
+                #TODO need to test if this query is working correctly
                 search_path = os.path.join(server_directories, filename)
                 archived_file = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.destination_path.endswith(search_path),
                                                                         ArchivedFileModel.filename == filename)\
                                                                             .order_by(db.asc(ArchivedFileModel.date_archived)).first()
-                archived_file.file_id = file_id
+                if archived_file:
+                    archived_file.file_id = file_id
+                else:
+                    task_results['error'] = f'Could not find archived file with path {search_path} in database.'
                 db.session.commit()
-            task_results = {"file_id": file_id, "filepath": filepath}
+            task_results["file_id"] = file_id 
+            task_results["filepath"] = filepath}
             utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_results)
             return file_id
         
         except Exception as e:
             task_results['error'] = str(e)
-            utilities.failed_task_subroutine(q_id=queue_id, sql_db=db, error=e)
+            utilities.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_results)
 
 
 
