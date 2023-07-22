@@ -1,3 +1,4 @@
+import bz2
 import fitz
 import flask
 import flask_sqlalchemy
@@ -421,6 +422,19 @@ def complete_task_subroutine(q_id, sql_db, task_result):
     """
     # update the database to indicate that the task has completed
     task_db_updates = {"status": 'finished', "task_results": task_result, "time_completed":datetime.now()}
+    sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(task_db_updates)
+    sql_db.session.commit()
+
+
+def failed_task_subroutine(q_id, sql_db, task_result):
+    """
+    Updates the database to indicate that the task has failed.
+    This is meant to be called at after an exception is raised in a task sent to the rq worker.
+    :param q_id: the task id of the task being executed
+    :param sql_db: the database object
+    :param task_result: dicionary data from the task having run
+    """
+    task_db_updates = {"status": 'failed', "task_results": task_result, "time_completed":datetime.now()}
     sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(task_db_updates)
     sql_db.session.commit()
 

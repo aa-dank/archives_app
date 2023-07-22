@@ -138,7 +138,7 @@ class ArchivalFile:
             destination_dir_prefix = destination_dir.split(" ")[0] + " - "  # eg "F5 - ", "G12 - ", "H - ", etc
             destination_dir_parent_dir = utilities.split_path(large_template_destination)[0]
 
-            # if the destination directory is a large template child director...
+            # if the destination directory is a large template child directory...
             if not destination_dir_parent_dir == large_template_destination:
 
                 # need to extrapolate the parent directory prefix given the desired destination directory. eg for
