@@ -385,6 +385,7 @@ def enqueue_new_task(db, enqueued_function: callable, function_kwargs: dict = {}
 
     job_id = f"{enqueued_function.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
     function_kwargs['queue_id'] = job_id
+    timeout = timeout * 60 if timeout else None
     task = flask.current_app.q.enqueue_call(func=enqueued_function, 
                                             kwargs=function_kwargs, 
                                             job_id=job_id, 

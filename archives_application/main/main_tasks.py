@@ -204,6 +204,8 @@ def db_backup_task(queue_id: str):
             destination_path = os.path.join(db_backup_destination, f"{DB_BACKUP_FILE_PREFIX}{timestamp}.sql.bz2")
             log["backup_location"] = destination_path
             log["uncompressed_size"] = os.path.getsize(temp_backup_path)
+            
+            # Compress the backup file using bz2 compression
             bz2_compress_file(temp_backup_path, destination_path)
             os.remove(temp_backup_path)
             log["compressed_size"] = os.path.getsize(destination_path)
