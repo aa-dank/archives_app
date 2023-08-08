@@ -380,7 +380,16 @@ def inbox_item():
             flask.session['inbox_form_data'] = None
 
     except Exception as e:
-        return web_exception_subroutine(flash_message="Issue setting up inbox item for archiving: ",
+
+        m = "Issue setting up inbox item for archiving: "
+        
+        # Seems to be bug with the creation of the inbox path if the database (not the inbox host) is started after the application is started
+        if type(e) == TypeError:
+            m = f"""Issue setting up inbox item for archiving.
+            TypeError with unexpected Nonetype object may suggest the application is requiring a restart.
+            Addtional info --> Inbox path type: {str(type(flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")))}, User handle type: {str(type(get_user_handle()))}
+            Error:"""
+        return web_exception_subroutine(flash_message=m,
                                         thrown_exception=e,
                                         app_obj=flask.current_app)
 

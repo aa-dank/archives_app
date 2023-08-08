@@ -87,7 +87,7 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
                     task_results['error'] = f'Could not find archived file with path {search_path} in database.'
                 db.session.commit()
             task_results["file_id"] = file_id 
-            task_results["filepath"] = filepath}
+            task_results["filepath"] = filepath
             utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_results)
             return file_id
         
