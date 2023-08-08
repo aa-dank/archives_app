@@ -189,7 +189,7 @@ def db_backup_task(queue_id: str):
             # An example of desired shell pg_dump command:
             # pg_dump postgresql://archives:password@localhost:5432/archives > /opt/app/data/Archive_Data/backup101.sql
             postgres_executable_location = flask.current_app.config.get("POSTGRESQL_EXECUTABLES_LOCATION")
-            db_backup_cmd = fr"""sudo {postgres_executable_location}pg_dump {db_url} > {temp_backup_path}"""
+            db_backup_cmd = fr"""{postgres_executable_location}pg_dump {db_url} > {temp_backup_path}"""
             log["backup_command"] = db_backup_cmd
             cmd_result = subprocess.run(db_backup_cmd,
                                         shell=True,
