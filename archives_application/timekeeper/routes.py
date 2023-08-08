@@ -594,16 +594,20 @@ def archived_metrics_dashboard():
 
     return flask.render_template('archiving_metrics.html', title='Archiving Metrics', plot_image=plot_jpg_url)
 
-@timekeeper.route('/archiver_welcome', methods=['GET', 'POST'])
+@timekeeper.route("/metrics/<archiver_id>", methods=['GET', 'POST'])
 @login_required
+@utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def archiver_metrics(archiver_id):
 
-    def generate_daily_stats_dfs(start_date:datetime=None, end_date:datetime=None, id:int=None):
-        # get all the archive events for the given period
-        period_archiving_events_query = ArchivedFileModel.query.filter(ArchivedFileModel.date_archived.between(start_date_str, end_date_str))
-        period_query_df = utilities.db_query_to_df(query=period_archiving_events_query)
-        pass
+    # archivists should only be able to view their own metrics. Get unauthorized if they try to view another's
+    if 'ARCHIVIST' in current_user.roles:
+        current_user_id = UserModel.query.filter_by(email=current_user.email).first().id
+        if str(current_user_id) != str(archiver_id):
+            return flask.Response("Unauthorized", status=401)
+
     pass
+
+
 
 
 

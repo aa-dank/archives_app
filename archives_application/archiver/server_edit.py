@@ -433,7 +433,7 @@ class ServerEdit:
 
                 # if there is not an entry for the file in db, add it.
                 else:
-                    file_hash = utilities.get_file_hash(os.path.join(self.new_path, filename))
+                    file_hash = utilities.get_hash(os.path.join(self.new_path, filename))
                     file_entry = None
                     while not file_entry:
                         
