@@ -247,7 +247,7 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
         start_time = time.time()
         confirm_locations_log = {"Confirm Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
                                  "Errors": [],
-                                 "Files Missing": 0,
+                                 "Locations Missing": 0,
                                  "Files Removed": 0,
                                  "Files Confirmed": 0}
         
