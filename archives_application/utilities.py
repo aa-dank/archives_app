@@ -474,6 +474,9 @@ def db_query_to_df(query: flask_sqlalchemy.query.Query, dataframe_size_limit= No
     
     results = query.all()
     df = pd.DataFrame([row.__dict__ for row in results])
-    if '_sa_instance_state' in df.columns:
-        df = df.drop(columns=['_sa_instance_state'])
+    
+    # drop the sqlalchemy state column if it exists
+    state_col = '_sa_instance_state'
+    if state_col in df.columns:
+        df = df.drop(columns=[state_col])
     return df

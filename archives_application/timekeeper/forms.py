@@ -1,7 +1,7 @@
 import flask
 from flask_wtf import FlaskForm
 from archives_application.models import *
-from wtforms import SubmitField, TextAreaField, DateField, SelectField
+from wtforms import SubmitField, TextAreaField, DateField, SelectField, IntegerField
 from wtforms.validators import DataRequired, Email, EqualTo, ValidationError
 
 
@@ -15,6 +15,7 @@ class TimekeepingForm(FlaskForm):
 class TimeSheetForm(FlaskForm):
     timesheet_begin = DateField('Timesheet Start', validators=[DataRequired()])
     timesheet_end = DateField('Timesheet End', validators=[DataRequired()])
+    rolling_avg_window = IntegerField('Rolling Average Window')
     submit = SubmitField('Submit')
 
     def validate_timesheet_end(self, timesheet_end):

@@ -438,11 +438,11 @@ class ServerEdit:
                     while not file_entry:
                         
                         file_entry = db.session.query(FileModel)\
-                            .filter(FileModel.file_hash == file_hash).first()
+                            .filter(FileModel.hash == file_hash).first()
                         if not file_entry:
-                            file_entry = FileModel(file_hash=file_hash,
-                                                size=os.path.getsize(os.path.join(self.new_path, filename)),
-                                                extension=filename.split('.')[-1])
+                            file_entry = FileModel(hash=file_hash,
+                                                   size=os.path.getsize(os.path.join(self.new_path, filename)),
+                                                   extension=filename.split('.')[-1])
                             db.session.add(file_entry)
                             db.session.commit()
                             move_log['files_entries_effected'] += 1
