@@ -49,11 +49,6 @@ def api_exception_subroutine(response_message, thrown_exception):
     return flask.Response(response_message + "\n" + str(thrown_exception), status=500)
 
 
-def db_query_to_df(query: flask_sqlalchemy.query.Query):
-    results = query.all()
-    df = pd.DataFrame([row.__dict__ for row in results])
-    return df
-
 def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
     """
     Removes a file from the server and deletes the entry from the database

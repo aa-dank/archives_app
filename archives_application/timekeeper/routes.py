@@ -38,6 +38,11 @@ def web_exception_subroutine(flash_message, thrown_exception, app_obj):
 def db_query_to_df(query: flask_sqlalchemy.query.Query):
     results = query.all()
     df = pd.DataFrame([row.__dict__ for row in results])
+    
+    # Remove the sqlalchemy state column
+    sa = '_sa_instance_state'
+    if sa in df.columns:
+        df.drop(columns=[sa], inplace=True)
     return df
 
 
@@ -93,7 +98,7 @@ def hours_worked_in_day(day: datetime.date, user_id: int):
         # iterate over time in events...
         time_in_events_df = timesheet_df[timesheet_df['clock_in_event']]
         time_in_events_df.sort_values(by='datetime', inplace=True)
-        for idx, row in time_in_events_df.iterrows():
+        for _, row in time_in_events_df.iterrows():
             if not clock_ins_have_clock_outs:
                 break
 
@@ -594,21 +599,115 @@ def archived_metrics_dashboard():
 
     return flask.render_template('archiving_metrics.html', title='Archiving Metrics', plot_image=plot_jpg_url)
 
+
 @timekeeper.route("/metrics/<archiver_id>", methods=['GET', 'POST'])
 @login_required
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def archiver_metrics(archiver_id):
+    
+    def generate_metric_plot_dataframes(input_df: pd.DataFrame, date_range: pd.date_range, rolling_avg_days: int):
+        # convert the timestamp to a date
+        timestamp_date = lambda ts: ts.date()
+        input_df["date_archived"] = input_df["date_archived"].map(timestamp_date)
+        
+        #
+        date_groups = input_df.groupby("date_archived")
+        sizes = date_groups.size()
+        sizes.name = "total_files"
+        agg_df = pd.concat([date_groups.aggregate({"file_size": "sum"}), sizes], axis=1, join="outer")
+
+        # Use the date range to fill in missing dates
+        date_range = date_range[date_range.weekday < 5] # filter out weekends
+        date_range = date_range.map(timestamp_date) # convert to date
+        date_range_df = pd.DataFrame(index=date_range)
+        agg_df = pd.concat([date_range_df, agg_df], axis=1, join="outer")
+        agg_df = agg_df.fillna(0)
+
+        # calculate the rolling averages
+        agg_df["size_rolling_avg"] = agg_df["file_size"].rolling(window=rolling_avg_days, min_periods=rolling_avg_days).mean()
+        agg_df["files_rolling_avg"] = agg_df["total_files"].rolling(rolling_avg_days).mean()
+        agg_df = agg_df.dropna(subset=["size_rolling_avg", "files_rolling_avg"])
+        
+        # Create min-max normalized columns for file_size and size_rolling_avg
+        max_mb = max((agg_df["file_size"].max(), agg_df["size_rolling_avg"].max()))
+        norm_files_size = lambda f_size: f_size / max_mb
+        agg_df["file_size_norm"] = agg_df["file_size"].map(norm_files_size)
+        agg_df["size_rolling_avg_norm"] = agg_df["size_rolling_avg"].map(norm_files_size)
+
+        # use normalized columns to create equivalent columns scaled to be measured in "number of files"
+        # units used in the total_files column
+        max_files = max(agg_df["total_files"].max(), agg_df["files_rolling_avg"].max())
+        norm_to_files = lambda norm_score: norm_score * max_files
+        agg_df["file_size_as_files"] = agg_df["file_size_norm"].map(norm_to_files)
+        agg_df["size_rolling_avg_as_files"] = agg_df["size_rolling_avg_norm"].map(norm_to_files)
+
+        bars_df = pd.melt(agg_df.reset_index(),
+                          id_vars='index',
+                          value_vars=['total_files','file_size_as_files'],
+                          var_name='measure_type',
+                          value_name='files_count')
+        bars_df = bars_df.rename(columns={'index': 'Date', 'files_count': 'Files'})
+        bars_df['measure_type'] = bars_df['measure_type'].replace({'total_files': 'Files',
+                                                                   'file_size_as_files': 'MB of Files'})
+
+        lines_df = pd.melt(agg_df.reset_index(),
+                           id_vars='index',
+                           value_vars=['files_rolling_avg', 'size_rolling_avg_as_files'],
+                           var_name='measure_type',
+                           value_name='files_count')
+        lines_df = lines_df.rename(columns={'index': 'Date', 'files_count': 'Files'})
+        lines_df['measure_type'] = lines_df['measure_type'].replace({'files_rolling_avg': f'{rolling_avg_days} Day Rolling Average File Count',
+                                                                     'size_rolling_avg_as_files': f'{rolling_avg_days} Day Rolling Average Data Volume(MB)'})
+        return bars_df, lines_df
+    
 
     # archivists should only be able to view their own metrics. Get unauthorized if they try to view another's
-    if 'ARCHIVIST' in current_user.roles:
-        current_user_id = UserModel.query.filter_by(email=current_user.email).first().id
-        if str(current_user_id) != str(archiver_id):
-            return flask.Response("Unauthorized", status=401)
+    try:
+        if 'ADMIN' not in current_user.roles:
+            current_user_id = UserModel.query.filter_by(email=current_user.email).first().id
+            if str(current_user_id) != str(archiver_id):
+                return flask.Response("Unauthorized", status=401)
 
-    pass
+    except Exception as e:
+        web_exception_subroutine(flash_message="Error checking user roles:",
+                                 thrown_exception=e,
+                                 app_obj=current_app)    
+    
+    try:
+        default_chart_window = 30 # measured in days
+        rolling_avg_window = 10 # measured in days
+        query_start_date = datetime.now() - timedelta(days = default_chart_window)
+        query_start_date = query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        query_end_date = datetime.now()
+        query_end_date = query_end_date.replace(hour=23, minute=0, second=0, microsecond=0)
+        form = TimeSheetForm()
 
+        if form.validate_on_submit():
+            user_start_date = form.timesheet_begin.data
+            user_end_date = form.timesheet_end.data
+            query_start_date = datetime(year=user_start_date.year, month=user_start_date.month, day=user_start_date.day)
+            query_end_date = datetime(year=user_end_date.year, month=user_end_date.month, day=user_end_date.day)
+            if form.rolling_avg_window.data:
+                rolling_avg_window = form.rolling_avg_window.data
+        
+        # We start the query with a date that is the rolling_avg_window days before the chosen start date,
+        # so that the rolling average of the first included day can be calculated
+        query_start_date = query_start_date - timedelta(days=rolling_avg_window)
 
+        query = db.session.query(ArchivedFileModel)\
+            .filter(ArchivedFileModel.date_archived.between(query_start_date, query_end_date))
+        df = utilities.db_query_to_df(query= query)
+        archivist_df = df.query(f'archivist_id == {archiver_id}')
+        date_range = pd.date_range(start=query_start_date, end=query_end_date)
+        collective_bars_df, collective_lines_df = generate_metric_plot_dataframes(input_df=df,
+                                                                                  date_range=date_range,
+                                                                                  rolling_avg_days=rolling_avg_window)
+        archivist_bars_df, archivist_lines_df = generate_metric_plot_dataframes(input_df=archivist_df,
+                                                                                date_range=date_range,
+                                                                                rolling_avg_days=rolling_avg_window)
 
+    except Exception as e:
+        pass
 
 
 
