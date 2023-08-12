@@ -241,14 +241,14 @@ class ArchivalFile:
             # if more than one directory starts with the same project number...
             if len(dirs_matching_proj_num) > 1:
                 raise Exception(
-                    f"{len(dirs_matching_proj_num)} matching directories in {new_path} for project number {self.project_number}; expected 0 or 1.")
+                    f"{len(dirs_matching_proj_num)} matching directories in {new_path} for project number {self.project_number}; expected 0 or 1.\nThis is likely due to a duplicate project number in the archives.")
 
             # if no directories match the project number...
             if len(dirs_matching_proj_num) == 0:
                 dirs_matching_prefix = [dir_name for dir_name in xx_dir_dirs if prefix_in_dir_name(dir_name)]
                 if len(dirs_matching_prefix) > 1:
                     raise Exception(
-                        f"{len(dirs_matching_prefix)} matching directories in {new_path} for prefix for project number {self.project_number}; expected 0 or 1.")
+                        f"{len(dirs_matching_prefix)} matching directories in {new_path} for prefix for project number {self.project_number}; expected 0 or 1.\nThis is likely due to a duplicate project number in the archives.")
 
                 # if there is now project number or prefix directory at the 'xx' level, it will need to be made
                 if len(dirs_matching_prefix) == 0:
@@ -269,7 +269,7 @@ class ArchivalFile:
                                               proj_num_in_dir_name(dir_name)]
                     if len(dirs_matching_proj_num) > 1:
                         logging.exception(
-                            f"{len(dirs_matching_proj_num)} matching directories in {new_path} for project number {self.project_number}; expected 0 or 1.",
+                            f"{len(dirs_matching_proj_num)} matching directories in {new_path} for project number {self.project_number}; expected 0 or 1.\nThis is likely due to a duplicate project number in the archives.",
                             exc_info=True)
                         return ''
 
