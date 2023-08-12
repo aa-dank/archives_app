@@ -605,7 +605,7 @@ def archived_metrics_dashboard():
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def archiver_metrics(archiver_id):
     
-    def generate_metric_plot_dataframes(input_df: pd.DataFrame, date_range: pd.date_range, rolling_avg_days: int):
+    def generate_metric_plot_dataframes(input_df: pd.DataFrame, date_range: pd.core.indexes.datetimes.DatetimeIndex, rolling_avg_days: int):
         # convert the timestamp to a date
         timestamp_date = lambda ts: ts.date()
         input_df["date_archived"] = input_df["date_archived"].map(timestamp_date)
@@ -618,7 +618,7 @@ def archiver_metrics(archiver_id):
 
         # Use the date range to fill in missing dates
         date_range = date_range[date_range.weekday < 5] # filter out weekends
-        date_range = date_range.map(timestamp_date) # convert to date
+        date_range = date_range.date # convert to date
         date_range_df = pd.DataFrame(index=date_range)
         agg_df = pd.concat([date_range_df, agg_df], axis=1, join="outer")
         agg_df = agg_df.fillna(0)
@@ -647,7 +647,7 @@ def archiver_metrics(archiver_id):
                           var_name='measure_type',
                           value_name='files_count')
         bars_df = bars_df.rename(columns={'index': 'Date', 'files_count': 'Files'})
-        bars_df['measure_type'] = bars_df['measure_type'].replace({'total_files': 'Files',
+        bars_df['measure_type'] = bars_df['measure_type'].replace({'total_files': '# of Files',
                                                                    'file_size_as_files': 'MB of Files'})
 
         lines_df = pd.melt(agg_df.reset_index(),
@@ -660,6 +660,50 @@ def archiver_metrics(archiver_id):
                                                                      'size_rolling_avg_as_files': f'{rolling_avg_days} Day Rolling Average Data Volume(MB)'})
         return bars_df, lines_df
     
+
+    def metrics_plot_file(lines_df: pd.DataFrame, bars_df: pd.DataFrame, max_data: float, file_destination: str, archiver_name: str = None):
+        
+        def convert_tick_intervals(target_ticks, target_interval_max, converted_interval_max):
+            """
+            Converts a list of ticks to a new scale based on the max value of the new scale. 
+            Only works if both scales have the same min value (0).
+            :param target_ticks: list of ticks from the target scale
+            :param target_interval_max: max value of the target scale
+            :param converted_interval_max: max value of the converted scale
+            """
+            target_min = min(target_ticks)
+            target_max = max(target_ticks)
+            minmax_target_norm = lambda x: (x - target_min) / (target_max - target_min)
+            target_ticks_norm = [minmax_target_norm(x) for x in target_ticks]
+            target_norm_max = minmax_target_norm(target_interval_max)
+            converted_scale_max_tick = converted_interval_max/target_norm_max
+            converted_scale = lambda x: (x*converted_scale_max_tick)
+            converted_ticks = [converted_scale(x) for x in target_ticks_norm]
+            return converted_ticks
+        
+        plt.clf()
+        sns.set_theme(style="darkgrid")
+        fig, ax1 = plt.subplots(figsize=(30,10))
+        bar_colors = ["#007988", "#fdc700"] 
+        line_colors = ["#003c6c", "#f29813"]    
+        sns.barplot(data=bars_df, x='Date', y='Files', hue='measure_type', ax=ax1, palette=bar_colors)
+        sns.pointplot(data=lines_df, x='Date', y='Files', hue='measure_type', ax=ax1, palette=line_colors, linestyles='--')
+        ax1.set_xticklabels(labels=ax1.get_xticklabels(), rotation=45)
+        ax1.legend_.set_title('')
+        right_ticks = convert_tick_intervals(ax1.get_yticks(), max_files, max_data)
+        byte_to_mb = lambda x: x/1000000
+        right_ticks = [byte_to_mb(x) for x in right_ticks]
+        ax2 = ax1.twinx()
+        ax2.set_yticks(right_ticks)
+        ax2.grid(False)
+        ax2.set_ylabel('MB Archived')
+        title = f'Archiving Metrics for {archiver_name}' if archiver_name else 'Archiving Metrics'
+        plt.title(title)
+        plt.savefig(file_destination)
+        return file_destination
+
+
+
 
     # archivists should only be able to view their own metrics. Get unauthorized if they try to view another's
     try:
@@ -702,9 +746,21 @@ def archiver_metrics(archiver_id):
         collective_bars_df, collective_lines_df = generate_metric_plot_dataframes(input_df=df,
                                                                                   date_range=date_range,
                                                                                   rolling_avg_days=rolling_avg_window)
-        archivist_bars_df, archivist_lines_df = generate_metric_plot_dataframes(input_df=archivist_df,
-                                                                                date_range=date_range,
-                                                                                rolling_avg_days=rolling_avg_window)
+        files_max = max((collective_bars_df["Files"].max(), collective_lines_df["Files"].max()))
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        collective_filename = f"collective_metrics_{timestamp}.png"
+        collective_chart_path = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", collective_filename])
+        collective_chart_path = metrics_plot_file(lines_df=collective_lines_df,
+                                                  bars_df=collective_bars_df,
+                                                  max_data=files_max,
+                                                  file_destination=collective_chart_path)
+        pass
+
+        # if the archivist has no data for the selected date range, we don't bother with their individual chart
+        if archivist_df.shape[0] != 0:
+            archivist_bars_df, archivist_lines_df = generate_metric_plot_dataframes(input_df=archivist_df,
+                                                                                    date_range=date_range,
+                                                                                    rolling_avg_days=rolling_avg_window)
 
     except Exception as e:
         pass

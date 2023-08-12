@@ -271,6 +271,15 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
                         # if there are no other locations for this file, we delete entry in the files table
                         other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
                         if other_locations == []:
+                            
+                            # check for any archive events associated with this file. Update those events to remove their file_id.
+                            archive_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_id).all()
+                            if archive_events != []:
+                                for event in archive_events:
+                                    event.file_id = None
+                                db.session.commit()
+                            
+                            # delete the file entry in the database
                             db.session.query(FileModel).filter(FileModel.id == file_id).delete()
                             db.session.commit()
                             confirm_locations_log["Files Removed"] += 1
