@@ -711,7 +711,7 @@ def archiver_metrics(archiver_id):
         ax1.legend_.set_title('')
         max_files = max([bars_df["Files"].max(), lines_df["Files"].max()])
         right_ticks = convert_tick_intervals(ax1.get_yticks(), max_files, max_data)
-        byte_to_mb = lambda x: x/1000000
+        byte_to_mb = lambda x: round((x/(1024**2)), 3)
         right_ticks = [byte_to_mb(x) for x in right_ticks]
         ax2 = ax1.twinx()
         ax2.set_yticks(right_ticks)
@@ -742,7 +742,7 @@ def archiver_metrics(archiver_id):
         query_start_date = query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
         query_end_date = datetime.now()
         query_end_date = query_end_date.replace(hour=23, minute=0, second=0, microsecond=0)
-        collective_plot_url, archiver_plot_url = None, None
+        collective_plot_url, archiver_plot_url, archivist_total_data, archivist_total_files = None, None, None, None
         form = TimeSheetForm()
 
         if form.validate_on_submit():
@@ -798,16 +798,19 @@ def archiver_metrics(archiver_id):
             # Record image path to session so it can be deleted upon logout
             flask.session[current_user.email]['temporary files'].append(archiver_chart_path)
 
-            # For the given archivist, retrieve the total count odf archived files 
-            # and total quantity of data archived.
-            archivist_total_files = db.session.query(ArchivedFileModel)\
-                .filter(ArchivedFileModel.archivist_id == archiver_id)\
-                .count()
+        # For the given archivist, retrieve the total count odf archived files 
+        # and total quantity of data archived.
+        archivist_total_files = db.session.query(ArchivedFileModel)\
+            .filter(ArchivedFileModel.archivist_id == archiver_id)\
+            .count()
 
-            archivist_total_data = db.session.query(func.sum(ArchivedFileModel.file_size))\
-                .filter(ArchivedFileModel.archivist_id == archiver_id)\
-                .scalar()
+        archivist_total_data = db.session.query(func.sum(ArchivedFileModel.file_size))\
+            .filter(ArchivedFileModel.archivist_id == archiver_id)\
+            .scalar()
         
+        # convert archivist_total_data bytes to gigabytes and round to 3 decimal places
+        archivist_total_data = round((archivist_total_data / (1024**3)), 3)
+
         #TODO Will I and should I use these in the layout?
         start_date_str = query_start_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT'))
         end_date_str = query_end_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT'))
