@@ -1,0 +1,84 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+      <h2>Archiving Dashboard for {{ archivist_name }}</h2>
+        
+        {% if archivist_files_count %}
+        <div>
+            <h5>Total # of files archived: {{ archivist_files_count }}</h5>
+        </div>
+        {% endif %}
+        
+        {% if archivist_data_quantity %}
+        <div>
+            <h5>Total GB of files archived: {{ archivist_data_quantity }}</h5>
+        </div>
+        {% endif %}
+
+
+        <!-- If there is a total_plot value, we will render the image at the path in that parameter-->
+        <div>
+        <p>
+            Right-click and "Open image in new tab" to see a bigger version:
+        </p>
+        {% if total_plot %}
+            <img style="height: 100%; width: 100%; object-fit: contain" src="{{ total_plot }}">
+
+        {% endif %}    
+        </div>
+        <div>
+        {% if archivist_plot %}
+            <img style="height: 100%; width: 100%; object-fit: contain" src="{{ archivist_plot }}">
+        {% endif %}    
+        </div>            
+        
+        <form method="POST" action="" enctype="multipart/form-data">
+            {{ form.hidden_tag() }}
+            <fieldset class="form-group">
+                <legend class="border-bottom mb-4">Choose chart dates and rolling average window</legend>
+                <div class="form-group">
+                    {{ form.timesheet_begin.label(class="form-control-label") }}
+                    {% if form.timesheet_begin.errors %}
+                        {{ form.timesheet_begin(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.timesheet_begin.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.timesheet_begin(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    {{ form.timesheet_end.label(class="form-control-label") }}
+                    {% if form.timesheet_end.errors %}
+                        {{ form.timesheet_end(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.timesheet_end.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.timesheet_end(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    {{ form.rolling_avg_window.label(class="form-control-label") }}
+                    {% if form.rolling_avg_window.errors %}
+                        {{ form.rolling_avg_window(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.rolling_avg_window.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.rolling_avg_window(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+            </fieldset>
+            <div class="form-group">
+                {{ form.submit(class="btn btn-outline-info") }}
+            </div>
+        </form>
+    </div>
+{% endblock content %}

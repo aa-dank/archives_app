@@ -12,9 +12,8 @@ import seaborn as sns
 from dateutil import parser
 from flask import current_app
 from flask_login import login_required, current_user
-from sqlalchemy import and_
-
-from archives_application.timekeeper.forms import TimekeepingForm, TimeSheetForm, TimeSheetAdminForm
+from sqlalchemy import and_, func
+from .forms import TimekeepingForm, TimeSheetForm, TimeSheetAdminForm
 from archives_application import utilities
 from archives_application.models import UserModel, TimekeeperEventModel, ArchivedFileModel, db
 
@@ -44,6 +43,13 @@ def db_query_to_df(query: flask_sqlalchemy.query.Query):
     if sa in df.columns:
         df.drop(columns=[sa], inplace=True)
     return df
+
+
+def temp_file_url(filename: str): 
+    """
+    Pattern for getting the url for a temp file which has already been saved to the server.
+    """
+    return flask.url_for(r"static", filename="temp_files/" + filename)
 
 
 def daterange(start_date: datetime, end_date: datetime):
@@ -585,10 +591,10 @@ def archived_metrics_dashboard():
 
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         plot_jpg_filename = "total_prod_" + timestamp + ".jpg"
-        plot_jpg_path = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", plot_jpg_filename])
+        plot_jpg_path = utilities.create_temp_file_path(plot_jpg_filename)
         production_plot.savefig(plot_jpg_path)
 
-    plot_jpg_url = flask.url_for(r"static", filename="temp_files/" + utilities.split_path(plot_jpg_path)[-1])
+    plot_jpg_url = temp_file_url(utilities.split_path(plot_jpg_path)[-1])
 
     # Record image path to session so it can be deleted upon logout
     if not flask.session[current_user.email].get('temporary files'):
@@ -604,8 +610,20 @@ def archived_metrics_dashboard():
 @login_required
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def archiver_metrics(archiver_id):
+    """
+    Endpoint to display archiving metrics for a specific archivist.
+    """
+    
     
     def generate_metric_plot_dataframes(input_df: pd.DataFrame, date_range: pd.core.indexes.datetimes.DatetimeIndex, rolling_avg_days: int):
+        """
+        Generates the dataframes used to create the metrics plot from a query dataframe.
+        :param input_df: dataframe of archived files. Should already be filtered to only include files from desired dates.
+        :param date_range: pandas DatetimeIndex of dates to include in the plot.
+        :param rolling_avg_days: number of days to use for the rolling average.
+        :return: tuple of dataframes. First element is the dataframe used to create the bars in the plot. Second element
+        is the dataframe used to create the lines in the plot. Third element is the max value of the data used in the plot.
+        """
         # convert the timestamp to a date
         timestamp_date = lambda ts: ts.date()
         input_df["date_archived"] = input_df["date_archived"].map(timestamp_date)
@@ -657,8 +675,9 @@ def archiver_metrics(archiver_id):
                            value_name='files_count')
         lines_df = lines_df.rename(columns={'index': 'Date', 'files_count': 'Files'})
         lines_df['measure_type'] = lines_df['measure_type'].replace({'files_rolling_avg': f'{rolling_avg_days} Day Rolling Average File Count',
-                                                                     'size_rolling_avg_as_files': f'{rolling_avg_days} Day Rolling Average Data Volume(MB)'})
-        return bars_df, lines_df
+                                                                     'size_rolling_avg_as_files': f'{rolling_avg_days} Day Rolling Average Data Volume (MB)'})
+        max_data = max(agg_df["file_size"].max(), agg_df["size_rolling_avg"].max())        
+        return bars_df, lines_df, max_data
     
 
     def metrics_plot_file(lines_df: pd.DataFrame, bars_df: pd.DataFrame, max_data: float, file_destination: str, archiver_name: str = None):
@@ -690,6 +709,7 @@ def archiver_metrics(archiver_id):
         sns.pointplot(data=lines_df, x='Date', y='Files', hue='measure_type', ax=ax1, palette=line_colors, linestyles='--')
         ax1.set_xticklabels(labels=ax1.get_xticklabels(), rotation=45)
         ax1.legend_.set_title('')
+        max_files = max([bars_df["Files"].max(), lines_df["Files"].max()])
         right_ticks = convert_tick_intervals(ax1.get_yticks(), max_files, max_data)
         byte_to_mb = lambda x: x/1000000
         right_ticks = [byte_to_mb(x) for x in right_ticks]
@@ -697,12 +717,10 @@ def archiver_metrics(archiver_id):
         ax2.set_yticks(right_ticks)
         ax2.grid(False)
         ax2.set_ylabel('MB Archived')
-        title = f'Archiving Metrics for {archiver_name}' if archiver_name else 'Archiving Metrics'
+        title = f'Archiving Metrics for {archiver_name}' if archiver_name else 'Total Archiving Metrics'
         plt.title(title)
         plt.savefig(file_destination)
         return file_destination
-
-
 
 
     # archivists should only be able to view their own metrics. Get unauthorized if they try to view another's
@@ -724,6 +742,7 @@ def archiver_metrics(archiver_id):
         query_start_date = query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
         query_end_date = datetime.now()
         query_end_date = query_end_date.replace(hour=23, minute=0, second=0, microsecond=0)
+        collective_plot_url, archiver_plot_url = None, None
         form = TimeSheetForm()
 
         if form.validate_on_submit():
@@ -732,39 +751,78 @@ def archiver_metrics(archiver_id):
             query_start_date = datetime(year=user_start_date.year, month=user_start_date.month, day=user_start_date.day)
             query_end_date = datetime(year=user_end_date.year, month=user_end_date.month, day=user_end_date.day)
             if form.rolling_avg_window.data:
-                rolling_avg_window = form.rolling_avg_window.data
+                rolling_avg_window = int(form.rolling_avg_window.data)
         
         # We start the query with a date that is the rolling_avg_window days before the chosen start date,
         # so that the rolling average of the first included day can be calculated
         query_start_date = query_start_date - timedelta(days=rolling_avg_window)
-
         query = db.session.query(ArchivedFileModel)\
             .filter(ArchivedFileModel.date_archived.between(query_start_date, query_end_date))
         df = utilities.db_query_to_df(query= query)
         archivist_df = df.query(f'archivist_id == {archiver_id}')
         date_range = pd.date_range(start=query_start_date, end=query_end_date)
-        collective_bars_df, collective_lines_df = generate_metric_plot_dataframes(input_df=df,
-                                                                                  date_range=date_range,
-                                                                                  rolling_avg_days=rolling_avg_window)
-        files_max = max((collective_bars_df["Files"].max(), collective_lines_df["Files"].max()))
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        collective_filename = f"collective_metrics_{timestamp}.png"
-        collective_chart_path = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", collective_filename])
-        collective_chart_path = metrics_plot_file(lines_df=collective_lines_df,
-                                                  bars_df=collective_bars_df,
-                                                  max_data=files_max,
-                                                  file_destination=collective_chart_path)
-        pass
+        if archivist_df.shape[0] != 0:
+            collective_bars_df, collective_lines_df, collective_max_data = generate_metric_plot_dataframes(input_df=df,
+                                                                                                        date_range=date_range,
+                                                                                                        rolling_avg_days=rolling_avg_window)
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            collective_filename = f"collective_metrics_{timestamp}.png"
+            collective_chart_path = utilities.create_temp_file_path(collective_filename)
+            collective_chart_path = metrics_plot_file(lines_df=collective_lines_df,
+                                                    bars_df=collective_bars_df,
+                                                    max_data=collective_max_data,
+                                                    file_destination=collective_chart_path)
+            
+            collective_plot_url = temp_file_url(collective_filename)
+            # Record image path to session so it can be deleted upon logout
+            if not flask.session[current_user.email].get('temporary files'):
+                flask.session[current_user.email]['temporary files'] = []
+            
+            flask.session[current_user.email]['temporary files'].append(collective_chart_path)
+
 
         # if the archivist has no data for the selected date range, we don't bother with their individual chart
         if archivist_df.shape[0] != 0:
-            archivist_bars_df, archivist_lines_df = generate_metric_plot_dataframes(input_df=archivist_df,
-                                                                                    date_range=date_range,
-                                                                                    rolling_avg_days=rolling_avg_window)
+            archivist_bars_df, archivist_lines_df, archivist_max_data = generate_metric_plot_dataframes(input_df=archivist_df,
+                                                                                                        date_range=date_range,
+                                                                                                        rolling_avg_days=rolling_avg_window)
+            archiver_name = UserModel.query.filter_by(id=archiver_id).first().first_name
+            archiver_filename = f"{archiver_name}_metrics_{timestamp}.png"
+            archiver_chart_path = utilities.create_temp_file_path(archiver_filename)
+            archiver_chart_path = metrics_plot_file(lines_df=archivist_lines_df,
+                                                    bars_df=archivist_bars_df,
+                                                    max_data=archivist_max_data,
+                                                    file_destination=archiver_chart_path,
+                                                    archiver_name=archiver_name)
+            archiver_plot_url = temp_file_url(archiver_filename)
+            # Record image path to session so it can be deleted upon logout
+            flask.session[current_user.email]['temporary files'].append(archiver_chart_path)
+
+            # For the given archivist, retrieve the total count odf archived files 
+            # and total quantity of data archived.
+            archivist_total_files = db.session.query(ArchivedFileModel)\
+                .filter(ArchivedFileModel.archivist_id == archiver_id)\
+                .count()
+
+            archivist_total_data = db.session.query(func.sum(ArchivedFileModel.file_size))\
+                .filter(ArchivedFileModel.archivist_id == archiver_id)\
+                .scalar()
+        
+        #TODO Will I and should I use these in the layout?
+        start_date_str = query_start_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT'))
+        end_date_str = query_end_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT'))
+
+        return flask.render_template('archivist_dashboard.html',
+                                     form=form,
+                                     archivist_name=archiver_name,
+                                     archivist_files_count=archivist_total_files,
+                                     archivist_data_quantity=archivist_total_data,
+                                     total_plot= collective_plot_url,
+                                     archivist_plot= archiver_plot_url)
 
     except Exception as e:
-        pass
-
+        m = "Error creating or rendering dashboard:\n"
+        return web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=current_app)
 
 
 
