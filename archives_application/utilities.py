@@ -347,6 +347,13 @@ def pdf_preview_image(pdf_path, image_destination, max_width=1080):
     return output_path
 
 
+def create_temp_file_path(filename: str):
+    """
+    Pattern for creating a path for a temp file on the server.
+    """
+    return os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", filename])
+
+
 def get_hash(filepath, hash_algo=hashlib.sha1):
     """"
     This function takes a filepath and a hash algorithm as input and returns the hash of the file at the filepath

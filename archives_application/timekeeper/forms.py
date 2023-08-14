@@ -22,6 +22,9 @@ class TimeSheetForm(FlaskForm):
         if not timesheet_end.data > self.timesheet_begin.data:
             raise ValidationError("Must pick a timesheet start that occurs before the timesheet end.")
 
+    def validate_rolling_avg_window(self, rolling_avg_window):
+        if rolling_avg_window.data and rolling_avg_window.data <= 1:
+            raise ValidationError("Rolling average window must be greater than 1.")
 
 class TimeSheetAdminForm(FlaskForm):
     employee_email = SelectField('Employee Email', validators=[DataRequired()])

@@ -209,11 +209,10 @@ def upload_file():
     form = UploadFileForm()
     # set filing code choices from app config
     form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
-    temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
     if form.validate_on_submit():
         try:
             archival_filename = form.upload.data.filename
-            temp_path = os.path.join(temp_files_directory, archival_filename)
+            temp_path = utilities.create_temp_file_path(archival_filename)
             form.upload.data.save(temp_path)
 
             # raise exception if there is not the required fields filled out in the submitted form.
@@ -337,8 +336,6 @@ def inbox_item():
             return flask.redirect(flask.url_for('main.home'))
 
         preview_image_url = get_no_preview_placeholder_url()
-        temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
-
         # Create the file preview image if it is a pdf
         arch_file_preview_image_path = None
         arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
@@ -349,7 +346,7 @@ def inbox_item():
         # Copy file as preview of itself if the file is an image
         image_file_extensions = ['jpg', 'tiff', 'jpeg', 'tif']
         if arch_file_filename.split(".")[-1].lower() in image_file_extensions:
-            preview_path = os.path.join(temp_files_directory, arch_file_filename)
+            preview_path = utilities.create_temp_file_path(arch_file_filename)
             shutil.copy2(arch_file_path, preview_path)
             preview_image_url = flask.url_for(r"static",
                                               filename="temp_files/" + utilities.split_path(preview_path)[-1])
@@ -507,12 +504,11 @@ def archived_or_not():
 
 
     form = ArchivedOrNotForm()
-    temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
     if form.validate_on_submit():
         try:
             # Save file to temporary directory
             filename = form.upload.data.filename
-            temp_path = os.path.join(temp_files_directory, filename)
+            temp_path = utilities.create_temp_file_path(filename)
             form.upload.data.save(temp_path)
             file_hash = utilities.get_hash(filepath=temp_path)
 
@@ -796,7 +792,6 @@ def file_search():
 
 
     form = FileSearchForm()
-    temp_files_directory = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
     csv_filename_prefix = "search_results_"
     timestamp_format = r'%Y%m%d%H%M%S'
     html_table_row_limit = 1000
@@ -806,7 +801,7 @@ def file_search():
     if flask.request.args.get('timestamp'):
         try:
             timestamp = flask.request.args.get('timestamp')
-            csv_filepath = os.path.join(temp_files_directory, f'{csv_filename_prefix}{timestamp}.csv')
+            csv_filepath = utilities.create_temp_file_path(f'{csv_filename_prefix}{timestamp}.csv')
             if not os.path.exists(csv_filepath):
                 # reformat timestamp to be more human-readable
                 timestamp = datetime.strftime(datetime.strptime(timestamp, timestamp_format), r'%Y-%m-%d %H:%M:%S')
