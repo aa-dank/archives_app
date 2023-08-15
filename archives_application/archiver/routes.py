@@ -340,7 +340,8 @@ def inbox_item():
         arch_file_preview_image_path = None
         arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
         if arch_file_filename.split(".")[-1].lower() in ['pdf']:
-            arch_file_preview_image_path = utilities.pdf_preview_image(arch_file_path, temp_files_directory)
+            arch_file_preview_image_path = utilities.pdf_preview_image(pdf_path=arch_file_path,
+                                                                       image_destination=utilities.create_temp_file_path(''))
             preview_image_url = flask.url_for(r"static", filename = "temp_files/" + utilities.split_path(arch_file_preview_image_path)[-1])
 
         # Copy file as preview of itself if the file is an image
@@ -841,7 +842,7 @@ def file_search():
             search_df.rename(columns={'filename': 'Filename'}, inplace=True)
             timestamp = datetime.now().strftime(r'%Y%m%d%H%M%S')
             too_many_results = len(search_df) > html_table_row_limit
-            csv_filepath = os.path.join(temp_files_directory, f'{csv_filename_prefix}{timestamp}.csv')
+            csv_filepath = utilities.create_temp_file_path(filename=f'{csv_filename_prefix}{timestamp}.csv')
             search_df.to_csv(csv_filepath, index=False)
             search_df = search_df.head(html_table_row_limit)
             

@@ -223,6 +223,9 @@ def timekeeper_event():
                     db.session.add(event_model)
                     db.session.commit()
                     flask.flash(f'Successfully clocked in.', 'success')
+                    if 'ARCHIVIST' in current_user.roles:
+                        return flask.redirect(flask.url_for('timekeeper.archiver_dashboard', archiver_id=current_user_id))
+                    
                     return flask.redirect(flask.url_for('main.home'))
                 except Exception as e:
                     return web_exception_subroutine(flash_message="Error recording user clock-in event",
@@ -606,10 +609,10 @@ def archived_metrics_dashboard():
     return flask.render_template('archiving_metrics.html', title='Archiving Metrics', plot_image=plot_jpg_url)
 
 
-@timekeeper.route("/metrics/<archiver_id>", methods=['GET', 'POST'])
+@timekeeper.route("/archiver_dashboard/<archiver_id>", methods=['GET', 'POST'])
 @login_required
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
-def archiver_metrics(archiver_id):
+def archiver_dashboard(archiver_id):
     """
     Endpoint to display archiving metrics for a specific archivist.
     """
@@ -718,7 +721,7 @@ def archiver_metrics(archiver_id):
         ax2.grid(False)
         ax2.set_ylabel('MB Archived')
         title = f'Archiving Metrics for {archiver_name}' if archiver_name else 'Total Archiving Metrics'
-        plt.title(title)
+        plt.title(title, fontsize=20)
         plt.savefig(file_destination)
         return file_destination
 
@@ -743,6 +746,7 @@ def archiver_metrics(archiver_id):
         query_end_date = datetime.now()
         query_end_date = query_end_date.replace(hour=23, minute=0, second=0, microsecond=0)
         collective_plot_url, archiver_plot_url, archivist_total_data, archivist_total_files = None, None, None, None
+        archiver_name = UserModel.query.filter_by(id=archiver_id).first().first_name
         form = TimeSheetForm()
 
         if form.validate_on_submit():
@@ -761,7 +765,7 @@ def archiver_metrics(archiver_id):
         df = utilities.db_query_to_df(query= query)
         archivist_df = df.query(f'archivist_id == {archiver_id}')
         date_range = pd.date_range(start=query_start_date, end=query_end_date)
-        if archivist_df.shape[0] != 0:
+        if df.shape[0] != 0:
             collective_bars_df, collective_lines_df, collective_max_data = generate_metric_plot_dataframes(input_df=df,
                                                                                                         date_range=date_range,
                                                                                                         rolling_avg_days=rolling_avg_window)
@@ -786,7 +790,6 @@ def archiver_metrics(archiver_id):
             archivist_bars_df, archivist_lines_df, archivist_max_data = generate_metric_plot_dataframes(input_df=archivist_df,
                                                                                                         date_range=date_range,
                                                                                                         rolling_avg_days=rolling_avg_window)
-            archiver_name = UserModel.query.filter_by(id=archiver_id).first().first_name
             archiver_filename = f"{archiver_name}_metrics_{timestamp}.png"
             archiver_chart_path = utilities.create_temp_file_path(archiver_filename)
             archiver_chart_path = metrics_plot_file(lines_df=archivist_lines_df,
