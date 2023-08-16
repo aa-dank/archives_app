@@ -224,7 +224,7 @@ def timekeeper_event():
                     db.session.commit()
                     flask.flash(f'Successfully clocked in.', 'success')
                     if 'ARCHIVIST' in current_user.roles:
-                        return flask.redirect(flask.url_for('timekeeper.archiver_dashboard', archiver_id=current_user_id))
+                        return flask.redirect(flask.url_for('timekeeper.archiving_dashboard', archiver_id=current_user_id))
                     
                     return flask.redirect(flask.url_for('main.home'))
                 except Exception as e:
@@ -609,10 +609,10 @@ def archived_metrics_dashboard():
     return flask.render_template('archiving_metrics.html', title='Archiving Metrics', plot_image=plot_jpg_url)
 
 
-@timekeeper.route("/archiver_dashboard/<archiver_id>", methods=['GET', 'POST'])
+@timekeeper.route("/archiving_dashboard/<archiver_id>", methods=['GET', 'POST'])
 @login_required
 @utilities.roles_required(['ADMIN', 'ARCHIVIST'])
-def archiver_dashboard(archiver_id):
+def archiving_dashboard(archiver_id):
     """
     Endpoint to display archiving metrics for a specific archivist.
     """

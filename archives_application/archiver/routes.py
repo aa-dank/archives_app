@@ -182,8 +182,11 @@ def server_change():
                 new_path = form.new_directory.data
                 edit_type = 'CREATE'
 
-            server_edit = ServerEdit(server_location=archives_location, change_type=edit_type, user=user_email,
-                                  new_path=new_path, old_path=old_path)
+            server_edit = ServerEdit(server_location=archives_location,
+                                     change_type=edit_type,
+                                     user=user_email,
+                                     new_path=new_path,
+                                     old_path=old_path)
             server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit)
             save_server_change(server_edit)
 
@@ -249,6 +252,7 @@ def upload_file():
                 enqueue_new_task(enqueued_function=add_file_to_db_task,
                                  function_kwargs=add_file_kwargs,
                                  timeout=None)
+                
                 flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
                 return flask.redirect(flask.url_for('archiver.upload_file'))
 
@@ -335,6 +339,7 @@ def inbox_item():
             flask.flash("File has disappeared.", 'info')
             return flask.redirect(flask.url_for('main.home'))
 
+        preview_generated = False
         preview_image_url = get_no_preview_placeholder_url()
         # Create the file preview image if it is a pdf
         arch_file_preview_image_path = None
@@ -342,7 +347,8 @@ def inbox_item():
         if arch_file_filename.split(".")[-1].lower() in ['pdf']:
             arch_file_preview_image_path = utilities.pdf_preview_image(pdf_path=arch_file_path,
                                                                        image_destination=utilities.create_temp_file_path(''))
-            preview_image_url = flask.url_for(r"static", filename = "temp_files/" + utilities.split_path(arch_file_preview_image_path)[-1])
+            preview_image_url = utilities.create_temp_file_path(utilities.split_path(arch_file_preview_image_path)[-1])
+            preview_generated = True
 
         # Copy file as preview of itself if the file is an image
         image_file_extensions = ['jpg', 'tiff', 'jpeg', 'tif']
@@ -351,12 +357,12 @@ def inbox_item():
             shutil.copy2(arch_file_path, preview_path)
             preview_image_url = flask.url_for(r"static",
                                               filename="temp_files/" + utilities.split_path(preview_path)[-1])
-
+            preview_generated = True
         # If we made a preview image, record the path in the session so it can be removed upon logout
-        if arch_file_preview_image_path:
+        if preview_generated:
             if not flask.session[current_user.email].get('temporary files'):
                 flask.session[current_user.email]['temporary files'] = []
-            flask.session[current_user.email]['temporary files'].append(arch_file_preview_image_path)
+            flask.session[current_user.email]['temporary files'].append(preview_image_url)
 
         form = InboxItemForm()
         form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
@@ -426,7 +432,7 @@ def inbox_item():
             
             destination_filename = arch_file.assemble_destination_filename()
             # If a user enters a path to destination directory instead of File code and project number...
-            if form.destination_path.data:
+            if form.destination_path.data: #TODO make sure this is not a typo 
                 destination_path_list = utilities.split_path(form.destination_path.data)
                 if len(destination_path_list) > 1:
                     destination_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),

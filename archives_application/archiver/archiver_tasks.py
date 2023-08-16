@@ -42,7 +42,7 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
             
             # extract the path from the root of the windows share
             file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
-            server_directories = filepath[:-(len(filename)-1)]
+            server_directories = filepath[:-(len(filename)+1)]
             task_results['server_directories'] = server_directories # TODO remove this line after debugging
             task_results['root_index'] = file_server_root_index # TODO remove this line after debugging
             server_dirs_list = utilities.split_path(server_directories)[file_server_root_index:]
@@ -76,7 +76,6 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
 
             # if adding the file to database is connected to archiving event, update associated archived_files entry   
             if archiving:
-                #TODO need to test if this query is working correctly
                 search_path = os.path.join(server_directories, filename)
                 archived_file = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.destination_path.endswith(search_path),
                                                                         ArchivedFileModel.filename == filename)\
