@@ -20,8 +20,8 @@ google_creds_json = r'google_client_secret.json'
 
 # These lines are used to set the config file for the app. If it is not set correctly,
 # the first error will LIKELY be issues with connecting to the database.
-#config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
-config_json = r'deploy_app_config.json'
+config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
+#config_json = r'deploy_app_config.json'
 
 def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,
                                                               config_json_path=config_json)):
@@ -73,6 +73,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
         app.q = rq.Queue(connection=redis.from_url(app.config.get("REDIS_URL")))
 
     # add blueprints
+    # https://flask.palletsprojects.com/en/1.1.x/blueprints/
     from archives_application.users.routes import users
     from archives_application.archiver.routes import archiver
     from archives_application.main.routes import main

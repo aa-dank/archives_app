@@ -60,7 +60,7 @@
         <div class="col-md-4">
           <div class="content-section">
             <h3>Quick Navigation</h3>
-            <p class='text-muted'>Most Commonly Used Features
+            <p class='text-muted'>
               <ul class="list-group">
                 <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.file_search')}}>Search Files</a></li>
                 <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.archived_or_not')}}>Archived already?</a></li>
@@ -72,6 +72,7 @@
                     {% if 'ARCHIVIST' in current_user.roles %}
                         <li class="list-group-item list-group-item-light"><a href={{url_for('timekeeper.timekeeper_event')}}>Timekeeper</a></li>
                         <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.inbox_item')}}>Archiving Inbox</a></li>
+                        <li class="list-group-item list-group-item-light"><a href={{url_for('timekeeper.archiving_dashboard', archiver_id=current_user.id)}}>Archiving Dashboard</a></li>
                     {% endif %}
                     <li class="list-group-item list-group-item-light"><a href={{url_for('users.account')}}>Account Info</a></li>
                     {% if 'ARCHIVIST' in current_user.roles or 'USER' in current_user.roles %}
@@ -82,7 +83,6 @@
                     <li class="list-group-item list-group-item-light"><a href={{url_for('users.register')}}>Registration</a></li>
                 {% endif %}
                 <li class="list-group-item list-group-item-light"><a href="https://docs.google.com/document/d/1yy3XgJllCiNdm8FGLWMLWUPVgEc9Ph-WgH7-CufENyk/edit?usp=sharing">Documentation</a></li>
-                <li class="list-group-item list-group-item-light">...more coming soon.</li>
               </ul>
             </p>
           </div>
