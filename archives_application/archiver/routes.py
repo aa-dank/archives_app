@@ -346,18 +346,27 @@ def inbox_item():
         arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
         if arch_file_filename.split(".")[-1].lower() in ['pdf']:
             arch_file_preview_image_path = utilities.pdf_preview_image(pdf_path=arch_file_path,
-                                                                       image_destination=utilities.create_temp_file_path(''))
-            preview_image_url = utilities.create_temp_file_path(utilities.split_path(arch_file_preview_image_path)[-1])
+                                                                       image_destination=utilities.create_temp_file_path(''),
+                                                                       )
+            preview_image_url = flask.url_for(r"static", filename="temp_files/" + utilities.split_path(arch_file_preview_image_path)[-1])
             preview_generated = True
 
-        # Copy file as preview of itself if the file is an image
-        image_file_extensions = ['jpg', 'tiff', 'jpeg', 'tif']
+        # if the file is a tiff, create a preview image that can be rendered in html
+        tiff_file_extensions = ['tif', 'tiff']
+        if arch_file_filename.split(".")[-1].lower() in tiff_file_extensions:
+            arch_file_preview_image_path = utilities.convert_tiff(tiff_path=arch_file_path,
+                                                                  destination_directory=utilities.create_temp_file_path(''),
+                                                                  output_file_type='png')
+            preview_image_url = flask.url_for(r"static", filename="temp_files/" + utilities.split_path(arch_file_preview_image_path)[-1])
+
+        # If the filetype can be rendered natively in html, copy file as preview of itself if the file is an image
+        image_file_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp']
         if arch_file_filename.split(".")[-1].lower() in image_file_extensions:
             preview_path = utilities.create_temp_file_path(arch_file_filename)
             shutil.copy2(arch_file_path, preview_path)
-            preview_image_url = flask.url_for(r"static",
-                                              filename="temp_files/" + utilities.split_path(preview_path)[-1])
+            preview_image_url = flask.url_for(r"static", filename="temp_files/" + utilities.split_path(preview_path)[-1])
             preview_generated = True
+        
         # If we made a preview image, record the path in the session so it can be removed upon logout
         if preview_generated:
             if not flask.session[current_user.email].get('temporary files'):
@@ -368,7 +377,7 @@ def inbox_item():
         form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
 
         # If the flask.session has data previously entered in this form, then re-enter it into the form before rendering
-        # it in html
+        # it in html.
         if flask.session.get(current_user.email) and flask.session.get(current_user.email).get('inbox_form_data'):
             sesh_data = flask.session.get(current_user.email).get('inbox_form_data')
             form.project_number.data = sesh_data.get('project_number')
