@@ -5,6 +5,7 @@ import random
 import shutil
 from sqlalchemy import text, func
 from archives_application import utilities, create_app
+from archives_application.archiver import archiver_tasks
 from archives_application.models import  FileLocationModel, FileModel, ArchivedFileModel
 
 # Create the app context so that tasks can access app extensions even though
@@ -179,11 +180,14 @@ class ServerEdit:
                     self.change_executed = True
                 
                 # for testing:
-                # db_edit = self.add_move_to_db_task(queue_id=f"{self.add_deletion_to_db_task.__name__}_test{random.randint(1, 1000)}")
+                #db_edit = self.add_move_to_db_task(queue_id=f"{self.add_deletion_to_db_task.__name__}_test{random.randint(1, 1000)}")
+                #return db_edit
+                
                 enqueueing_results = utilities.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
                                                                 enqueued_function=self.add_move_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
                 return enqueueing_results
+            
             except Exception as e:
                 if type(e) == shutil.Error:
                     e_str = f"Exception trying to move the directory. Is there a collision with an existing file/directory? If it is permissions issue, consider that it might be someone using a directory that would be changed \n{e}"
@@ -486,6 +490,25 @@ class ServerEdit:
                         db.session.delete(location_entry)
                         move_log['location_entries_effected'] += 1
                     db.session.commit()
+
+                # check that all of the moved files are in the database by checking if they are in the effected_location_entries
+                # query results. If they are not, add them to the database.
+                move_result_path = os.path.join(*(new_path_list + [old_path_list[-1]]))
+                for root, _, files in os.walk(move_result_path):
+                    for relocated_file in files:
+                        located_in_db = False
+                        root_server_dirs = os.path.join(*utilities.split_path(root)[file_server_root_index:])
+                        for location_entry in effected_location_entries:
+                            if location_entry.filename == relocated_file and location_entry.file_server_directories == root_server_dirs:
+                                located_in_db = True
+                                break
+                        
+                        if not located_in_db:
+                            task_kwargs = {'filepath': os.path.join(root, relocated_file)}
+                            utilities.enqueue_new_task(db= db,
+                                                       enqueued_function=archiver_tasks.add_file_to_db_task,
+                                                       function_kwargs=task_kwargs)
+
 
             utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=move_log)
             return move_log
