@@ -12,7 +12,7 @@ import sys
 from datetime import datetime
 from flask_login import current_user
 from functools import wraps
-from PIL import Image
+from PIL import Image, ImageFilter
 from pathlib import Path, PureWindowsPath
 from sqlalchemy import select
 from sqlalchemy.sql.expression import func
@@ -345,6 +345,43 @@ def pdf_preview_image(pdf_path, image_destination, max_width=1080):
     page_img.save(output_path)
     fitz_doc.close()
     return output_path
+
+
+def convert_tiff(tiff_path: str, destination_directory: str = None, output_file_type: str = 'jpg', max_width=1080):
+    """
+    Converts a tiff file to a jpg or png file. If a destination directory is not provided, the converted file will be
+    saved in the same directory as the original file. If a destination directory is provided, the converted file will
+    be saved in that directory. The converted file will have the same name as the original file, except with the
+    extension changed to the output_file_type.
+    :param tiff_path: path to the tiff file to be converted
+    :param destination_directory: directory to save the converted file in
+    :param output_file_type: the type of file to convert to. Must be either 'jpg' or 'png'
+    :param max_width: the maximum width of the converted file in pixels
+    :return: path to the converted file
+    """
+    # We are setting the max image pixels to None because the default value is too small
+    # for some of the tiff files we are working with (blueprints).
+    Image.MAX_IMAGE_PIXELS = None
+
+    if output_file_type.lower() not in ['jpg', 'png']:
+        raise ValueError("output_file_type must be either 'jpg' or 'png'")
+    
+    if not destination_directory:
+        destination_directory = os.path.dirname(tiff_path)
+    
+    tiff_filename = os.path.basename(tiff_path)
+    converted_filename = ".".join(tiff_filename.split(".")[:-1]) + "." + output_file_type
+    converted_path = os.path.join(destination_directory, converted_filename)
+
+    with Image.open(tiff_path) as tiff:
+        
+        if output_file_type == 'jpg':
+            # not recommended to use pillow to convert tiff to jpg.
+            tiff.save(converted_path, 'JPEG', quality=90)
+        
+        else:
+            tiff.save(converted_path, output_file_type.upper())
+    return converted_path
 
 
 def create_temp_file_path(filename: str):
