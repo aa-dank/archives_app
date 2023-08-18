@@ -232,7 +232,7 @@ class ServerEdit:
             location_entry_removed = True
 
             other_entries = db.session.query(FileModel)\
-                .filter(FileModel.file_id == file_id)\
+                .filter(FileModel.id == file_id)\
                 .all()
             
             # If this was the last entry for this file_id, delete the file_id entry
@@ -242,7 +242,7 @@ class ServerEdit:
                     archival_event.file_id = None
                 
                 db.session.query(FileModel)\
-                    .filter(FileModel.file_id == file_id)\
+                    .filter(FileModel.id == file_id)\
                     .delete()
             db.session.commit()
             file_entry_removed = True
