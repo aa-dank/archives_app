@@ -91,7 +91,7 @@ class ServerChangeForm(FlaskForm):
             
             #check that the parent directory for new directory exists
             path_list = utilities.split_path(network_directory)[:-1]
-            parent_directory = utilities.join_path(path_list)
+            parent_directory = os.path.join(path_list)
             if not os.path.exists(parent_directory):
                 raise ValidationError(f"Parent directory doesn't exist:\n{parent_directory}")
 
