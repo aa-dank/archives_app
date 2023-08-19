@@ -285,7 +285,8 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
                     
                     else:
                         # if the file exists, we update the existence_confirmed date of this file_locations entry
-                        db.session.query(FileLocationModel).filter(FileLocationModel.id == file_location.id).update({"existence_confirmed": datetime.now()})
+                        db.session.query(FileLocationModel).filter(FileLocationModel.id == file_location.id)\
+                            .update({"existence_confirmed": datetime.now()})
                         db.session.commit()
                         confirm_locations_log["Files Confirmed"] += 1
                 
@@ -300,3 +301,105 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
         confirm_locations_log["Time Elapsed"] = str(time.time() - start_time) + "s"
         utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=confirm_locations_log)
         return confirm_locations_log
+
+
+def scrape_location_files_task(scrape_location: str, queue_id: str, recursively: bool = True, confirm_data: bool = True):
+    """
+    Reconcialiates the files in the database with the files in the scrape location. First, if confirm_data is True,
+    it checks if the files in the database are still in the scrape location. If they are not, it removes the relevant 
+    records. Then, it adds any files in the scrape location that are not in the database by enqueuing a task to add
+    the file to the database.
+    """
+    
+    with app.app_context():
+        db = flask.current_app.extensions['sqlalchemy'].db
+        file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+        location_scrape_log = {"queue_id": queue_id,
+                               "Locations Missing": 0,
+                               "Files Records Removed": 0,
+                               "Files Confirmed": 0,
+                               "Files Enqueued to Add": 0,
+                               "Errors": []}
+        relevant_file_data_list = []
+        if confirm_data:
+            try:
+                location_db_dirs_list = utilities.split_path(scrape_location)[file_server_root_index:]
+                query_dirs = os.path.join(*location_db_dirs_list)
+                archive_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+                relevant_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories.startswith(query_dirs)).all()
+                for location_record in relevant_locations:
+                    try:
+                        filepath = os.path.join(archive_location, location_record.file_server_directories, location_record.filename)
+                        
+                        # if the file no longer exists, we delete the entry in the database
+                        if not os.path.exists(filepath):
+                            location_scrape_log["Locations Missing"] += 1
+                            file_id = location_record.file_id
+                            db.session.delete(location_record)
+                            db.session.commit()
+                            
+                            # if there are no other locations for this file, we delete entry in the files table
+                            other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
+                            if other_locations == []:
+                                
+                                # check for any archive events associated with this file. Update those events to remove their file_id.
+                                archive_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_id).all()
+                                if archive_events != []:
+                                    for event in archive_events:
+                                        event.file_id = None
+                                    db.session.commit()
+                                
+                                # delete the file entry in the database
+                                db.session.query(FileModel).filter(FileModel.id == file_id).delete()
+                                db.session.commit()
+                                location_scrape_log["Files Records Removed"] += 1
+                        
+                        else:
+                            db.session.query(FileLocationModel).filter(FileLocationModel.id == location_record.id)\
+                                .update({"existence_confirmed": datetime.now()})
+                            db.session.commit()
+                            location_scrape_log["Files Confirmed"] += 1
+                    
+                    except Exception as e:
+                        db.session.rollback()
+                        e_dict = {"Location": location_record.file_server_directories,
+                                "filename": location_record.filename,
+                                "Exception": str(e)}
+                        location_scrape_log["Errors"].append(e_dict)
+
+                # populate list of file data that is already in the database        
+                relevant_file_data_list = [(location_record.file_server_directory, location_record.filename) for location_record in relevant_locations]
+
+            except Exception as e:
+                db.session.rollback()
+                e_dict = {"Location": file_location.file_server_directories,
+                            "filename": file_location.filename,
+                            "Exception": str(e)}
+                location_scrape_log["Errors"].append(e_dict)
+
+        # Iterate through the files in the scrape location and add them to the database if they are not already there
+        # by enqueuing a task to add the file to the database.
+        for root, _, files in os.walk(scrape_location):
+            for file in files:
+                try:
+                    if confirm_data:
+                        server_dirs_list = utilities.split_path(root)[file_server_root_index:]
+                        server_dirs = os.path.join(*server_dirs_list)
+                        if (server_dirs, file) in relevant_file_data_list:
+                            continue
+                    
+                    location_scrape_log["Files Enqueued to Add"] += 1
+                    filepath = os.path.join(root, file)
+                    add_file_params = {"filepath": filepath}
+                    utilities.enqueue_new_task(db=db,
+                                            enqueued_function=add_file_to_db_task, 
+                                            function_kwargs=add_file_params)
+                
+                except Exception as e:
+                    e_dict = {"Location": root,
+                              "filename": file,
+                              "Exception": str(e)}
+                    location_scrape_log["Errors"].append(e_dict)
+            
+            if scrape_location == root and not recursively:
+                break

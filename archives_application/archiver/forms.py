@@ -1,7 +1,7 @@
 import os
 import flask
 from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField, SelectField
+from wtforms import StringField, SubmitField, SelectField, BooleanField
 from wtforms.validators import DataRequired, ValidationError
 from flask_wtf.file import FileField, FileRequired
 from .. import utilities
@@ -48,6 +48,22 @@ class FileSearchForm(FlaskForm):
         if search_location.data:
             network_path = utilities.user_path_to_app_path(path_from_user=search_location.data,
                                                            location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
+            if not os.path.exists(network_path):
+                raise ValidationError(f"Search location doesn't exist: \n{search_location.data}")
+
+
+class ScrapeLocationForm(FlaskForm):
+    scrape_location = StringField('Scrape Location', validators=[DataRequired()])
+    recursive = BooleanField('Recursive', default=True)
+    submit = SubmitField('Scrape')
+
+    def validate_search_location(self, search_location):
+        """
+        Ensures that the search location exists
+        """
+        if search_location.data:
+            network_path = utilities.user_path_to_app_path(path_from_user=search_location.data,
+                                                        location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
             if not os.path.exists(network_path):
                 raise ValidationError(f"Search location doesn't exist: \n{search_location.data}")
 
