@@ -901,10 +901,8 @@ def scrape_location():
     from archives_application.archiver.archiver_tasks import scrape_location_files_task
 
     form = ScrapeLocationForm()
-    if form.validate_on_submit():\
+    if form.validate_on_submit():
         search_location = utilities.user_path_to_app_path(path_from_user=form.scrape_location.data,
                                                         location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
-        
         scrape_results = scrape_location_files_task(scrape_location=search_location,
-                                                    queue_id='test0022',
-                                                    file_server_root_index=)
+                                                    queue_id='test0022')
