@@ -5,6 +5,7 @@ import flask
 import os
 import time
 from datetime import timedelta, datetime
+from itertools import cycle
 from typing import Callable
 
 
@@ -128,11 +129,11 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
         start_location_found = False
         scrape_time_expired = False
         start_location_root_found = False
-        root_dirs_paths = [os.path.join(archives_location, d) for d in os.listdir(archives_location)]
+        root_dirs_paths = [os.path.join(archives_location, d) for d in os.listdir(archives_location) if os.path.isdir(os.path.join(archives_location, d))]
         
 
         # iterate through the root of the file share to find the root directory to start scrape from
-        for root_dir in root_dirs_paths:
+        for root_dir in cycle(root_dirs_paths):
             if scrape_time_expired:
                 break
 
@@ -148,7 +149,7 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
                 if timedelta(seconds=(time.time() - start_time)) >= scrape_time:
                     # process root to be agnostic to where the archives location is mounted
                     scrape_time_expired = True
-                    next_start = utilities.split_path(root)[file_server_root_index:]
+                    next_start                                                                                                                                                                                                                                                                                                                                                     = utilities.split_path(root)[file_server_root_index:]
                     scrape_log["Next Start Location"] = os.path.join(*next_start)
                     break
 
@@ -372,8 +373,8 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
 
             except Exception as e:
                 db.session.rollback()
-                e_dict = {"Location": file_location.file_server_directories,
-                            "filename": file_location.filename,
+                e_dict = {"Location": location_record.file_server_directories,
+                            "filename": location_record.filename,
                             "Exception": str(e)}
                 location_scrape_log["Errors"].append(e_dict)
 
