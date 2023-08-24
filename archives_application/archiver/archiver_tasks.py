@@ -1,6 +1,6 @@
 from archives_application import utilities, create_app
 from archives_application.models import ArchivedFileModel, FileLocationModel, FileModel, WorkerTaskModel
-
+from archives_application.archiver.routes import EXCLUDED_FILENAMES, EXCLUDED_FILE_EXTENSIONS
 import flask
 import os
 import time
@@ -312,8 +312,24 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
     the file to the database.
     """
     
+    def exclude_extensions(f_path, ext_list=EXCLUDED_FILE_EXTENSIONS):
+        """
+        checks filepath to see if it is using excluded extensions
+        """
+        filename = utilities.split_path(f_path)[-1]
+        return any([filename.endswith(ext) for ext in ext_list])
+
+
+    def exclude_filenames(f_path, excluded_names=EXCLUDED_FILENAMES):
+        """
+        excludes files with certain names
+        """
+        filename = utilities.split_path(f_path)[-1]
+        return filename in excluded_names
+    
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy'].db
+        utilities.initiate_task_subroutine(q_id=queue_id, sql_db=db)
         file_server_root_index = len(utilities.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
         location_scrape_log = {"queue_id": queue_id,
                                "Locations Missing": 0,
@@ -383,6 +399,12 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
         for root, _, files in os.walk(scrape_location):
             for file in files:
                 try:
+                    filepath = os.path.join(root, file)
+                    # If the file is excluded by one of the exclusion functions, move to next file.
+                    if exclude_filenames(filepath) or exclude_extensions(filepath):
+                        continue
+                    
+                    # If the file is already in our previous query results, we move to the next file.
                     if confirm_data:
                         server_dirs_list = utilities.split_path(root)[file_server_root_index:]
                         server_dirs = os.path.join(*server_dirs_list)
@@ -390,11 +412,10 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                             continue
                     
                     location_scrape_log["Files Enqueued to Add"] += 1
-                    filepath = os.path.join(root, file)
                     add_file_params = {"filepath": filepath}
                     utilities.enqueue_new_task(db=db,
-                                            enqueued_function=add_file_to_db_task, 
-                                            function_kwargs=add_file_params)
+                                               enqueued_function=add_file_to_db_task, 
+                                               function_kwargs=add_file_params)
                 
                 except Exception as e:
                     e_dict = {"Location": root,
@@ -404,3 +425,6 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
             
             if scrape_location == root and not recursively:
                 break
+        
+        utilities.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=location_scrape_log)
+        return location_scrape_log

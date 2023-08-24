@@ -21,6 +21,9 @@ from archives_application import db, bcrypt
 
 archiver = flask.Blueprint('archiver', __name__)
 
+EXCLUDED_FILENAMES = ['Thumbs.db', 'thumbs.db', 'desktop.ini']
+EXCLUDED_FILE_EXTENSIONS = ['DS_Store', '.ini']
+
 
 def web_exception_subroutine(flash_message, thrown_exception, app_obj):
     """
@@ -574,7 +577,7 @@ def retrieve_location_to_start_scraping():
     return location
 
 
-def exclude_extensions(f_path, ext_list=['DS_Store', '.ini']):
+def exclude_extensions(f_path, ext_list=EXCLUDED_FILE_EXTENSIONS):
     """
     checks filepath to see if it is using excluded extensions
     """
@@ -582,7 +585,7 @@ def exclude_extensions(f_path, ext_list=['DS_Store', '.ini']):
     return any([filename.endswith(ext) for ext in ext_list])
 
 
-def exclude_filenames(f_path, excluded_names=['Thumbs.db', 'thumbs.db', 'desktop.ini']):
+def exclude_filenames(f_path, excluded_names=EXCLUDED_FILENAMES):
     """
     excludes files with certain names
     """
@@ -904,5 +907,16 @@ def scrape_location():
     if form.validate_on_submit():
         search_location = utilities.user_path_to_app_path(path_from_user=form.scrape_location.data,
                                                         location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
-        scrape_results = scrape_location_files_task(scrape_location=search_location,
-                                                    queue_id='test0022')
+        
+        scrape_params = {'scrape_location': search_location,
+                         'recursively': form.recursive.data,
+                         'confirm_data': True}
+        nk_results = enqueue_new_task(enqueued_function=scrape_location_files_task,
+                                      function_kwargs=scrape_params)
+        id = nk_results.get("_id")
+        function_call = nk_results.get("description")
+        m = f"Scraping task has been successfully enqueued.\nID: {id}\nFunction Enqueued: {function_call}"
+        flask.flash(m, 'success')
+        return flask.redirect(flask.url_for('archiver.scrape_location'))
+    
+    return flask.render_template('scrape_location.html', form=form)
