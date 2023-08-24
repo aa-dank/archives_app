@@ -4,6 +4,7 @@ import flask
 import flask_sqlalchemy
 import hashlib
 import subprocess
+import random
 import re
 import os
 import pandas as pd
@@ -425,9 +426,17 @@ def enqueue_new_task(db, enqueued_function: callable, function_kwargs: dict = {}
     :param timeout: timeout for the function. Measured in minutes.
     :return: None
     """
+    def random_string(length=5):
+        chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+        return ''.join(random.choice(chars) for _ in range(length))
 
 
     job_id = f"{enqueued_function.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
+    
+    # Check if job_id already exists in the database. If it does, add a random string to the end of it.
+    while db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == job_id).first():
+        job_id = job_id + "_" + random_string()
+    
     function_kwargs['queue_id'] = job_id
     timeout = timeout * 60 if timeout else None
     task = flask.current_app.q.enqueue_call(func=enqueued_function, 

@@ -1,7 +1,7 @@
 import os
 import flask
 from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField, SelectField, BooleanField
+from wtforms import StringField, SubmitField, SelectField
 from wtforms.validators import DataRequired, ValidationError
 from flask_wtf.file import FileField, FileRequired
 from .. import utilities
@@ -54,7 +54,7 @@ class FileSearchForm(FlaskForm):
 
 class ScrapeLocationForm(FlaskForm):
     scrape_location = StringField('Scrape Location', validators=[DataRequired()])
-    recursive = BooleanField('Recursive', default=True)
+    recursive = SelectField('Recursive', choices=[('True', 'True'), ('False', 'False')], default='True')
     submit = SubmitField('Scrape')
 
     def validate_search_location(self, search_location):

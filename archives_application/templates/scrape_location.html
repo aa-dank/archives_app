@@ -1,0 +1,43 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <form method="POST" action="">
+            {{ form.hidden_tag() }}
+            <fieldset class="form-group">
+                <legend class="border-bottom mb-4">Scrape File Data</legend>
+                <p>This tool reconciles discrepancies between the file server and the database. Useful for recording changes made to the file server in Windows Explorer.</p>
+                <div class="form-group">
+                    <h6>{{ form.scrape_location.label(class="form-control-label") }}</h6>
+                    <p>(Case sensitive. Copy this from Windows File Explorer address bar.)</p>
+                    {% if form.scrape_location.errors %}
+                        {{ form.scrape_location(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.scrape_location.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.scrape_location(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                     <h6>{{ form.recursive.label(class="form-control-label") }}</h6>
+                    <p>(Not case sensitive.)</p>
+                        {% if form.recursive.errors %}
+                            {{ form.recursive(class="form-control form-control-lg is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in form.recursive.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ form.recursive(class="form-control form-control-lg") }}
+                        {% endif %}
+                </div>
+            </fieldset>
+            <div class="form-group">
+                {{ form.submit(class="btn btn-outline-info") }}
+            </div>
+        </form>
+    </div>
+{% endblock content %}
