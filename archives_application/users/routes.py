@@ -5,7 +5,7 @@ import requests
 from flask_login import login_user, logout_user, login_required, current_user
 from archives_application import db, bcrypt
 from archives_application.models import *
-from archives_application import utilities
+from archives_application import utils
 from archives_application.users.forms import *
 
 

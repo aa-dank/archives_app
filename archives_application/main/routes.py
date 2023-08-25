@@ -6,7 +6,7 @@ import subprocess
 import archives_application.app_config as app_config
 from flask_login import current_user
 from archives_application.main import forms
-from archives_application.utilities import roles_required, enqueue_new_task
+from archives_application.utils import roles_required, enqueue_new_task
 from archives_application import db, bcrypt
 from archives_application.models import *
 

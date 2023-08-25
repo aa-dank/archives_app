@@ -14,7 +14,7 @@ from flask import current_app
 from flask_login import login_required, current_user
 from sqlalchemy import and_, func
 from .forms import TimekeepingForm, TimeSheetForm, TimeSheetAdminForm
-from archives_application import utilities
+from archives_application import utils
 from archives_application.models import UserModel, TimekeeperEventModel, ArchivedFileModel, db
 
 timekeeper = flask.Blueprint('timekeeper', __name__)
@@ -144,7 +144,7 @@ def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str: st
 
 @timekeeper.route("/timekeeper", methods=['GET', 'POST'])
 @login_required
-@utilities.roles_required(['ADMIN', 'ARCHIVIST'])
+@utils.roles_required(['ADMIN', 'ARCHIVIST'])
 def timekeeper_event():
     """
     Main timekeeper endpoint that spits out html form for clocking in and clocking out. Clocking events
@@ -237,7 +237,7 @@ def timekeeper_event():
 
 @timekeeper.route("/timekeeper/<employee_id>", methods=['GET', 'POST'])
 @login_required
-@utilities.roles_required(['ADMIN', 'ARCHIVIST'])
+@utils.roles_required(['ADMIN', 'ARCHIVIST'])
 def user_timesheet(employee_id):
 
     form = TimeSheetForm()
@@ -322,7 +322,7 @@ def user_timesheet(employee_id):
 
 @timekeeper.route("/timekeeper/all", methods=['GET', 'POST'])
 @login_required
-@utilities.roles_required(['ADMIN', 'ARCHIVIST'])
+@utils.roles_required(['ADMIN', 'ARCHIVIST'])
 def all_timesheets():
     """
     Endpoint to display all timesheets for archivists.
@@ -441,7 +441,7 @@ def all_timesheets():
 
 @timekeeper.route("/timekeeper/admin", methods=['GET', 'POST'])
 @login_required
-@utilities.roles_required(['ADMIN'])
+@utils.roles_required(['ADMIN'])
 def choose_employee():
     try:
         form = TimeSheetAdminForm()
@@ -474,7 +474,7 @@ def choose_employee():
 
 @timekeeper.route("/timekeeper/aggregate_metrics")
 @login_required
-@utilities.roles_required(['ADMIN'])
+@utils.roles_required(['ADMIN'])
 def archived_metrics_dashboard():
 
     def generate_daily_chart_stats_df(start_date:datetime=None, end_date:datetime=None):
@@ -594,10 +594,10 @@ def archived_metrics_dashboard():
 
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         plot_jpg_filename = "total_prod_" + timestamp + ".jpg"
-        plot_jpg_path = utilities.create_temp_file_path(plot_jpg_filename)
+        plot_jpg_path = utils.create_temp_file_path(plot_jpg_filename)
         production_plot.savefig(plot_jpg_path)
 
-    plot_jpg_url = temp_file_url(utilities.split_path(plot_jpg_path)[-1])
+    plot_jpg_url = temp_file_url(utils.split_path(plot_jpg_path)[-1])
 
     # Record image path to session so it can be deleted upon logout
     if not flask.session[current_user.email].get('temporary files'):
@@ -611,7 +611,7 @@ def archived_metrics_dashboard():
 
 @timekeeper.route("/archiving_dashboard/<archiver_id>", methods=['GET', 'POST'])
 @login_required
-@utilities.roles_required(['ADMIN', 'ARCHIVIST'])
+@utils.roles_required(['ADMIN', 'ARCHIVIST'])
 def archiving_dashboard(archiver_id):
     """
     Endpoint to display archiving metrics for a specific archivist.
@@ -762,7 +762,7 @@ def archiving_dashboard(archiver_id):
         query_start_date = query_start_date - timedelta(days=rolling_avg_window)
         query = db.session.query(ArchivedFileModel)\
             .filter(ArchivedFileModel.date_archived.between(query_start_date, query_end_date))
-        df = utilities.db_query_to_df(query= query)
+        df = utils.db_query_to_df(query= query)
         archivist_df = df.query(f'archivist_id == {archiver_id}')
         date_range = pd.date_range(start=query_start_date, end=query_end_date)
         if df.shape[0] != 0:
@@ -771,7 +771,7 @@ def archiving_dashboard(archiver_id):
                                                                                                         rolling_avg_days=rolling_avg_window)
             timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
             collective_filename = f"collective_metrics_{timestamp}.png"
-            collective_chart_path = utilities.create_temp_file_path(collective_filename)
+            collective_chart_path = utils.create_temp_file_path(collective_filename)
             collective_chart_path = metrics_plot_file(lines_df=collective_lines_df,
                                                     bars_df=collective_bars_df,
                                                     max_data=collective_max_data,
@@ -791,7 +791,7 @@ def archiving_dashboard(archiver_id):
                                                                                                         date_range=date_range,
                                                                                                         rolling_avg_days=rolling_avg_window)
             archiver_filename = f"{archiver_name}_metrics_{timestamp}.png"
-            archiver_chart_path = utilities.create_temp_file_path(archiver_filename)
+            archiver_chart_path = utils.create_temp_file_path(archiver_filename)
             archiver_chart_path = metrics_plot_file(lines_df=archivist_lines_df,
                                                     bars_df=archivist_bars_df,
                                                     max_data=archivist_max_data,
