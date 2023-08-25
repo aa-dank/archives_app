@@ -2,7 +2,7 @@ import os
 import logging
 import shutil
 import typing
-from .. import utilities
+from .. import utils
 from dateutil import parser
 from datetime import datetime
 from collections import defaultdict
@@ -41,7 +41,7 @@ class ArchivalFile:
         self.datetime_archived = None
         self.file_code = None
         if destination_dir:
-            self.file_code = utilities.file_code_from_destination_dir(destination_dir)
+            self.file_code = utils.file_code_from_destination_dir(destination_dir)
         self.document_date = None
         if document_date:
             self.document_date = parser.parse(document_date)
@@ -52,7 +52,7 @@ class ArchivalFile:
         them from current filename to desired new filename
         :return:
         """
-        current_filename = utilities.split_path(self.current_path)[-1]
+        current_filename = utils.split_path(self.current_path)[-1]
         dest_filename = current_filename
         if self.new_filename:
             dest_filename = self.new_filename
@@ -134,9 +134,9 @@ class ArchivalFile:
                 return os.path.join(new_path, destination_filename)
 
             new_path_dirs = list_of_child_dirs(new_path)
-            destination_dir = utilities.split_path(large_template_destination)[-1]
+            destination_dir = utils.split_path(large_template_destination)[-1]
             destination_dir_prefix = destination_dir.split(" ")[0] + " - "  # eg "F5 - ", "G12 - ", "H - ", etc
-            destination_dir_parent_dir = utilities.split_path(large_template_destination)[0]
+            destination_dir_parent_dir = utils.split_path(large_template_destination)[0]
 
             # if the destination directory is a large template child directory...
             if not destination_dir_parent_dir == large_template_destination:
@@ -217,7 +217,7 @@ class ArchivalFile:
         if not self.cached_destination_path:
 
             # sept
-            xx_level_dir_prefix, project_num_prefix = utilities.prefixes_from_project_number(self.project_number)
+            xx_level_dir_prefix, project_num_prefix = utils.prefixes_from_project_number(self.project_number)
             root_directories_list = list_of_child_dirs(self.archives_location)
             matching_root_dirs = [dir_name for dir_name in root_directories_list if
                                   dir_name.lower().startswith(xx_level_dir_prefix.lower())]
@@ -333,10 +333,10 @@ class ArchivalFile:
 
         #if we don't have a file code, generate one from the destination
         if self.destination_dir and not self.file_code:
-            self.file_code = utilities.file_code_from_destination_dir(self.destination_dir)
+            self.file_code = utils.file_code_from_destination_dir(self.destination_dir)
 
         if not self.project_number:
-            self.project_number = utilities.project_number_from_path(self.get_destination_path())
+            self.project_number = utils.project_number_from_path(self.get_destination_path())
 
         attribute_dict = {"date_archived": date_stamp, "project_number": self.project_number,
                           "destination_path": self.get_destination_path(), "document_date": doc_date,
@@ -370,7 +370,7 @@ class ArchivalFile:
 
     def archive_in_destination(self):
 
-        destination_path_list = utilities.split_path(self.get_destination_path())
+        destination_path_list = utils.split_path(self.get_destination_path())
         destination_dir_path = os.path.join(*destination_path_list[:-1])
 
         if not os.path.exists(destination_dir_path):
