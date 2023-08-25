@@ -81,34 +81,6 @@ def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
     
     db.session.commit()
     return file_deleted
-    
-
-def enqueue_new_task(enqueued_function: callable, function_kwargs: dict = {}, timeout: Union[int, None] = None):
-    """
-    Adds a function to the rq task queue to be executed asynchronously
-    :param function: function to be executed
-    :param function_kwargs: keyword arguments for the function
-    :param timeout: timeout for the function. Measured in minutes.
-    :return: None
-    """
-
-    
-    job_id = f"{enqueued_function.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
-    function_kwargs['queue_id'] = job_id
-    task = flask.current_app.q.enqueue_call(func=enqueued_function, 
-                                            kwargs=function_kwargs, 
-                                            job_id=job_id, 
-                                            timeout=timeout)
-    new_task_record = WorkerTaskModel(task_id=job_id, 
-                                 time_enqueued=str(datetime.now()),
-                                 origin=task.origin,
-                                 function_name=enqueued_function.__name__,
-                                 status="queued")
-    db.session.add(new_task_record)
-    db.session.commit()
-    results = task.__dict__
-    results["task_id"] = job_id
-    return results
 
 
 def get_user_handle():
@@ -117,6 +89,14 @@ def get_user_handle():
     :return: string handle
     '''
     return current_user.email.split("@")[0]
+
+
+def serializablize_dict(some_dict: dict):
+    """
+    Converts a dictionary to a dictionary of strings, which can be serialized to json.
+    """
+    serial_dict = {k: v.strftime('%Y-%m-%d %H:%M:%S') if isinstance(v, datetime) else str(v) for k, v in some_dict.items()}
+    return serial_dict
 
 
 @archiver.route("/server_change", methods=['GET', 'POST'])
@@ -251,9 +231,9 @@ def upload_file():
             if archiving_successful:
                 # enqueue the task of adding the file to the database
                 add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': False} #TODO add archiving functionality
-                enqueue_new_task(enqueued_function=add_file_to_db_task,
-                                 function_kwargs=add_file_kwargs,
-                                 timeout=None)
+                nk_results = utilities.enqueue_new_task(enqueued_function=add_file_to_db_task,
+                                                        function_kwargs=add_file_kwargs,
+                                                        timeout=None)
                 
                 flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
                 return flask.redirect(flask.url_for('archiver.upload_file'))
@@ -476,9 +456,9 @@ def inbox_item():
 
                     # add the file to the database
                     add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': True}
-                    enqueue_new_task(enqueued_function=add_file_to_db_task,
-                                     function_kwargs=add_file_kwargs,
-                                     timeout=None)
+                    nk_results = utilities.enqueue_new_task(enqueued_function=add_file_to_db_task,
+                                                            function_kwargs=add_file_kwargs,
+                                                            timeout=None)
 
                     # make sure that the old file has been removed
                     if os.path.exists(arch_file_path):
@@ -625,7 +605,6 @@ def scrape_files():
 
     # If the request is authenticated, we can proceed to enqueue the task.
     if request_is_authenticated:
-        task_dict = {}
         try:
             # Retrieve scrape parameters
             scrape_location = retrieve_location_to_start_scraping()
@@ -643,24 +622,16 @@ def scrape_files():
                             "exclusion_functions": [exclude_extensions, exclude_filenames],
                             "scrape_time": scrape_time,
                             "queue_id": scrape_job_id}
-
-            task = flask.current_app.q.enqueue_call(func=scrape_file_data_task,
-                                                    kwargs=scrape_params,
-                                                    job_id= scrape_job_id,
-                                                    result_ttl=43200,
-                                                    timeout=scrape_time.seconds + 600)
-        
-            task_dict = {"task_id": task.id,
-                        "enqueued_at":str(task.enqueued_at),
-                        "origin": task.origin,
-                        "func_name": task.func.__name__}
+            nk_call_kwargs = {'result_ttl': 43200}
+            nk_results = utilities.enqueue_new_task(db=db,
+                                                    enqueued_function=scrape_file_data_task,
+                                                    function_kwargs=scrape_params,
+                                                    enqueue_call_kwargs=nk_call_kwargs,
+                                                    timeout=scrape_time.seconds + 60)
             
-            # Add task to database
-            new_task_record = WorkerTaskModel(task_id=task.id, time_enqueued=str(task.enqueued_at), origin=task.origin,
-                                        function_name=task.func.__name__, status="queued")
-            db.session.add(new_task_record)
-            db.session.commit()
-            return flask.Response(json.dumps(task_dict), status=200)
+            nk_results = {"enqueueing_results": serializablize_dict(nk_results),
+                          "scrape_task_params": serializablize_dict(scrape_params)}
+            return flask.Response(json.dumps(nk_results), status=200)
 
         except Exception as e:
             mssg = "Error enqueuing task"
@@ -744,12 +715,12 @@ def confirm_db_file_locations():
             confirming_time = timedelta(minutes=confirming_time)
             confirm_params = {"archive_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
                               "confirming_time": confirming_time}
-            nk_results = enqueue_new_task(enqueued_function=confirm_file_locations_task,
-                                          function_kwargs=confirm_params,
-                                          timeout=confirming_time.seconds + 600)
+            nk_results = utilities.enqueue_new_task(enqueued_function=confirm_file_locations_task,
+                                                    function_kwargs=confirm_params,
+                                                    timeout=confirming_time.seconds + 600)
             
             # prepare task enqueueing info for JSON serialization
-            nk_results = {k: v.strftime('%Y-%m-%d %H:%M:%S') if isinstance(v, datetime) else str(v) for k, v in nk_results.items()}
+            nk_results = serializablize_dict(nk_results)
             confirm_params['confirming_time'] = str(confirm_params['confirming_time'])
             confirm_dict = {"enqueueing_results": nk_results, "confirmation_task_params": confirm_params}
             return flask.Response(json.dumps(confirm_dict), status=200)
@@ -896,10 +867,11 @@ def file_search():
             
 
         
-
 @archiver.route("/scrape_location", methods=['GET', 'POST'])
-@utilities.roles_required(['ADMIN', 'ARCHIVIST'])
 def scrape_location():
+    """
+    Endpoint for scraping a file server location for file data and reconciling the data with the reality of the file server.
+    """
     # import task here to avoid circular import
     from archives_application.archiver.archiver_tasks import scrape_location_files_task
 
@@ -911,11 +883,12 @@ def scrape_location():
         scrape_params = {'scrape_location': search_location,
                          'recursively': form.recursive.data,
                          'confirm_data': True}
-        nk_results = enqueue_new_task(enqueued_function=scrape_location_files_task,
-                                      function_kwargs=scrape_params)
+        nk_results = utilities.enqueue_new_task(enqueued_function=scrape_location_files_task,
+                                                function_kwargs=scrape_params,
+                                                timeout=3600)
         id = nk_results.get("_id")
         function_call = nk_results.get("description")
-        m = f"Scraping task has been successfully enqueued.\nID: {id}\nFunction Enqueued: {function_call}"
+        m = f"Scraping task has been successfully enqueued. Function Enqueued: {function_call}"
         flask.flash(m, 'success')
         return flask.redirect(flask.url_for('archiver.scrape_location'))
     

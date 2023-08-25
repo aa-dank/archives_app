@@ -229,7 +229,8 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
 
                     except Exception as e:
                         print(str(e) + "\n" + file)
-                        db.session.rollback()
+                        if db.session.get('transaction') and db.session.transaction.nested:
+                            db.session.rollback()
                         e_dict = {"Filepath": file, "Exception": str(e)}
                         scrape_log["Errors"].append(e_dict)
 
@@ -292,7 +293,8 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
                         confirm_locations_log["Files Confirmed"] += 1
                 
                 except Exception as e:
-                    db.session.rollback()
+                    if db.session.get('transaction') and db.session.transaction.nested:
+                        db.session.rollback()
                     e_dict = {"Location": file_location.file_server_directories,
                             "filename": file_location.filename,
                             "Exception": str(e)}
@@ -378,17 +380,21 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                             location_scrape_log["Files Confirmed"] += 1
                     
                     except Exception as e:
-                        db.session.rollback()
+                        if db.session.get('transaction') and db.session.transaction.nested:
+                            db.session.rollback()
                         e_dict = {"Location": location_record.file_server_directories,
                                 "filename": location_record.filename,
                                 "Exception": str(e)}
                         location_scrape_log["Errors"].append(e_dict)
 
                 # populate list of file data that is already in the database        
-                relevant_file_data_list = [(location_record.file_server_directory, location_record.filename) for location_record in relevant_locations]
+                relevant_file_data_list = [(location_record.file_server_directories, location_record.filename) for location_record in relevant_locations]
 
             except Exception as e:
-                db.session.rollback()
+                # check if session is in 'committed' state. If not, rollback.
+                if db.session.get('transaction') and db.session.transaction.nested:
+                    db.session.rollback()
+
                 e_dict = {"Location": location_record.file_server_directories,
                             "filename": location_record.filename,
                             "Exception": str(e)}
@@ -416,7 +422,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                     utilities.enqueue_new_task(db=db,
                                                enqueued_function=add_file_to_db_task, 
                                                function_kwargs=add_file_params)
-                
+                    
                 except Exception as e:
                     e_dict = {"Location": root,
                               "filename": file,
