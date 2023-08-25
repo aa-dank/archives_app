@@ -417,7 +417,7 @@ def debug_printing(to_print):
     print(dt_stamp + "\n" + str(to_print), file=sys.stderr)
 
 
-def enqueue_new_task(db, enqueued_function: callable, function_kwargs: dict = {}, timeout: Union[int, None] = None):
+def enqueue_new_task(db, enqueued_function: callable, function_kwargs: dict = {}, enqueue_call_kwargs: dict = {}, timeout: Union[int, None] = None):
     """
     Adds a function to the rq task queue to be executed asynchronously. The function must have a paramater called 'queue_id' which will
     give the function access to the task id of the rq task. This can be used for updating the status of the task in the database.
@@ -435,19 +435,22 @@ def enqueue_new_task(db, enqueued_function: callable, function_kwargs: dict = {}
     
     # Check if job_id already exists in the database. If it does, add a random string to the end of it.
     while db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == job_id).first():
-        job_id = job_id + "_" + random_string()
+        job_id = f"{enqueued_function.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}_{random_string()}"
+        
     
     function_kwargs['queue_id'] = job_id
     timeout = timeout * 60 if timeout else None
-    task = flask.current_app.q.enqueue_call(func=enqueued_function, 
-                                            kwargs=function_kwargs, 
-                                            job_id=job_id, 
-                                            timeout=timeout)
-    new_task_record = WorkerTaskModel(task_id=job_id, 
-                                 time_enqueued=str(datetime.now()),
-                                 origin=task.origin,
-                                 function_name=enqueued_function.__name__,
-                                 status="queued")
+    enqueue_call_kwargs['job_id'] = job_id
+    enqueue_call_kwargs['timeout'] = timeout
+    enqueue_call_kwargs['func'] = enqueued_function
+    enqueue_call_kwargs['kwargs'] = function_kwargs
+
+    task = flask.current_app.q.enqueue_call(**enqueue_call_kwargs)
+    new_task_record = WorkerTaskModel(task_id=job_id,
+                                      time_enqueued=str(datetime.now()),
+                                      origin=task.origin,
+                                      function_name=enqueued_function.__name__,
+                                      status="queued")
     db.session.add(new_task_record)
     db.session.commit()
     results = task.__dict__

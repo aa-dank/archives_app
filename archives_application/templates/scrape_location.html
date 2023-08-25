@@ -22,7 +22,7 @@
                 </div>
                 <div class="form-group">
                      <h6>{{ form.recursive.label(class="form-control-label") }}</h6>
-                    <p>(Not case sensitive.)</p>
+                    <p>Recursive search will go through all nested directories in location.</p>
                         {% if form.recursive.errors %}
                             {{ form.recursive(class="form-control form-control-lg is-invalid") }}
                             <div class="invalid-feedback">
