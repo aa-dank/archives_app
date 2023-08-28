@@ -28,12 +28,12 @@ class ServerEdit:
         self.new_path = None
         if new_path:
             self.new_path = utils.user_path_to_app_path(path_from_user=new_path,
-                                                            location_path_prefix=server_location)
+                                                        location_path_prefix=server_location)
 
         self.old_path = None
         if old_path:
             self.old_path = utils.user_path_to_app_path(path_from_user=old_path,
-                                                            location_path_prefix=server_location)
+                                                        location_path_prefix=server_location)
             if not os.path.exists(self.old_path):
                 e_message = f"Path to asset does not exists: {self.new_path}\nEntered path: {old_path}"
                 raise Exception(e_message)
@@ -98,7 +98,7 @@ class ServerEdit:
                 self.change_executed = True
                 self.files_effected = 1
                 enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
-                                                                enqueued_function=self.add_deletion_to_db_task)
+                                                            enqueued_function=self.add_deletion_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
                 return enqueueing_results
 
@@ -112,7 +112,7 @@ class ServerEdit:
             shutil.rmtree(self.old_path)
             self.change_executed = True
             enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
-                                                            enqueued_function=self.add_deletion_to_db_task)
+                                                        enqueued_function=self.add_deletion_to_db_task)
             # for testing:
             #self.add_deletion_to_db_task(task_id=f"{self.add_deletion_to_db_task.__name__}_test01")
             enqueueing_results['change_executed'] = self.change_executed
@@ -146,7 +146,7 @@ class ServerEdit:
                 os.rename(self.old_path, self.new_path)
                 self.change_executed = True
                 enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
-                                                                enqueued_function=self.add_renaming_to_db_task)
+                                                            enqueued_function=self.add_renaming_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
             except Exception as e:
                 raise Exception(f"There was an issue trying to change the name. If it is permissions issue, consider that it might be someone using a directory that would be changed \n{e}")
@@ -506,8 +506,8 @@ class ServerEdit:
                         if not located_in_db:
                             task_kwargs = {'filepath': os.path.join(root, relocated_file)}
                             utils.enqueue_new_task(db= db,
-                                                       enqueued_function=archiver_tasks.add_file_to_db_task,
-                                                       function_kwargs=task_kwargs)
+                                                   enqueued_function=archiver_tasks.add_file_to_db_task,
+                                                   function_kwargs=task_kwargs)
 
 
             utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=move_log)

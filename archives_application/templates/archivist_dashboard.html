@@ -18,18 +18,20 @@
 
         <!-- If there is a total_plot value, we will render the image at the path in that parameter-->
         <div>
-        <p>
-            Right-click and "Open image in new tab" to see a bigger version:
-        </p>
-        {% if total_plot %}
-            <img style="height: 100%; width: 100%; object-fit: contain" src="{{ total_plot }}">
+            <hr>
+            <h5>Charts for {{ plot_start_date }} to {{ plot_end_date }}</h5>
+            <p>
+                Right-click and "Open image in new tab" to see a bigger version:
+            </p>
+            {% if total_plot %}
+                <img style="height: 100%; width: 100%; object-fit: contain" src="{{ total_plot }}">
 
-        {% endif %}    
-        </div>
-        <div>
-        {% if archivist_plot %}
-            <img style="height: 100%; width: 100%; object-fit: contain" src="{{ archivist_plot }}">
-        {% endif %}    
+            {% endif %}    
+            </div>
+            <div>
+            {% if archivist_plot %}
+                <img style="height: 100%; width: 100%; object-fit: contain" src="{{ archivist_plot }}">
+            {% endif %}    
         </div>            
         
         <form method="POST" action="" enctype="multipart/form-data">
