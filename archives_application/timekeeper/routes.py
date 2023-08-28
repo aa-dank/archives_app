@@ -4,15 +4,17 @@ from datetime import datetime, timedelta
 
 import flask
 import flask_sqlalchemy
-import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from dateutil import parser
+from typing import List
 from flask import current_app
 from flask_login import login_required, current_user
+from matplotlib import ticker
 from sqlalchemy import and_, func
+
+
 from .forms import TimekeepingForm, TimeSheetForm, TimeSheetAdminForm
 from archives_application import utils
 from archives_application.models import UserModel, TimekeeperEventModel, ArchivedFileModel, db
@@ -472,143 +474,6 @@ def choose_employee():
     return flask.render_template('timekeeper_admin.html', form=form)
 
 
-@timekeeper.route("/timekeeper/aggregate_metrics")
-@login_required
-@utils.roles_required(['ADMIN'])
-def archived_metrics_dashboard():
-
-    def generate_daily_chart_stats_df(start_date:datetime=None, end_date:datetime=None):
-        """
-
-        @param start_date:
-        @param end_date:
-        @return:
-        """
-
-        if not end_date:
-            end_date = datetime.now()
-
-        if not start_date:
-            start_date = end_date - timedelta(days=28)
-
-
-        start_date_str = start_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT'))
-        end_date_str = end_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT'))
-        query = ArchivedFileModel.query.filter(ArchivedFileModel.date_archived.between(start_date_str, end_date_str))
-
-        df = db_query_to_df(query=query)
-
-        #replace datetime timestamp with just the date
-        get_date = lambda dt: dt.date()
-        df["date_archived"] = df["date_archived"].map(get_date)
-
-        #groupby date to calculate sum of bytes archived and number of files archived on each day
-        day_groups = df.groupby('date_archived')
-        volume_sum_by_day = day_groups['file_size'].agg(np.sum)
-        docs_by_day = day_groups.size()
-        docs_by_day.name = "files_archived"
-        data_by_day_df = pd.concat([volume_sum_by_day, docs_by_day], axis=1)
-
-        bytes_to_megabytes = lambda b: b / 10000000
-        data_by_day_df["megabytes_archived"] = data_by_day_df["file_size"].map(bytes_to_megabytes)
-        data_by_day_df.drop(["file_size"], axis=1, inplace=True)
-        data_by_day_df.reset_index(level=0, inplace=True)
-
-        for date in daterange(start_date=start_date, end_date=end_date):
-            if date.weekday() in [5,6]:
-                continue
-
-            if not date in data_by_day_df["date_archived"]:
-                new_row_df = pd.DataFrame({"date_archived":[date.date()], "files_archived":[0], "megabytes_archived":[0]})
-                data_by_day_df = pd.concat([data_by_day_df, new_row_df])
-
-        data_by_day_df = data_by_day_df.sort_values(by=["date_archived"]).reset_index(drop=True)
-        return data_by_day_df
-
-    def archiving_production_barchart(df:pd.DataFrame):
-        # Function for formatting datetimes for disp[lay on the plot
-        reformat_dt_str = lambda x: parser.parse(x).strftime("%m/%d/%Y")
-
-        # retrieve plot title dates
-        first_date_str = str(df.loc[0]['date_archived'])
-        plot_start_str = reformat_dt_str(first_date_str)
-        last_date_str = str(df.loc[df.shape[0] - 1]['date_archived'])
-        plot_end_str = reformat_dt_str(last_date_str)
-
-
-        # plot settings
-        sns.set(font_scale=1.3)
-        sns.set_style("ticks")
-        fig = plt.figure(figsize=(15, 8))
-        width_scale = .45
-
-        # create bytes charts
-        bytes_axis = sns.barplot(x="date_archived", y="megabytes_archived", data=df)
-        bytes_axis.set(title=f"Files and Megabytes Archived from {plot_start_str} to {plot_end_str}",
-                       xlabel="Date",
-                       ylabel="MegaBytes")
-        for bar in bytes_axis.containers[0]:
-            bar.set_width(bar.get_width() * width_scale)
-
-        # create files axis
-        file_num_axis = bytes_axis.twinx()
-        files_axis = sns.barplot(x="date_archived", y="files_archived", data=df, hatch='xx',
-                                 ax=file_num_axis)
-        files_axis.set(ylabel="Files")
-        for bar in files_axis.containers[0]:
-            bar_x = bar.get_x()
-            bar_w = bar.get_width()
-            bar.set_x(bar_x + bar_w * (1 - width_scale))
-            bar.set_width(bar_w * width_scale)
-
-        # reformat datetimes into smaller, more readable strings
-        bytes_axis.set_xticklabels([reformat_dt_str(x.get_text()) for x in bytes_axis.get_xticklabels()], rotation=30)
-
-        a_val = 0.6
-        colors = ['#EA5739', '#FEFFBE', '#4BB05C']
-        legend_patch_files = mpatches.Patch(facecolor=colors[0], alpha=a_val, hatch=r'xx', label='Files')
-        legend_patch_bytes = mpatches.Patch(facecolor=colors[0], alpha=a_val, label='Megabytes')
-
-        plt.legend(handles=[legend_patch_files, legend_patch_bytes])
-        return fig
-
-    df = pd.DataFrame()
-    production_plot = plt.figure()
-    try:
-        df = generate_daily_chart_stats_df()
-    except Exception as e:
-        web_exception_subroutine(flash_message="Error trying to generate aggregate daily data for plot:",
-                                   thrown_exception=e,
-                                   app_obj=current_app)
-
-    if df.shape[0] == 0:
-        #TODO default image
-        pass
-    else:
-        try:
-            production_plot = archiving_production_barchart(df=df)
-        except Exception as e:
-            web_exception_subroutine(flash_message="Error making the plot object:",
-                                       thrown_exception=e,
-                                       app_obj=current_app)
-
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        plot_jpg_filename = "total_prod_" + timestamp + ".jpg"
-        plot_jpg_path = utils.create_temp_file_path(plot_jpg_filename)
-        production_plot.savefig(plot_jpg_path)
-
-    plot_jpg_url = temp_file_url(utils.split_path(plot_jpg_path)[-1])
-
-    # Record image path to session so it can be deleted upon logout
-    if not flask.session[current_user.email].get('temporary files'):
-        flask.session[current_user.email]['temporary files'] = []
-
-    # if we made a preview image, record the path in the session so it can be removed upon logout
-    flask.session[current_user.email]['temporary files'].append(plot_jpg_path)
-
-    return flask.render_template('archiving_metrics.html', title='Archiving Metrics', plot_image=plot_jpg_url)
-
-
 @timekeeper.route("/archiving_dashboard/<archiver_id>", methods=['GET', 'POST'])
 @login_required
 @utils.roles_required(['ADMIN', 'ARCHIVIST'])
@@ -616,9 +481,11 @@ def archiving_dashboard(archiver_id):
     """
     Endpoint to display archiving metrics for a specific archivist.
     """
+    def bytes_to_mb(bytes):
+        return round((bytes/(1024**2)), 3)
     
-    
-    def generate_metric_plot_dataframes(input_df: pd.DataFrame, date_range: pd.core.indexes.datetimes.DatetimeIndex, rolling_avg_days: int):
+
+    def create_plot_dataframes_and_ticks(input_df: pd.DataFrame, date_range: pd.core.indexes.datetimes.DatetimeIndex, rolling_avg_days: int):
         """
         Generates the dataframes used to create the metrics plot from a query dataframe.
         :param input_df: dataframe of archived files. Should already be filtered to only include files from desired dates.
@@ -627,6 +494,10 @@ def archiving_dashboard(archiver_id):
         :return: tuple of dataframes. First element is the dataframe used to create the bars in the plot. Second element
         is the dataframe used to create the lines in the plot. Third element is the max value of the data used in the plot.
         """
+        # number of ticks to use for our tick labels and tick builder for later use.
+        number_of_ticks = 6
+        tick_maker = ticker.MaxNLocator(nbins=number_of_ticks)
+
         # convert the timestamp to a date
         timestamp_date = lambda ts: ts.date()
         input_df["date_archived"] = input_df["date_archived"].map(timestamp_date)
@@ -651,14 +522,17 @@ def archiving_dashboard(archiver_id):
         
         # Create min-max normalized columns for file_size and size_rolling_avg
         max_mb = max((agg_df["file_size"].max(), agg_df["size_rolling_avg"].max()))
-        norm_files_size = lambda f_size: f_size / max_mb
+        
+        mb_ticks = tick_maker.tick_values(0, bytes_to_mb(max_mb))
+        norm_files_size = lambda f_size: f_size / (max(mb_ticks) * (1024**2)) 
         agg_df["file_size_norm"] = agg_df["file_size"].map(norm_files_size)
         agg_df["size_rolling_avg_norm"] = agg_df["size_rolling_avg"].map(norm_files_size)
 
         # use normalized columns to create equivalent columns scaled to be measured in "number of files"
         # units used in the total_files column
         max_files = max(agg_df["total_files"].max(), agg_df["files_rolling_avg"].max())
-        norm_to_files = lambda norm_score: norm_score * max_files
+        files_ticks = tick_maker.tick_values(0, max_files)
+        norm_to_files = lambda norm_score: norm_score * max(files_ticks)
         agg_df["file_size_as_files"] = agg_df["file_size_norm"].map(norm_to_files)
         agg_df["size_rolling_avg_as_files"] = agg_df["size_rolling_avg_norm"].map(norm_to_files)
 
@@ -680,28 +554,10 @@ def archiving_dashboard(archiver_id):
         lines_df['measure_type'] = lines_df['measure_type'].replace({'files_rolling_avg': f'{rolling_avg_days} Day Rolling Average File Count',
                                                                      'size_rolling_avg_as_files': f'{rolling_avg_days} Day Rolling Average Data Volume (MB)'})
         max_data = max(agg_df["file_size"].max(), agg_df["size_rolling_avg"].max())        
-        return bars_df, lines_df, max_data
+        return bars_df, lines_df, max_data, mb_ticks, files_ticks
     
 
-    def metrics_plot_file(lines_df: pd.DataFrame, bars_df: pd.DataFrame, max_data: float, file_destination: str, archiver_name: str = None):
-        
-        def convert_tick_intervals(target_ticks, target_interval_max, converted_interval_max):
-            """
-            Converts a list of ticks to a new scale based on the max value of the new scale. 
-            Only works if both scales have the same min value (0).
-            :param target_ticks: list of ticks from the target scale
-            :param target_interval_max: max value of the target scale
-            :param converted_interval_max: max value of the converted scale
-            """
-            target_min = min(target_ticks)
-            target_max = max(target_ticks)
-            minmax_target_norm = lambda x: (x - target_min) / (target_max - target_min)
-            target_ticks_norm = [minmax_target_norm(x) for x in target_ticks]
-            target_norm_max = minmax_target_norm(target_interval_max)
-            converted_scale_max_tick = converted_interval_max/target_norm_max
-            converted_scale = lambda x: (x*converted_scale_max_tick)
-            converted_ticks = [converted_scale(x) for x in target_ticks_norm]
-            return converted_ticks
+    def metrics_plot_file(lines_df: pd.DataFrame, bars_df: pd.DataFrame, mb_ticks, file_count_ticks, file_destination: str, archiver_name: str = None):
         
         plt.clf()
         sns.set_theme(style="darkgrid")
@@ -711,13 +567,13 @@ def archiving_dashboard(archiver_id):
         sns.barplot(data=bars_df, x='Date', y='Files', hue='measure_type', ax=ax1, palette=bar_colors)
         sns.pointplot(data=lines_df, x='Date', y='Files', hue='measure_type', ax=ax1, palette=line_colors, linestyles='--')
         ax1.set_xticklabels(labels=ax1.get_xticklabels(), rotation=45)
+        ax1.set_yticks(file_count_ticks)
+        ax1.set_ylim(min(file_count_ticks), max(file_count_ticks))
         ax1.legend_.set_title('')
-        max_files = max([bars_df["Files"].max(), lines_df["Files"].max()])
-        right_ticks = convert_tick_intervals(ax1.get_yticks(), max_files, max_data)
-        byte_to_mb = lambda x: round((x/(1024**2)), 3)
-        right_ticks = [byte_to_mb(x) for x in right_ticks]
+        
         ax2 = ax1.twinx()
-        ax2.set_yticks(right_ticks)
+        ax2.set_yticks(mb_ticks)
+        ax2.set_ylim(min(mb_ticks), max(mb_ticks))
         ax2.grid(False)
         ax2.set_ylabel('MB Archived')
         title = f'Archiving Metrics for {archiver_name}' if archiver_name else 'Total Archiving Metrics'
@@ -766,16 +622,17 @@ def archiving_dashboard(archiver_id):
         archivist_df = df.query(f'archivist_id == {archiver_id}')
         date_range = pd.date_range(start=query_start_date, end=query_end_date)
         if df.shape[0] != 0:
-            collective_bars_df, collective_lines_df, collective_max_data = generate_metric_plot_dataframes(input_df=df,
-                                                                                                        date_range=date_range,
-                                                                                                        rolling_avg_days=rolling_avg_window)
+            collective_bars_df, collective_lines_df, _, collective_mb_ticks, collective_files_ticks = create_plot_dataframes_and_ticks(input_df=df,
+                                                                                                                                       date_range=date_range,
+                                                                                                                                       rolling_avg_days=rolling_avg_window)
             timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
             collective_filename = f"collective_metrics_{timestamp}.png"
             collective_chart_path = utils.create_temp_file_path(collective_filename)
             collective_chart_path = metrics_plot_file(lines_df=collective_lines_df,
-                                                    bars_df=collective_bars_df,
-                                                    max_data=collective_max_data,
-                                                    file_destination=collective_chart_path)
+                                                      bars_df=collective_bars_df,
+                                                      mb_ticks=collective_mb_ticks,
+                                                      file_count_ticks=collective_files_ticks,                                                      
+                                                      file_destination=collective_chart_path)
             
             collective_plot_url = temp_file_url(collective_filename)
             # Record image path to session so it can be deleted upon logout
@@ -787,14 +644,15 @@ def archiving_dashboard(archiver_id):
 
         # if the archivist has no data for the selected date range, we don't bother with their individual chart
         if archivist_df.shape[0] != 0:
-            archivist_bars_df, archivist_lines_df, archivist_max_data = generate_metric_plot_dataframes(input_df=archivist_df,
+            archivist_bars_df, archivist_lines_df, _, archvivist_mb_ticks, archivist_files_ticks = create_plot_dataframes_and_ticks(input_df=archivist_df,
                                                                                                         date_range=date_range,
                                                                                                         rolling_avg_days=rolling_avg_window)
             archiver_filename = f"{archiver_name}_metrics_{timestamp}.png"
             archiver_chart_path = utils.create_temp_file_path(archiver_filename)
             archiver_chart_path = metrics_plot_file(lines_df=archivist_lines_df,
                                                     bars_df=archivist_bars_df,
-                                                    max_data=archivist_max_data,
+                                                    mb_ticks=archvivist_mb_ticks,
+                                                    file_count_ticks=archivist_files_ticks,
                                                     file_destination=archiver_chart_path,
                                                     archiver_name=archiver_name)
             archiver_plot_url = temp_file_url(archiver_filename)
@@ -814,29 +672,19 @@ def archiving_dashboard(archiver_id):
         # convert archivist_total_data bytes to gigabytes and round to 3 decimal places
         archivist_total_data = round((archivist_total_data / (1024**3)), 3)
 
-        #TODO Will I and should I use these in the layout?
-        start_date_str = query_start_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT'))
-        end_date_str = query_end_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT'))
+        start_date_str = query_start_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT')[:-10])
+        end_date_str = query_end_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT')[:-10])
 
         return flask.render_template('archivist_dashboard.html',
                                      form=form,
                                      archivist_name=archiver_name,
                                      archivist_files_count=archivist_total_files,
                                      archivist_data_quantity=archivist_total_data,
+                                     plot_start_date=start_date_str,
+                                     plot_end_date=end_date_str,
                                      total_plot= collective_plot_url,
                                      archivist_plot= archiver_plot_url)
 
     except Exception as e:
         m = "Error creating or rendering dashboard:\n"
         return web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=current_app)
-
-
-
-
-
-
-
-
-
-
-
