@@ -280,7 +280,7 @@ def user_timesheet(employee_id):
                                    thrown_exception=e, app_obj=flask.current_app)
 
     if timesheet_df.shape[0] == 0:
-        flask.flash(f"No clocked time recorded for request period for the id {employee_id}.", category='info')
+        flask.flash(f"No clocked time recorded for request period for the id of {employee.first_name} {employee.last_name}.", category='info')
         return flask.redirect(flask.url_for('main.home'))
 
     try:
@@ -561,7 +561,7 @@ def archiving_dashboard(archiver_id):
         
         plt.clf()
         sns.set_theme(style="darkgrid")
-        fig, ax1 = plt.subplots(figsize=(30,10))
+        _, ax1 = plt.subplots(figsize=(30,10))
         bar_colors = ["#007988", "#fdc700"] 
         line_colors = ["#003c6c", "#f29813"]    
         sns.barplot(data=bars_df, x='Date', y='Files', hue='measure_type', ax=ax1, palette=bar_colors)
