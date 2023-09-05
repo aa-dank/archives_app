@@ -100,10 +100,9 @@ class FileLocationModel(db.Model):
     filename = db.Column("filename", db.String)
     existence_confirmed = db.Column("existence_confirmed", db.DateTime)
     hash_confirmed = db.Column("hash_confirmed", db.DateTime)
-    project_id = db.Column("project_id", db.Integer, db.ForeignKey('projects.id'))
 
     def __repr__(self):
-        return f"File Location: {self.id}, {self.file_id}, {self.file_server_directories}, {self.filename}, {self.existence_confirmed}, {self.hash_confirmed}, {self.project_id}"
+        return f"File Location: {self.id}, {self.file_id}, {self.file_server_directories}, {self.filename}, {self.existence_confirmed}, {self.hash_confirmed}"
     
 
 class WorkerTaskModel(db.Model):
