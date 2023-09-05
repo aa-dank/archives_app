@@ -825,7 +825,7 @@ def file_search():
                 return flask.redirect(flask.url_for('archiver.file_search'))
             
             search_df['Location'] = search_df.apply(lambda row: user_path_from_db_data(row['file_server_directories']), axis=1)
-            cols_to_remove = ['id', 'file_id', 'file_server_directories', 'existence_confirmed', 'hash_confirmed', 'project_id']
+            cols_to_remove = ['id', 'file_id', 'file_server_directories', 'existence_confirmed', 'hash_confirmed']
             search_df.drop(columns=cols_to_remove, inplace=True)
             search_df.rename(columns={'filename': 'Filename'}, inplace=True)
             timestamp = datetime.now().strftime(r'%Y%m%d%H%M%S')
