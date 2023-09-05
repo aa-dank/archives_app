@@ -80,17 +80,6 @@ class FileModel(db.Model):
         return f"file: {self.id}, {self.hash}, {self.size}, {self.extension}"
 
 
-class ProjectModel(db.Model):
-    __tablename__ = "projects"
-    id = db.Column(db.Integer, primary_key=True)
-    number = db.Column(db.String, nullable=False)
-    name = db.Column(db.String, nullable=False)
-    file_server_location = db.Column(db.String)
-
-    def __repr__(self):
-        return f"project: {self.id}, {self.number}, {self.name}, {self.file_server_location}"
-
-
 class FileLocationModel(db.Model):
 
     __tablename__ = "file_locations"
@@ -100,10 +89,9 @@ class FileLocationModel(db.Model):
     filename = db.Column("filename", db.String)
     existence_confirmed = db.Column("existence_confirmed", db.DateTime)
     hash_confirmed = db.Column("hash_confirmed", db.DateTime)
-    project_id = db.Column("project_id", db.Integer, db.ForeignKey('projects.id'))
 
     def __repr__(self):
-        return f"File Location: {self.id}, {self.file_id}, {self.file_server_directories}, {self.filename}, {self.existence_confirmed}, {self.hash_confirmed}, {self.project_id}"
+        return f"File Location: {self.id}, {self.file_id}, {self.file_server_directories}, {self.filename}, {self.existence_confirmed}, {self.hash_confirmed}"
     
 
 class WorkerTaskModel(db.Model):
@@ -120,3 +108,34 @@ class WorkerTaskModel(db.Model):
 
     def __repr__(self):
         return f"Enqueued Task: {self.id}, {self.task_id}, {self.time_enqueued}, {self.origin}, {self.function_name}, {self.time_completed}, {self.status}, {self.task_results}"
+
+
+project_caans = db.Table(
+    'project_caans',
+    db.Column('project_id', db.Integer, db.ForeignKey('projects.id'), primary_key=True),
+    db.Column('caan_id', db.Integer, db.ForeignKey('caans.id'), primary_key=True)
+)
+
+
+class ProjectModel(db.Model):
+    __tablename__ = "projects"
+    id = db.Column(db.Integer, primary_key=True)
+    number = db.Column(db.String, nullable=False)
+    name = db.Column(db.String, nullable=False)
+    file_server_location = db.Column(db.String)
+    caans = db.relationship('CAANModel', secondary=project_caans, back_populates='projects')
+
+    def __repr__(self):
+        return f"project: {self.id}, {self.number}, {self.name}, {self.file_server_location}"
+    
+
+class CAANModel(db.Model):
+    __tablename__ = "caans"
+    id = db.Column(db.Integer, primary_key=True)
+    caan = db.Column(db.String, nullable=False)
+    name = db.Column(db.String)
+    description = db.Column(db.String)
+    projects = db.relationship('ProjectModel', secondary=project_caans, back_populates='caans')
+    
+    def __repr__(self):
+        return f"caan: {self.id}, {self.caan}, {self.name}, {self.description}"

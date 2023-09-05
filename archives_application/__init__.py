@@ -78,10 +78,13 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     from archives_application.archiver.routes import archiver
     from archives_application.main.routes import main
     from archives_application.timekeeper.routes import timekeeper
+    from archives_application.project_tools.routes import project_tools
+
     app.register_blueprint(users)
     app.register_blueprint(archiver)
     app.register_blueprint(main)
     app.register_blueprint(timekeeper)
+    app.register_blueprint(project_tools)
 
     # This sets an environmental variable to allow oauth authentication flow to use http requests (vs https)
     if hasattr(config_class, 'OAUTHLIB_INSECURE_TRANSPORT'):

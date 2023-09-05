@@ -96,7 +96,6 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
             utils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_results)
 
 
-
 def scrape_file_data_task(archives_location: str, start_location: str, file_server_root_index: int,
                           exclusion_functions: list[Callable[[str], bool]], scrape_time: timedelta,
                           queue_id: str):
@@ -329,7 +328,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
         filename = utils.split_path(f_path)[-1]
         return filename in excluded_names
     
-    
+
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy'].db
         utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
