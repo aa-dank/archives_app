@@ -20,8 +20,8 @@ google_creds_json = r'google_client_secret.json'
 
 # These lines are used to set the config file for the app. If it is not set correctly,
 # the first error will LIKELY be issues with connecting to the database.
-config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
-#config_json = r'deploy_app_config.json'
+#config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
+config_json = r'deploy_app_config.json'
 
 def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,
                                                               config_json_path=config_json)):
@@ -56,7 +56,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.2.44'
+    app.config['VERSION'] = '1.2.45'
 
     # If the SQLALCHEMY_ECHO parameter is true, need to set up logs for logging sql.
     # This is useful for debugging sql queries and postgresql errors.
