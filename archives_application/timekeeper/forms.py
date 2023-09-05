@@ -26,6 +26,7 @@ class TimeSheetForm(FlaskForm):
         if rolling_avg_window.data and rolling_avg_window.data <= 1:
             raise ValidationError("Rolling average window must be greater than 1.")
 
+
 class TimeSheetAdminForm(FlaskForm):
     employee_email = SelectField('Employee Email', validators=[DataRequired()])
     submit = SubmitField('Submit')

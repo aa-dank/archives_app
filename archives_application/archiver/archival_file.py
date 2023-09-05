@@ -46,6 +46,7 @@ class ArchivalFile:
         if document_date:
             self.document_date = parser.parse(document_date)
 
+
     def assemble_destination_filename(self):
         """
         returns the resulting anticipated filename from an anticipated archival process. Handles extensions by copying
@@ -77,6 +78,7 @@ class ArchivalFile:
         destination_filename = ".".join(split_dest_components)
         return destination_filename
 
+
     def nested_large_template_destination_dir(self):
         """
         eg  "E - Program and Design\E5 - Correspondence"
@@ -93,6 +95,7 @@ class ArchivalFile:
             parent_dir = [dir for dir in self.directory_choices if is_parent_dir(nested_dirs, dir)][0]
             nested_dirs = os.path.join(parent_dir, nested_dirs)
         return str(nested_dirs)
+
 
     def get_destination_path(self):
         """
@@ -317,6 +320,7 @@ class ArchivalFile:
 
             self.cached_destination_path = new_path
         return self.cached_destination_path
+
 
     def attribute_defaultdict(self):
         date_stamp = ''
