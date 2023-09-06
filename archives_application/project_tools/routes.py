@@ -8,7 +8,8 @@ from archives_application.models import *
 
 FILEMAKER_API_VERSION = 'v1'
 FILEMAKER_CAAN_LAYOUT = 'caan_table'
-FILEMAKER_PROJECTS_LAYOUT = 'Projects'
+FILEMAKER_PROJECTS_LAYOUT = 'projects_table'
+FILEMAKER_PROJECT_CAANS_LAYOUT = 'caan_project_join'
 
 project_tools = flask.Blueprint('project_tools', __name__)
 
@@ -35,40 +36,14 @@ def api_exception_subroutine(response_message, thrown_exception):
 
 @project_tools.route("/fmp_reconciliation", methods=['GET', 'POST'])
 def filemaker_reconciliation():
+    """
+    The purpose of this endpoint is to ensure that any changes made to the FileMaker database are reflected in the
+    application database. This is done by comparing the FileMaker database to the application database and making
+    changes to the application database as needed.
+    """
+    
+    from archives_application.project_tools.project_tools_tasks import fmp_reconciliation_task
 
-    def fmrest_server(layout):
-        s = fmrest.Server(
-            flask.current_app.config.get("FILEMAKER_HOST_LOCATION"),
-            user=flask.current_app.config.get('FILEMAKER_USER'),
-            password=flask.current_app.config.get('FILEMAKER_PASSWORD'),
-            database_name=flask.current_app.config.get('FILEMAKER_DATABASE'),
-            layout=layout,
-            api_version=FILEMAKER_API_VERSION,
-            verify_ssl=False
-        )
-        return s
-    
-    def fmp_caan_df():
-        s = fmrest_server(FILEMAKER_CAAN_LAYOUT)
-        caan_foundset = s.get_records()
-        return caan_foundset.to_df()
-    
-    def db_caan_df():
-        caan_query = db.session.query(CAANModel)
-        df = utils.query_to_df(caan_query)
-        return df
-
-    def fmp_projects_df():
-        s = fmrest_server(FILEMAKER_PROJECTS_LAYOUT)
-        projects_foundset = s.get_records()
-        return projects_foundset.to_df()
-    
-    def db_projects_df():
-        projects_query = db.session.query(ProjectModel)
-        df = utils.query_to_df(projects_query)
-        return df
-    
-    
     # Check if the request includes user credentials or is from a logged in user. 
     # User needs to have ADMIN role.
     request_is_authenticated = False
@@ -91,17 +66,5 @@ def filemaker_reconciliation():
         return api_exception_subroutine(m, e)    
 
     if request_is_authenticated:
-        try:
-            filemaker_caan_df = fmp_caan_df()
-            db_caans_df = db_caan_df()
-
-            missing_from_db = filemaker_caan_df[~filemaker_caan_df['CAAN'].isin(db_caans_df['caan'])]
-            for row_idx, row in missing_from_db.iterrows():
-                caan = CAANModel(caan=row['CAAN'], title=row['Title'])
-                db.session.add(caan)
-
-            
-
-        except Exception as e:
-            m = "Error getting CAAN data." 
-            return api_exception_subroutine(m, e)
+        nk_results = utils.enqueue_new_task(db=db, enqueued_function=fmp_reconciliation_task)
+        

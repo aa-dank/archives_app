@@ -84,10 +84,10 @@ def backup_database():
                 authenticated_to_make_request = True
 
         if authenticated_to_make_request:
-            enqueueing_result = enqueue_new_task(db=db,
-                                                 enqueued_function=db_backup_task,
-                                                 timeout=60)
-            job_id = enqueueing_result["task_id"]
+            nk_result = enqueue_new_task(db=db,
+                                         enqueued_function=db_backup_task,
+                                         timeout=60)
+            job_id = nk_result["task_id"]
             if flask.request.args.get('user'):
                 return flask.Response(f"Database Back-up Task Enqueued. Job ID: {job_id}", status=200)
             
