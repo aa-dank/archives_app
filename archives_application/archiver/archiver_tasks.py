@@ -395,7 +395,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                 if db.session.get('transaction') and db.session.transaction.nested:
                     db.session.rollback()
 
-                e_dict = {"Location": location_record.file_server_directories,'
+                e_dict = {"Location": location_record.file_server_directories,
                           "filename": location_record.filename,
                           "Exception": str(e)}
                 location_scrape_log["Errors"].append(e_dict)
