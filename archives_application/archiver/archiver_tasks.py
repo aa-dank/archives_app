@@ -228,7 +228,7 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
 
                     except Exception as e:
                         print(str(e) + "\n" + file)
-                        if db.session.get('transaction') and db.session.transaction.nested:
+                        if db.session.get.transaction and db.session.transaction.nested:
                             db.session.rollback()
                         e_dict = {"Filepath": file, "Exception": str(e)}
                         scrape_log["Errors"].append(e_dict)
@@ -292,7 +292,7 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
                         confirm_locations_log["Files Confirmed"] += 1
                 
                 except Exception as e:
-                    if db.session.get('transaction') and db.session.transaction.nested:
+                    if db.session.get.transaction and db.session.transaction.nested:
                         db.session.rollback()
                     e_dict = {"Location": file_location.file_server_directories,
                             "filename": file_location.filename,
@@ -380,7 +380,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                             location_scrape_log["Files Confirmed"] += 1
                     
                     except Exception as e:
-                        if db.session.get('transaction') and db.session.transaction.nested:
+                        if db.session.get.transaction and db.session.transaction.nested:
                             db.session.rollback()
                         e_dict = {"Location": location_record.file_server_directories,
                                 "filename": location_record.filename,
@@ -392,7 +392,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
 
             except Exception as e:
                 # check if session is in 'committed' state. If not, rollback.
-                if db.session.get('transaction') and db.session.transaction.nested:
+                if db.session.get.transaction and db.session.transaction.nested:
                     db.session.rollback()
 
                 e_dict = {"Location": location_record.file_server_directories,
