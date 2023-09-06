@@ -238,9 +238,10 @@ def upload_file():
             if archiving_successful:
                 # enqueue the task of adding the file to the database
                 add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': False} #TODO add archiving functionality
-                nk_results = utils.enqueue_new_task(enqueued_function=add_file_to_db_task,
-                                                        function_kwargs=add_file_kwargs,
-                                                        timeout=None)
+                nk_results = utils.enqueue_new_task(db=db,
+                                                    enqueued_function=add_file_to_db_task,
+                                                    function_kwargs=add_file_kwargs,
+                                                    timeout=None)
                 
                 flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
                 return flask.redirect(flask.url_for('archiver.upload_file'))
@@ -463,9 +464,10 @@ def inbox_item():
 
                     # add the file to the database
                     add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': True}
-                    nk_results = utils.enqueue_new_task(enqueued_function=add_file_to_db_task,
-                                                            function_kwargs=add_file_kwargs,
-                                                            timeout=None)
+                    nk_results = utils.enqueue_new_task(db=db,
+                                                        enqueued_function=add_file_to_db_task,
+                                                        function_kwargs=add_file_kwargs,
+                                                        timeout=None)
 
                     # make sure that the old file has been removed
                     if os.path.exists(arch_file_path):
