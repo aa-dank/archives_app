@@ -184,7 +184,7 @@ class ServerEdit:
                 #return db_edit
                 
                 enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
-                                                                enqueued_function=self.add_move_to_db_task)
+                                                            enqueued_function=self.add_move_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
                 return enqueueing_results
             
