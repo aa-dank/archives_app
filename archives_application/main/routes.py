@@ -205,7 +205,9 @@ def change_config_settings():
                 json.dump(config_dict, config_file)
 
             restart_params = {'delay': 15}
-            nk_result = enqueue_new_task(db=db, enqueued_function=restart_app_task, function_kwargs=restart_params)
+            nk_result = enqueue_new_task(db=db,
+                                         enqueued_function=restart_app_task,
+                                         function_kwargs=restart_params)
             
             flask.flash("Values entered were stored in the config file. Application restart is immenent.", 'success')
             return flask.redirect(flask.url_for('main.home'))

@@ -40,7 +40,7 @@ class AppCustodian:
         for task_name in task_functions:
             task_function = getattr(self, task_name)
             enqueuement_results = utils.enqueue_new_task(db=db,
-                                                             enqueued_function=task_function)
+                                                         enqueued_function=task_function)
             results[task_name] = enqueuement_results
         
         return results
