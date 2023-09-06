@@ -95,13 +95,12 @@ def filemaker_reconciliation():
             filemaker_caan_df = fmp_caan_df()
             db_caans_df = db_caan_df()
 
-            for row_idx, caan_row in filemaker_caan_df.iterrows():
-                if caan_row['CAAN'] not in db_caans_df['caan'].values:
-                    new_caan = CAANModel(caan=caan_row['CAAN'],
-                                         name=caan_row['Name'],
-                                         description=caan_row['Description'])
-                    db.session.add(new_caan)
-            db.session.commit()
+            missing_from_db = filemaker_caan_df[~filemaker_caan_df['CAAN'].isin(db_caans_df['caan'])]
+            for row_idx, row in missing_from_db.iterrows():
+                caan = CAANModel(caan=row['CAAN'], title=row['Title'])
+                db.session.add(caan)
+
+            
 
         except Exception as e:
             m = "Error getting CAAN data." 
