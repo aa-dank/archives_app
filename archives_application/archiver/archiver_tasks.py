@@ -395,9 +395,9 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                 if db.session.get('transaction') and db.session.transaction.nested:
                     db.session.rollback()
 
-                e_dict = {"Location": location_record.file_server_directories,
-                            "filename": location_record.filename,
-                            "Exception": str(e)}
+                e_dict = {"Location": location_record.file_server_directories,'
+                          "filename": location_record.filename,
+                          "Exception": str(e)}
                 location_scrape_log["Errors"].append(e_dict)
 
         # Iterate through the files in the scrape location and add them to the database if they are not already there
@@ -420,8 +420,8 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                     location_scrape_log["Files Enqueued to Add"] += 1
                     add_file_params = {"filepath": filepath}
                     utils.enqueue_new_task(db=db,
-                                               enqueued_function=add_file_to_db_task, 
-                                               function_kwargs=add_file_params)
+                                           enqueued_function=add_file_to_db_task, 
+                                           function_kwargs=add_file_params)
                     
                 except Exception as e:
                     e_dict = {"Location": root,

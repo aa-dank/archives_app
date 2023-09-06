@@ -632,10 +632,10 @@ def scrape_files():
                             "queue_id": scrape_job_id}
             nk_call_kwargs = {'result_ttl': 43200}
             nk_results = utils.enqueue_new_task(db=db,
-                                                    enqueued_function=scrape_file_data_task,
-                                                    function_kwargs=scrape_params,
-                                                    enqueue_call_kwargs=nk_call_kwargs,
-                                                    timeout=scrape_time.seconds + 60)
+                                                enqueued_function=scrape_file_data_task,
+                                                function_kwargs=scrape_params,
+                                                enqueue_call_kwargs=nk_call_kwargs,
+                                                timeout=scrape_time.seconds + 60)
             
             nk_results = {"enqueueing_results": serializablize_dict(nk_results),
                           "scrape_task_params": serializablize_dict(scrape_params)}
@@ -722,9 +722,10 @@ def confirm_db_file_locations():
             confirming_time = timedelta(minutes=confirming_time)
             confirm_params = {"archive_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
                               "confirming_time": confirming_time}
-            nk_results = utils.enqueue_new_task(enqueued_function=confirm_file_locations_task,
-                                                    function_kwargs=confirm_params,
-                                                    timeout=confirming_time.seconds + 600)
+            nk_results = utils.enqueue_new_task(db=db,
+                                                enqueued_function=confirm_file_locations_task,
+                                                function_kwargs=confirm_params,
+                                                timeout=confirming_time.seconds + 600)
             
             # prepare task enqueueing info for JSON serialization
             nk_results = serializablize_dict(nk_results)
@@ -890,9 +891,10 @@ def scrape_location():
         scrape_params = {'scrape_location': search_location,
                          'recursively': form.recursive.data,
                          'confirm_data': True}
-        nk_results = utils.enqueue_new_task(enqueued_function=scrape_location_files_task,
-                                                function_kwargs=scrape_params,
-                                                timeout=3600)
+        nk_results = utils.enqueue_new_task(db=db,
+                                            enqueued_function=scrape_location_files_task,
+                                            function_kwargs=scrape_params,
+                                            timeout=3600)
         id = nk_results.get("_id")
         function_call = nk_results.get("description")
         m = f"Scraping task has been successfully enqueued. Function Enqueued: {function_call}"
