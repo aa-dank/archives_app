@@ -8,9 +8,6 @@ from datetime import datetime
 from collections import defaultdict
 
 
-# ArchivalFile class from Archives_archiver program should be interchangeable with this one if the above imports
-# are preserved
-
 
 class ArchivalFile:
 
