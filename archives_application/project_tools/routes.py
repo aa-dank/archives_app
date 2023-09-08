@@ -1,5 +1,6 @@
 import flask
 import fmrest
+import json
 from flask_login import login_required, current_user
 from archives_application import db, bcrypt
 from archives_application import utils
@@ -68,3 +69,25 @@ def filemaker_reconciliation():
     if request_is_authenticated:
         nk_results = utils.enqueue_new_task(db=db, enqueued_function=fmp_reconciliation_task)
         
+@project_tools.route("/test/fmp_reconciliation", methods=['GET', 'POST'])
+@utils.roles_required(['ADMIN'])
+def test_fmp_reconciliation():
+    from archives_application.project_tools.project_tools_tasks import fmp_reconciliation_task
+    recon_job_id = f"{fmp_reconciliation_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+    new_task_record = WorkerTaskModel(task_id=recon_job_id, time_enqueued=str(datetime.now()), origin="test",
+                        function_name=fmp_reconciliation_task.__name__, status="queued")
+    db.session.add(new_task_record)
+    db.session.commit()
+    task_results = fmp_reconciliation_task(queue_id=recon_job_id)
+
+    # prepare scrape results for JSON serialization
+    return flask.Response(json.dumps(task_results), status=200)
+
+
+@project_tools.route("/test/project_path/<proj_num>", methods=['GET', 'POST'])
+def project_path(proj_num):
+
+    project_path, created = utils.path_to_project_dir(project_number=proj_num,
+                                                      archives_location=flask.current_app.config.get("ARCHIVES_LOCATION"),
+                                                      create_new_project_dir=False)
+    return flask.Response(json.dumps({"project_path": project_path, "created": created}), status=200)
