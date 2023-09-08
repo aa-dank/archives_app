@@ -103,6 +103,29 @@ def split_path(path):
     return split_other_path(path)
 
 
+def contains_unicode(text):
+    """
+    Checks if a string contains unicode characters.
+    """
+    pattern = re.compile(r'[^\x00-\x7F]+')
+    return bool(pattern.search(text))
+
+
+def sanitize_unicode(text, replacement=''):
+    """
+    replaces unicode characters in a string with the replacement string.
+    Default is to remove the unicode characters.
+    """
+    
+    # Create a regular expression pattern to match Unicode characters
+    pattern = re.compile(r'[^\x00-\x7F]+')
+
+    # Use the sub() function to remove or replace Unicode characters
+    cleaned_text = pattern.sub(replacement, text)
+
+    return cleaned_text
+
+
 def roles_required(roles: list[str]):
     """
     This function is a Flask decorator that restricts access to a route to only users with certain roles. The roles
@@ -316,6 +339,7 @@ def cleanse_filename(proposed_filename: str):
     clean_filename = proposed_filename.replace('\n', '')
     clean_filename = "".join(i for i in clean_filename if i not in "\/:*?<>|")
     clean_filename = clean_filename.strip()
+    clean_filename = sanitize_unicode(clean_filename)
     return clean_filename
 
 
