@@ -562,7 +562,7 @@ def db_query_to_df(query: flask_sqlalchemy.query.Query, dataframe_size_limit= No
     return df
 
 
-def path_to_project_dir(project_number: str, archives_location: str, create_new_project_dir: bool = False):
+def path_to_project_dir(project_number: Union[int, str], archives_location: str, create_new_project_dir: bool = False):
     
     
     def list_of_child_dirs(parent_directory_path):
@@ -570,7 +570,8 @@ def path_to_project_dir(project_number: str, archives_location: str, create_new_
             return [dir for dir in os.listdir(parent_directory_path) if
                     not os.path.isfile(os.path.join(parent_directory_path, dir))]
     
-
+    project_number = str(project_number)
+    project_path_created = False
     xx_level_dir_prefix, project_num_prefix = prefixes_from_project_number(project_number)
     root_directories_list = list_of_child_dirs(archives_location)
     matching_root_dirs = [dir_name for dir_name in root_directories_list if
@@ -578,12 +579,12 @@ def path_to_project_dir(project_number: str, archives_location: str, create_new_
     
     # if we have more than one matching root dir we throw an error
     if len(matching_root_dirs) != 1:
-        return None
-    
+        raise Exception(f"Expected to find one directory that starts with {xx_level_dir_prefix} in the location {archives_location}. Found {len(matching_root_dirs)}")
+                        
     # add the directory matching the xx level prefix for this project number
-    new_path = os.path.join(archives_location, matching_root_dirs[0])
+    project_path = os.path.join(archives_location, matching_root_dirs[0])
     # list of contents of xx level directory which are not files (ie directories in xx level directory)
-    xx_dir_dirs = list_of_child_dirs(new_path)
+    xx_dir_dirs = list_of_child_dirs(project_path)
 
     # lambda functions that check whether a directory name starts with either project number or
     # prefix respectively.
@@ -593,51 +594,75 @@ def path_to_project_dir(project_number: str, archives_location: str, create_new_
 
     # if more than one directory starts with the same project number...
     if len(dirs_matching_proj_num) > 1:
-        return None
+        raise Exception(f"More than one directory starts with the same project number, {project_number} in the location {project_path}.")
     
     # if no directories match the project number...
     if len(dirs_matching_proj_num) == 0:
         dirs_matching_prefix = [dir_name for dir_name in xx_dir_dirs if prefix_in_dir_name(dir_name)]
         if len(dirs_matching_prefix) > 1:
-            return None
+            raise Exception(f"More than one directory starts with the same project number prefix, {project_num_prefix} in the location {project_path}.")
 
         # if there is now project number or prefix directory at the 'xx' level, it will need to be made
-        if (len(dirs_matching_prefix) == 0) and create_new_project_dir:
-            new_path = os.path.join(new_path, project_num_prefix)
-            new_path = os.path.join(new_path, project_number)
-            return new_path
-        
+        if len(dirs_matching_prefix) == 0:
+            if create_new_project_dir:
+                project_path = os.path.join(project_path, project_num_prefix)
+                project_path = os.path.join(project_path, project_number)
+                os.makedirs(project_path)
+                project_path_created = True
+                return project_path, project_path_created
+
+            return None, project_path_created
+
         if len(dirs_matching_prefix) == 1:
             # if a dir exists that does begin with the prefix, we'll add it to our path and look again for
             # directories that begin with the project number #TODO ..and prefix again too?
 
-            new_path = os.path.join(new_path, dirs_matching_prefix[0])
-            prefix_dir_dirs = list_of_child_dirs(new_path)
+            project_path = os.path.join(project_path, dirs_matching_prefix[0])
+            prefix_dir_dirs = list_of_child_dirs(project_path)
             dirs_matching_proj_num = [dir_name for dir_name in prefix_dir_dirs if
                                         proj_num_in_dir_name(dir_name)]
-            if len(dirs_matching_proj_num) > 1:
-                return None
             
-        # if no dirs are equivalent to the project number
-        if len(dirs_matching_proj_num) == 0:
-            return None
-        
+            if len(dirs_matching_proj_num) > 1:
+                raise Exception(f"More than one directory starts with the same project number, {project_number} in the location {project_path}.")
+
+            if len(dirs_matching_proj_num) == 0:
+                if create_new_project_dir:
+                    project_path = os.path.join(project_path, project_number)
+                    os.makedirs(project_path)
+                    project_path_created = True
+                    return project_path, project_path_created
+
+                return None, project_path_created
+            
+            if len(dirs_matching_proj_num) == 1:
+                project_path = os.path.join(project_path, dirs_matching_proj_num[0])
+                return project_path, project_path_created
+            
         if len(dirs_matching_proj_num) == 1:
-                    new_path = os.path.join(new_path, dirs_matching_proj_num[0])
-                    return new_path
+                    project_path = os.path.join(project_path, dirs_matching_proj_num[0])
+                    return project_path, project_path_created
         
     # if we do find a dir that corresponds with the project number...
     if len(dirs_matching_proj_num) == 1:
-        new_path = os.path.join(new_path, dirs_matching_proj_num[0])
+        project_path = os.path.join(project_path, dirs_matching_proj_num[0])
         #look for another project number directory in the dirs of this project number directory
-        proj_num_dir_dirs = list_of_child_dirs(new_path)
+        proj_num_dir_dirs = list_of_child_dirs(project_path)
         dirs_matching_proj_num = [dir_name for dir_name in proj_num_dir_dirs if proj_num_in_dir_name(dir_name)]
 
         # if more than one directory starts with the same project number...
-        if len(dirs_matching_proj_num) != 1:
-            return None
+        if len(dirs_matching_proj_num) > 1:
+            raise Exception(f"More than one directory starts with the same project number, {project_number} in the location {project_path}.")
+        
+        if len(dirs_matching_proj_num) == 0:
+            if create_new_project_dir:
+                project_path = os.path.join(project_path, project_number)
+                os.makedirs(project_path)
+                project_path_created = True
+                return project_path, project_path_created
+
+            return None, project_path_created
 
         else:
-            new_path = os.path.join(new_path, dirs_matching_proj_num[0])
+            project_path = os.path.join(project_path, dirs_matching_proj_num[0])
     
-    return new_path
+    return project_path, project_path_created
