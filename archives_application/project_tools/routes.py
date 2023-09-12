@@ -79,15 +79,9 @@ def test_fmp_reconciliation():
     db.session.add(new_task_record)
     db.session.commit()
     task_results = fmp_reconciliation_task(queue_id=recon_job_id)
+    
 
     # prepare scrape results for JSON serialization
     return flask.Response(json.dumps(task_results), status=200)
 
 
-@project_tools.route("/test/project_path/<proj_num>", methods=['GET', 'POST'])
-def project_path(proj_num):
-
-    project_path, created = utils.path_to_project_dir(project_number=proj_num,
-                                                      archives_location=flask.current_app.config.get("ARCHIVES_LOCATION"),
-                                                      create_new_project_dir=False)
-    return flask.Response(json.dumps({"project_path": project_path, "created": created}), status=200)

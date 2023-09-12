@@ -261,7 +261,7 @@ class ArchivalFile:
 
                 if len(dirs_matching_prefix) == 1:
                     # if a dir exists that does begin with the prefix, we'll add it to our path and look again for
-                    # directories that begin with the project number #TODO ..and prefix again too?
+                    # directories that begin with the project number
 
                     new_path = os.path.join(new_path, dirs_matching_prefix[0])
                     prefix_dir_dirs = list_of_child_dirs(new_path)
@@ -272,6 +272,7 @@ class ArchivalFile:
                             f"{len(dirs_matching_proj_num)} matching directories in {new_path} for project number {self.project_number}; expected 0 or 1.\nThis is likely due to a duplicate project number in the archives.",
                             exc_info=True)
                         return ''
+                        # TODO what if dirs_matching_proj_num is 1 or 0?
 
                 # if no dirs are equivalent to the project number
                 if len(dirs_matching_proj_num) == 0:
