@@ -21,7 +21,7 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
     with app.app_context():
         task_results = {'queue_id': queue_id, 'filepath': filepath}
         try:
-            db = flask.current_app.extensions['sqlalchemy'].db
+            db = flask.current_app.extensions['sqlalchemy']
             utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             
             file_hash = utils.get_hash(filepath)
@@ -241,7 +241,7 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
 
 def confirm_file_locations_task(archive_location: str, confirming_time: timedelta, queue_id: str):
     with app.app_context():
-        db = flask.current_app.extensions['sqlalchemy'].db
+        db = flask.current_app.extensions['sqlalchemy']
         utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
 
         start_time = time.time()
@@ -330,7 +330,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
     
     
     with app.app_context():
-        db = flask.current_app.extensions['sqlalchemy'].db
+        db = flask.current_app.extensions['sqlalchemy']
         utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
         file_server_root_index = len(utils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
         location_scrape_log = {"queue_id": queue_id,
