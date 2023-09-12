@@ -1,4 +1,3 @@
-import bz2
 import fitz
 import flask
 import flask_sqlalchemy
@@ -13,7 +12,7 @@ import sys
 from datetime import datetime
 from flask_login import current_user
 from functools import wraps
-from PIL import Image, ImageFilter
+from PIL import Image
 from pathlib import Path, PureWindowsPath
 from sqlalchemy import select
 from sqlalchemy.sql.expression import func
@@ -22,14 +21,14 @@ from archives_application.models import WorkerTaskModel
 
 
 
-def split_path(path):
+def split_path(path: str):
     """
     Split a path into a list of directories/files/mount points. It is built to accomodate Splitting both Windows and Linux paths
     on linux systems. (It will not necessarily work to process linux paths on Windows systems)
     :param path: The path to split.
     """
 
-    def detect_filepath_type(filepath):
+    def detect_filepath_type(filepath: str):
         """
         Detects the cooresponding OS of the filepath. (Windows, Linux, or Unknown)
         :param filepath: The filepath to detect.
@@ -45,8 +44,8 @@ def split_path(path):
         else:
             return "Unknown"
         
-    def split_windows_path(filepath):
-        """"""
+    def split_windows_path(filepath: str):
+        
         parts = []
         curr_part = ""
         is_absolute = False
@@ -204,7 +203,6 @@ def open_file_with_system_application(filepath):
     else:
         os.startfile(filepath)
         return
-
 
 
 def clean_path(path: str):
@@ -570,7 +568,18 @@ def path_to_project_dir(project_number: Union[int, str], archives_location: str,
             return [dir for dir in os.listdir(parent_directory_path) if
                     not os.path.isfile(os.path.join(parent_directory_path, dir))]
     
+    
     project_number = str(project_number)
+
+    def proj_num_in_dir_name(directory_name: str):
+        
+        # The regex, `^{re.escape(project_number)}(?![\w-])`, matches the project number at the beginning of the string and
+        # ensures that the next character is not a word character or a hyphen.
+        pattern = re.compile(f'^{re.escape(project_number)}(?![\w-])')
+        return bool(pattern.search(directory_name))
+        
+
+
     project_path_created = False
     xx_level_dir_prefix, project_num_prefix = prefixes_from_project_number(project_number)
     root_directories_list = list_of_child_dirs(archives_location)
@@ -588,7 +597,6 @@ def path_to_project_dir(project_number: Union[int, str], archives_location: str,
 
     # lambda functions that check whether a directory name starts with either project number or
     # prefix respectively.
-    proj_num_in_dir_name = lambda dir_name: project_number == dir_name.split(" ")[0]
     prefix_in_dir_name = lambda dir_name: project_num_prefix == dir_name.split(" ")[0]
     dirs_matching_proj_num = [dir_name for dir_name in xx_dir_dirs if proj_num_in_dir_name(dir_name)]
 
@@ -654,13 +662,16 @@ def path_to_project_dir(project_number: Union[int, str], archives_location: str,
             raise Exception(f"More than one directory starts with the same project number, {project_number} in the location {project_path}.")
         
         if len(dirs_matching_proj_num) == 0:
+            
+            # this function defaults to nesting a project number witihin its prefix directory
             if create_new_project_dir:
                 project_path = os.path.join(project_path, project_number)
                 os.makedirs(project_path)
                 project_path_created = True
                 return project_path, project_path_created
 
-            return None, project_path_created
+            return project_path, project_path_created
+            
 
         else:
             project_path = os.path.join(project_path, dirs_matching_proj_num[0])
