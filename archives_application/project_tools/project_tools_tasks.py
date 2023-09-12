@@ -10,7 +10,7 @@ app = create_app()
 
 def fmp_reconciliation_task(queue_id: str):
     with app.app_context():
-        db = flask.current_app.extensions['sqlalchemy'].db
+        db = flask.current_app.extensions['sqlalchemy']
         utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
 
         def fmrest_server(layout):

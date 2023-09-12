@@ -51,7 +51,7 @@ class AppCustodian:
         This task will remove all files in the temp_files directory that are older than the specified lifespan.
         """
         with app.app_context():
-            db = flask.current_app.extensions['sqlalchemy'].db
+            db = flask.current_app.extensions['sqlalchemy']
             utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             now = datetime.now()
             log = {"task_id": queue_id, "files_removed": 0, "quantity_removed": 0, "errors": []}
@@ -80,7 +80,7 @@ class AppCustodian:
         This task will remove all files in the temp_files directory that are older than the specified lifespan.
         """
         with app.app_context():
-            db = flask.current_app.extensions['sqlalchemy'].db
+            db = flask.current_app.extensions['sqlalchemy']
             utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             now = datetime.now()
             log = {"task_id": queue_id, "records_removed": 0, "errors": []}
@@ -104,7 +104,7 @@ class AppCustodian:
         This task will remove all files in the temp_files directory that are older than the specified lifespan.
         """
         with app.app_context():
-            db = flask.current_app.extensions['sqlalchemy'].db
+            db = flask.current_app.extensions['sqlalchemy']
             utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             now = datetime.now()
             log = {"task_id": queue_id, "files_removed": 0, "errors": []}
@@ -129,7 +129,7 @@ class AppCustodian:
 
 def restart_app_task(queue_id: str, delay: int = 0):
     with app.app_context():
-        db = flask.current_app.extensions['sqlalchemy'].db
+        db = flask.current_app.extensions['sqlalchemy']
         utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
         log = {"task_id": queue_id, "errors": []}
         cmd = "sudo supervisorctl restart archives_app"
@@ -177,7 +177,7 @@ def db_backup_task(queue_id: str):
             
     with app.app_context():
         try:
-            db = flask.current_app.extensions['sqlalchemy'].db
+            db = flask.current_app.extensions['sqlalchemy']
             utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             log = {"task_id": queue_id, "errors": []}
             db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
