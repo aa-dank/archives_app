@@ -33,6 +33,7 @@ def fmp_reconciliation_task(queue_id: str):
         
         recon_log = {"CAAN": {"added": [], "removed": []},
                      "project": {"added": [], "removed": []},
+                     "project-caans": {"added": [], "removed": []},
                      "errors": []}
         
         # Reconcile CAANs
@@ -51,16 +52,17 @@ def fmp_reconciliation_task(queue_id: str):
                 db.session.add(caan)
                 recon_log['CAAN']['added'].append(row['CAAN'])
             
-            missing_from_fm = db_caans_df[~db_caans_df['caan'].isin(fm_caan_df['CAAN'])]
-            for _, row in missing_from_fm.iterrows():
-                caan = CAANModel.query.filter_by(caan=row['caan']).first()
-                
-                # Remove the caan from any projects it is associated with
-                for project in caan.projects:
-                    project.caans.remove(caan)
-                
-                db.session.delete(caan)
-                recon_log['CAAN']['removed'].append(row['caan'])
+            if not db_caans_df.empty:
+                missing_from_fm = db_caans_df[~db_caans_df['caan'].isin(fm_caan_df['CAAN'])]
+                for _, row in missing_from_fm.iterrows():
+                    caan = CAANModel.query.filter_by(caan=row['caan']).first()
+                    
+                    # Remove the caan from any projects it is associated with
+                    for project in caan.projects:
+                        project.caans.remove(caan)
+                    
+                    db.session.delete(caan)
+                    recon_log['CAAN']['removed'].append(row['caan'])
             
             db.session.commit()
             
@@ -76,7 +78,7 @@ def fmp_reconciliation_task(queue_id: str):
             project_query = db.session.query(ProjectModel)
             db_project_df = utils.db_query_to_df(project_query)
 
-            missing_from_db = fm_projects_df
+            missing_from_db = fm_projects_df.copy()
             if not db_project_df.empty:
                 missing_from_db = fm_projects_df[~fm_projects_df['Project Number'].isin(db_project_df['project_number'])]
             for _, row in missing_from_db.iterrows():
@@ -89,16 +91,18 @@ def fmp_reconciliation_task(queue_id: str):
                 db.session.add(project)
                 recon_log['project']['added'].append(row['Project Number'])
 
-            missing_from_fm = db_project_df[~db_project_df['project_number'].isin(fm_projects_df['Project Number'])]
-            for _, row in missing_from_fm.iterrows():
-                project = ProjectModel.query.filter_by(project_number=row['project_number']).first()
-                
-                # Remove the project from any caans it is associated with
-                for caan in project.caans:
-                    caan.projects.remove(project)
-                
-                db.session.delete(project)
-                recon_log['project']['removed'].append(row['project_number'])
+            if not db_project_df.empty:
+                missing_from_fm = db_project_df[~db_project_df['project_number'].isin(fm_projects_df['Project Number'])]
+                for _, row in missing_from_fm.iterrows():
+                    project = ProjectModel.query.filter_by(project_number=row['project_number']).first()
+                    
+                    # Remove the project from any caans it is associated with
+                    for caan in project.caans:
+                        caan.projects.remove(project)
+                    
+                    db.session.delete(project)
+                    recon_log['project']['removed'].append(row['project_number'])
+            
             db.session.commit()
 
         except Exception as e:
@@ -113,8 +117,14 @@ def fmp_reconciliation_task(queue_id: str):
             for project_number, project_df in project_groups:
                 project = ProjectModel.query.filter_by(number=project_number).first()
                 caan_numbers = project_df['CAAN'].tolist()
+                
+                # how many caans in the df are not in the db?
+                missing_from_db = [caan for caan in caan_numbers if caan not in [caan.caan for caan in project.caans]]
                 caans = CAANModel.query.filter(CAANModel.caan.in_(caan_numbers)).all()
                 project.caans = caans
+                recon_log['project-caans']['added'].append({"project": project_number, "caans": missing_from_db})
+            db.session.commit()
+
 
         except Exception as e:
             if db.session.transaction and db.session.transaction.nested:
