@@ -97,7 +97,7 @@ class ServerEdit:
                 os.remove(self.old_path)
                 self.change_executed = True
                 self.files_effected = 1
-                enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
+                enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
                                                             enqueued_function=self.add_deletion_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
                 return enqueueing_results
@@ -111,7 +111,7 @@ class ServerEdit:
             # remove directory and contents
             shutil.rmtree(self.old_path)
             self.change_executed = True
-            enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
+            enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
                                                         enqueued_function=self.add_deletion_to_db_task)
             # for testing:
             #self.add_deletion_to_db_task(task_id=f"{self.add_deletion_to_db_task.__name__}_test01")
@@ -145,7 +145,7 @@ class ServerEdit:
             try:
                 os.rename(self.old_path, self.new_path)
                 self.change_executed = True
-                enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
+                enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
                                                             enqueued_function=self.add_renaming_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
             except Exception as e:
@@ -183,7 +183,7 @@ class ServerEdit:
                 #db_edit = self.add_move_to_db_task(queue_id=f"{self.add_deletion_to_db_task.__name__}_test{random.randint(1, 1000)}")
                 #return db_edit
                 
-                enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'].db,
+                enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
                                                             enqueued_function=self.add_move_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
                 return enqueueing_results
@@ -252,7 +252,7 @@ class ServerEdit:
     def add_deletion_to_db_task(self, queue_id):
         
         with app.app_context():
-            db = flask.current_app.extensions['sqlalchemy'].db
+            db = flask.current_app.extensions['sqlalchemy']
             utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             file_server_root_index = len(utils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
             deletion_log = {}
@@ -317,7 +317,7 @@ class ServerEdit:
     def add_renaming_to_db_task(self, queue_id):
 
         with app.app_context():
-            db = flask.current_app.extensions['sqlalchemy'].db
+            db = flask.current_app.extensions['sqlalchemy']
             utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             file_server_root_index = len(utils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
             rename_log = {}
@@ -397,7 +397,7 @@ class ServerEdit:
 
         """
         with app.app_context():
-            db = flask.current_app.extensions['sqlalchemy'].db
+            db = flask.current_app.extensions['sqlalchemy']
             utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             file_server_root_index = len(utils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
             move_log = {}
