@@ -43,7 +43,7 @@ def filemaker_reconciliation():
     changes to the application database as needed.
     """
     
-    from archives_application.project_tools.project_tools_tasks import fmp_reconciliation_task
+    from archives_application.project_tools.project_tools_tasks import fmp_caan_project_reconciliation_task
 
     # Check if the request includes user credentials or is from a logged in user. 
     # User needs to have ADMIN role.
@@ -67,18 +67,18 @@ def filemaker_reconciliation():
         return api_exception_subroutine(m, e)    
 
     if request_is_authenticated:
-        nk_results = utils.enqueue_new_task(db=db, enqueued_function=fmp_reconciliation_task)
+        nk_results = utils.enqueue_new_task(db=db, enqueued_function=fmp_caan_project_reconciliation_task)
         
 @project_tools.route("/test/fmp_reconciliation", methods=['GET', 'POST'])
 @utils.roles_required(['ADMIN'])
 def test_fmp_reconciliation():
-    from archives_application.project_tools.project_tools_tasks import fmp_reconciliation_task
-    recon_job_id = f"{fmp_reconciliation_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
+    from archives_application.project_tools.project_tools_tasks import fmp_caan_project_reconciliation_task
+    recon_job_id = f"{fmp_caan_project_reconciliation_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
     new_task_record = WorkerTaskModel(task_id=recon_job_id, time_enqueued=str(datetime.now()), origin="test",
-                        function_name=fmp_reconciliation_task.__name__, status="queued")
+                        function_name=fmp_caan_project_reconciliation_task.__name__, status="queued")
     db.session.add(new_task_record)
     db.session.commit()
-    task_results = fmp_reconciliation_task(queue_id=recon_job_id)
+    task_results = fmp_caan_project_reconciliation_task(queue_id=recon_job_id)
     
 
     # prepare scrape results for JSON serialization

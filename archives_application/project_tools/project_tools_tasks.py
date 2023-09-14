@@ -1,5 +1,7 @@
 import flask
 import fmrest
+import os
+import re
 from archives_application import create_app, utils
 from archives_application.models import *
 from archives_application.project_tools.routes import FILEMAKER_API_VERSION, FILEMAKER_CAAN_LAYOUT, FILEMAKER_PROJECTS_LAYOUT, FILEMAKER_PROJECT_CAANS_LAYOUT
@@ -8,7 +10,15 @@ from archives_application.project_tools.routes import FILEMAKER_API_VERSION, FIL
 # they are not running in the main thread.
 app = create_app()
 
-def fmp_reconciliation_task(queue_id: str):
+# Regex pattern for matching a project number.
+#  - ^\d{4,5} matches 4 to 5 digits at the start of the string.
+#  - (?:[A-Za-z](?:-\d{3})?[A-Za-z]?)? is a non-capturing group that allows for an optional letter, followed by an optional group that matches a dash and three digits, followed by an optional letter.
+#  - $ ensures that the pattern matches the entire string.
+PROJECT_NUMBER_RE_PATTERN = r'^\d{4,5}(?:[A-Za-z](?:-\d{3})?[A-Za-z]?)?$'
+# The maximum number of records to retrieve from FileMaker with each fmrest call that has a limit param.
+MAX_RECORDS_RETIEVED = 50000
+
+def fmp_caan_project_reconciliation_task(queue_id: str):
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
         utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
@@ -28,7 +38,7 @@ def fmp_reconciliation_task(queue_id: str):
         def all_layout_records_df(layout):
             fm_server = fmrest_server(layout)
             fm_server.login()
-            foundset = fm_server.get_records()
+            foundset = fm_server.get_records(MAX_RECORDS_RETIEVED)
             return foundset.to_df()
         
         recon_log = {"CAAN": {"added": [], "removed": []},
@@ -77,13 +87,14 @@ def fmp_reconciliation_task(queue_id: str):
             fm_projects_df = all_layout_records_df(FILEMAKER_PROJECTS_LAYOUT)
             project_query = db.session.query(ProjectModel)
             db_project_df = utils.db_query_to_df(project_query)
-
+            is_proj_number = lambda input_string: bool(re.match(PROJECT_NUMBER_RE_PATTERN, input_string))
+            fm_projects_df = fm_projects_df[fm_projects_df['ProjectNumber'].apply(is_proj_number)]
             missing_from_db = fm_projects_df.copy()
             if not db_project_df.empty:
-                missing_from_db = fm_projects_df[~fm_projects_df['Project Number'].isin(db_project_df['project_number'])]
+                missing_from_db = fm_projects_df[~fm_projects_df['ProjectNumber'].isin(db_project_df['project_number'])]
             for _, row in missing_from_db.iterrows():
                 archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
-                project_location = utils.path_to_project_dir(project_number=row['Project Number'],
+                project_location = utils.path_to_project_dir(project_number=row['ProjectNumber'],
                                                              archives_location=archives_location)
                 project = ProjectModel(number=row['Project Number'],
                                        name=row['Project Name'],
