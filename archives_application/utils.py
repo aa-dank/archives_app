@@ -560,3 +560,15 @@ def db_query_to_df(query: flask_sqlalchemy.query.Query, dataframe_size_limit= No
     if state_col in df.columns:
         df = df.drop(columns=[state_col])
     return df
+
+
+def attempt_rollback(db: flask_sqlalchemy.extension.SQLAlchemy):
+    """
+    Attempts to rollback the database session. Exceptions are generllay raised when there are no changes to rollback.
+    """
+    
+    try:
+        db.session.rollback()
+    except:
+        pass
+
