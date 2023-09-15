@@ -11,6 +11,7 @@ FILEMAKER_API_VERSION = 'v1'
 FILEMAKER_CAAN_LAYOUT = 'caan_table'
 FILEMAKER_PROJECTS_LAYOUT = 'projects_table'
 FILEMAKER_PROJECT_CAANS_LAYOUT = 'caan_project_join'
+FILEMAKER_TABLE_INDEX_COLUMN_NAME = 'ID_Primary'
 
 project_tools = flask.Blueprint('project_tools', __name__)
 
