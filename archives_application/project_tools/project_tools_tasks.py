@@ -4,7 +4,7 @@ import os
 import re
 from archives_application import create_app, utils
 from archives_application.models import *
-from archives_application.project_tools.routes import FILEMAKER_API_VERSION, FILEMAKER_CAAN_LAYOUT, FILEMAKER_PROJECTS_LAYOUT, FILEMAKER_PROJECT_CAANS_LAYOUT
+from archives_application.project_tools.routes import FILEMAKER_API_VERSION, FILEMAKER_CAAN_LAYOUT, FILEMAKER_PROJECTS_LAYOUT, FILEMAKER_PROJECT_CAANS_LAYOUT, FILEMAKER_TABLE_INDEX_COLUMN_NAME
 
 # Create the app context so that tasks can access app extensions even though
 # they are not running in the main thread.
@@ -15,8 +15,8 @@ app = create_app()
 #  - (?:[A-Za-z](?:-\d{3})?[A-Za-z]?)? is a non-capturing group that allows for an optional letter, followed by an optional group that matches a dash and three digits, followed by an optional letter.
 #  - $ ensures that the pattern matches the entire string.
 PROJECT_NUMBER_RE_PATTERN = r'^\d{4,5}(?:[A-Za-z](?:-\d{3})?[A-Za-z]?)?$'
-# The maximum number of records to retrieve from FileMaker with each fmrest call that has a limit param.
-MAX_RECORDS_RETIEVED = 50000
+
+
 
 def fmp_caan_project_reconciliation_task(queue_id: str):
     with app.app_context():
@@ -35,10 +35,11 @@ def fmp_caan_project_reconciliation_task(queue_id: str):
             )
             return s
 
-        def all_layout_records_df(layout):
+        def all_records_using_id_primary(layout):
             fm_server = fmrest_server(layout)
             fm_server.login()
-            foundset = fm_server.get_records(MAX_RECORDS_RETIEVED)
+            foundset = fm_server.find(query=[{FILEMAKER_TABLE_INDEX_COLUMN_NAME : "*"}],
+                                      limit=1000000)
             return foundset.to_df()
         
         recon_log = {"CAAN": {"added": [], "removed": []},
@@ -48,7 +49,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str):
         
         # Reconcile CAANs
         try:
-            fm_caan_df = all_layout_records_df(FILEMAKER_CAAN_LAYOUT)
+            fm_caan_df = all_records_using_id_primary(FILEMAKER_CAAN_LAYOUT)
             caan_query = db.session.query(CAANModel.caan)
             db_caans_df = utils.db_query_to_df(caan_query)
 
@@ -77,14 +78,13 @@ def fmp_caan_project_reconciliation_task(queue_id: str):
             db.session.commit()
             
         except Exception as e:
-            if db.session.transaction and db.session.transaction.nested:
-                db.session.rollback()
+            utils.attempt_rollback(db)
             recon_log['errors'].append({"message": "Error reconciling CAAN data:", "exception": str(e)})
         
         # Reconcile projects
         try:
             
-            fm_projects_df = all_layout_records_df(FILEMAKER_PROJECTS_LAYOUT)
+            fm_projects_df = all_records_using_id_primary(FILEMAKER_PROJECTS_LAYOUT)
             project_query = db.session.query(ProjectModel)
             db_project_df = utils.db_query_to_df(project_query)
             is_proj_number = lambda input_string: bool(re.match(PROJECT_NUMBER_RE_PATTERN, input_string))
@@ -117,13 +117,12 @@ def fmp_caan_project_reconciliation_task(queue_id: str):
             db.session.commit()
 
         except Exception as e:
-            if db.session.transaction and db.session.transaction.nested:
-                 db.session.rollback()
+            utils.attempt_rollback(db)
             recon_log['errors'].append({"message": "Error reconciling project data:", "exception": str(e)})
         
         # Reconcile project-caan join table
         try:
-            fm_project_caan_df = all_layout_records_df(FILEMAKER_PROJECT_CAANS_LAYOUT)
+            fm_project_caan_df = all_records_using_id_primary(FILEMAKER_PROJECT_CAANS_LAYOUT)
             project_groups = fm_project_caan_df.groupby('ProjectNumber')
             for project_number, project_df in project_groups:
                 project = ProjectModel.query.filter_by(number=project_number).first()
@@ -138,9 +137,8 @@ def fmp_caan_project_reconciliation_task(queue_id: str):
 
 
         except Exception as e:
-            if db.session.transaction and db.session.transaction.nested:
-                 db.session.rollback()
+            utils.attempt_rollback(db)
             recon_log['errors'].append({"message": "Error reconciling project-caan join data:", "exception": str(e)})
 
-        utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_results=recon_log)
+        utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=recon_log)
         return recon_log

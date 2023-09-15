@@ -553,7 +553,7 @@ def db_query_to_df(query: flask_sqlalchemy.query.Query, dataframe_size_limit= No
             raise ValueError(e_str)
     
     results = query.all()
-    df = pd.DataFrame([row.__dict__ for row in results])
+    df = pd.DataFrame(results)
     
     # drop the sqlalchemy state column if it exists
     state_col = '_sa_instance_state'
