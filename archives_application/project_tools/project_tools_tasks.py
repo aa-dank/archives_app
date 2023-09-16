@@ -109,15 +109,32 @@ def fmp_caan_project_reconciliation_task(queue_id: str):
                 missing_from_db = fm_projects_df.copy()
                 if not db_project_df.empty:
                     missing_from_db = fm_projects_df[~fm_projects_df['ProjectNumber'].isin(db_project_df['project_number'])]
+                
                 for _, row in missing_from_db.iterrows():
                     archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
-                    project_location = utils.path_to_project_dir(project_number=row['ProjectNumber'],
-                                                                archives_location=archives_location)
-                    project = ProjectModel(number=row['Project Number'],
-                                        name=row['Project Name'],
-                                        file_server_location=project_location,)
+                    project_location = None
+                    
+                    # attempt to get a project directory for the project
+                    try:
+                        project_location, _ = utils.path_to_project_dir(project_number=row['ProjectNumber'],
+                                                                        archives_location=archives_location)
+                        if project_location:
+                            project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")):]
+
+                    except Exception as e:
+                        recon_log['errors'].append({"message": f"Error getting a project directory for {row['ProjectNumber']}:",
+                                                    "exception": str(e)})
+                    
+                    # Map the FileMaker 'Drawings' field to a boolean value. Note thaat it has other values esides yes and no.
+                    drawing_value_map = {"Yes": True, "yes": True, "YES": True, "NO": False, "No": False, "no": False}
+                    has_drawings = drawing_value_map.get(row['Drawings'], None)
+                    
+                    project = ProjectModel(number=row['ProjectNumber'],
+                                           name=row['ProjectName'],
+                                           drawings=has_drawings,
+                                           file_server_location=project_location)
                     db.session.add(project)
-                    recon_log['project']['added'].append(row['Project Number'])
+                    recon_log['project']['added'].append(row['ProjectNumber'])
 
                 if not db_project_df.empty:
                     missing_from_fm = db_project_df[~db_project_df['project_number'].isin(fm_projects_df['Project Number'])]
