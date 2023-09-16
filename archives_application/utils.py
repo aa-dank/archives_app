@@ -534,7 +534,8 @@ def db_query_to_df(query: flask_sqlalchemy.query.Query, dataframe_size_limit= No
         """
         subquery = query.order_by(func.random()).limit(sample_size).subquery()
         sample = select(subquery).execute().fetchall()
-        sample_df = pd.DataFrame([row.__dict__ for row in sample])
+        sample_dict_list = [row._asdict() for row in sample]
+        sample_df = pd.DataFrame(sample_dict_list)
         sample_average = sample_df.memory_usage(deep=True).sum() / sample_size
         return sample_average 
     
@@ -553,7 +554,11 @@ def db_query_to_df(query: flask_sqlalchemy.query.Query, dataframe_size_limit= No
             raise ValueError(e_str)
     
     results = query.all()
-    df = pd.DataFrame(results)
+    if not results:
+        return pd.DataFrame()
+    
+    results_dict_list = [row._asdict() for row in results]
+    df = pd.DataFrame(results_dict_list)
     
     # drop the sqlalchemy state column if it exists
     state_col = '_sa_instance_state'

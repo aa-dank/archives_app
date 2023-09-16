@@ -123,10 +123,11 @@ class ProjectModel(db.Model):
     number = db.Column(db.String, nullable=False)
     name = db.Column(db.String, nullable=False)
     file_server_location = db.Column(db.String)
+    drawings = db.Column(db.Boolean)
     caans = db.relationship('CAANModel', secondary=project_caans, back_populates='projects')
 
     def __repr__(self):
-        return f"project: {self.id}, {self.number}, {self.name}, {self.file_server_location}"
+        return f"project: {self.id}, {self.number}, {self.name}, {self.file_server_location}, {self.drawings}"
     
 
 class CAANModel(db.Model):
