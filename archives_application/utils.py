@@ -555,10 +555,18 @@ def db_query_to_df(query: flask_sqlalchemy.query.Query, dataframe_size_limit= No
     
     results = query.all()
     if not results:
-        return pd.DataFrame()
+        return pd.DataFrame()                                                                                                                                                   
     
-    results_dict_list = [row._asdict() for row in results]
-    df = pd.DataFrame(results_dict_list)
+    # Convert rows to dictionaries, handling both models and other results
+    rows_as_dicts = []
+    for row in results:
+        if hasattr(row, '__dict__'):
+            rows_as_dicts.append(row.__dict__)
+        else:
+            rows_as_dicts.append(dict(row))
+    
+    # Create the DataFrame from the list of dictionaries
+    df = pd.DataFrame(rows_as_dicts)
     
     # drop the sqlalchemy state column if it exists
     state_col = '_sa_instance_state'
