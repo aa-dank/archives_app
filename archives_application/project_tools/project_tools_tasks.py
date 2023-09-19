@@ -68,7 +68,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str):
                 recon_log['errors'].append({"message": "Error retrieving FileMaker project-caan join data:", "exception": str(fm_project_caan_error)})
 
             if not fm_caan_df.empty:
-                caan_query = db.session.query(CAANModel.caan)
+                caan_query = db.session.query(CAANModel)
                 db_caans_df = utils.db_query_to_df(caan_query)
 
                 missing_from_db = fm_caan_df
@@ -108,7 +108,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str):
                 fm_projects_df = fm_projects_df[fm_projects_df['ProjectNumber'].apply(is_proj_number)]
                 missing_from_db = fm_projects_df.copy()
                 if not db_project_df.empty:
-                    missing_from_db = fm_projects_df[~fm_projects_df['ProjectNumber'].isin(db_project_df['project_number'])]
+                    missing_from_db = fm_projects_df[~fm_projects_df['ProjectNumber'].isin(db_project_df['number'])]
                 
                 for _, row in missing_from_db.iterrows():
                     archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')

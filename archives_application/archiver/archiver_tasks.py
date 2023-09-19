@@ -331,6 +331,8 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
         utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
         file_server_root_index = len(utils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
         location_scrape_log = {"queue_id": queue_id,
+                               "Location": scrape_location,
+                               "Recursive": recursively,
                                "Locations Missing": 0,
                                "Files Records Removed": 0,
                                "Files Confirmed": 0,
