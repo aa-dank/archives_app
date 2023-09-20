@@ -10,7 +10,18 @@ from archives_application.utils import roles_required, enqueue_new_task
 from archives_application import db, bcrypt
 from archives_application.models import *
 
-
+# This dictionary is used to determine how long to keep task records in the database
+TASK_RECORD_LIFESPANS = {'add_file_to_db_task': 90,
+                        'scrape_file_data_task': 365,
+                        'confirm_file_locations_task': 365,
+                        'add_deletion_to_db_task':180,
+                        'add_move_to_db_task': 180,
+                        'add_renaming_to_db_task': 180,
+                        'db_backup_clean_up_task': 90,
+                        'task_records_clean_up_task': 90,
+                        'temp_file_clean_up_task': 90,
+                        'db_backup_task': 180,
+                        'fmp_caan_project_reconciliation_task': 365}
 
 main = flask.Blueprint('main', __name__)
 
@@ -121,21 +132,9 @@ def app_maintenance():
             else:
                 some_dict[key] = str(value)
         return some_dict
-
-
-    task_entry_lifespans = {'add_file_to_db_task': 90,
-                            'scrape_file_data_task': 365,
-                            'confirm_file_locations_task': 365,
-                            'add_deletion_to_db_task':180,
-                            'add_move_to_db_task': 180,
-                            'add_renaming_to_db_task': 180,
-                            'db_backup_clean_up_task': 90,
-                            'task_records_clean_up_task': 90,
-                            'temp_file_clean_up_task': 90,
-                            'db_backup_task': 180}
     
     custodian = AppCustodian(temp_file_lifespan=3,
-                             task_records_lifespan_map=task_entry_lifespans,
+                             task_records_lifespan_map=TASK_RECORD_LIFESPANS,
                              db_backup_file_lifespan=2)
     
     has_admin_role = lambda usr: any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
@@ -207,7 +206,7 @@ def change_config_settings():
             restart_params = {'delay': 15}
             nk_result = enqueue_new_task(db=db,
                                          enqueued_function=restart_app_task,
-                                         function_kwargs=restart_params)
+                                         task_kwargs=restart_params)
             
             flask.flash("Values entered were stored in the config file. Application restart is immenent.", 'success')
             return flask.redirect(flask.url_for('main.home'))

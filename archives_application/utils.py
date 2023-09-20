@@ -441,7 +441,7 @@ def debug_printing(to_print):
     print(dt_stamp + "\n" + str(to_print), file=sys.stderr)
 
 
-def enqueue_new_task(db, enqueued_function: callable, function_kwargs: dict = {}, enqueue_call_kwargs: dict = {}, timeout: Union[int, None] = None):
+def enqueue_new_task(db, enqueued_function: callable, task_kwargs: dict = {}, enqueue_call_kwargs: dict = {}, timeout: Union[int, None] = None):
     """
     Adds a function to the rq task queue to be executed asynchronously. The function must have a paramater called 'queue_id' which will
     give the function access to the task id of the rq task. This can be used for updating the status of the task in the database.
@@ -461,13 +461,12 @@ def enqueue_new_task(db, enqueued_function: callable, function_kwargs: dict = {}
     while db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == job_id).first():
         job_id = f"{enqueued_function.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}_{random_string()}"
         
-    
-    function_kwargs['queue_id'] = job_id
+    task_kwargs['queue_id'] = job_id
     timeout = timeout * 60 if timeout else None
     enqueue_call_kwargs['job_id'] = job_id
     enqueue_call_kwargs['timeout'] = timeout
     enqueue_call_kwargs['func'] = enqueued_function
-    enqueue_call_kwargs['kwargs'] = function_kwargs
+    enqueue_call_kwargs['kwargs'] = task_kwargs
 
     task = flask.current_app.q.enqueue_call(**enqueue_call_kwargs)
     new_task_record = WorkerTaskModel(task_id=job_id,
@@ -585,6 +584,9 @@ def attempt_rollback(db: flask_sqlalchemy.extension.SQLAlchemy):
     except:
         pass
 
+class ArchivesPathException(Exception):
+    def __init__(self, message):
+        super().__init__(message)
 
 def path_to_project_dir(project_number: Union[int, str], archives_location: str, create_new_project_dir: bool = False):
     
@@ -612,7 +614,7 @@ def path_to_project_dir(project_number: Union[int, str], archives_location: str,
     
     # if we have more than one matching root dir we throw an error
     if len(matching_root_dirs) != 1:
-        raise Exception(f"Expected to find one directory that starts with {xx_level_dir_prefix} in the location {archives_location}. Found {len(matching_root_dirs)}")
+        raise ArchivesPathException(f"Expected to find one directory that starts with {xx_level_dir_prefix} in the location {archives_location}. Found {len(matching_root_dirs)}")
                         
     # add the directory matching the xx level prefix for this project number
     project_path = os.path.join(archives_location, matching_root_dirs[0])
@@ -626,13 +628,13 @@ def path_to_project_dir(project_number: Union[int, str], archives_location: str,
 
     # if more than one directory starts with the same project number...
     if len(dirs_matching_proj_num) > 1:
-        raise Exception(f"More than one directory starts with the same project number, {project_number} in the location {project_path}.")
+        raise ArchivesPathException(f"More than one directory starts with the same project number, {project_number} in the location {project_path}.")
     
     # if no directories match the project number...
     if len(dirs_matching_proj_num) == 0:
         dirs_matching_prefix = [dir_name for dir_name in xx_dir_dirs if prefix_in_dir_name(dir_name)]
         if len(dirs_matching_prefix) > 1:
-            raise Exception(f"More than one directory starts with the same project number prefix, {project_num_prefix} in the location {project_path}.")
+            raise ArchivesPathException(f"More than one directory starts with the same project number prefix, {project_num_prefix} in the location {project_path}.")
 
         # if there is now project number or prefix directory at the 'xx' level, it will need to be made
         if len(dirs_matching_prefix) == 0:
@@ -655,7 +657,7 @@ def path_to_project_dir(project_number: Union[int, str], archives_location: str,
                                         proj_num_in_dir_name(dir_name)]
             
             if len(dirs_matching_proj_num) > 1:
-                raise Exception(f"More than one directory starts with the same project number, {project_number} in the location {project_path}.")
+                raise ArchivesPathException(f"More than one directory starts with the same project number, {project_number} in the location {project_path}.")
 
             if len(dirs_matching_proj_num) == 0:
                 if create_new_project_dir:
@@ -683,7 +685,7 @@ def path_to_project_dir(project_number: Union[int, str], archives_location: str,
 
         # if more than one directory starts with the same project number...
         if len(dirs_matching_proj_num) > 1:
-            raise Exception(f"More than one directory starts with the same project number, {project_number} in the location {project_path}.")
+            raise ArchivesPathException(f"More than one directory starts with the same project number, {project_number} in the location {project_path}.")
         
         if len(dirs_matching_proj_num) == 0:
             

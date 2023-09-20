@@ -19,7 +19,7 @@ PROJECT_NUMBER_RE_PATTERN = r'^\d{4,5}(?:[A-Za-z](?:-\d{3})?[A-Za-z]?)?$'
 
 
 
-def fmp_caan_project_reconciliation_task(queue_id: str):
+def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool = False):
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
         utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
@@ -36,13 +36,13 @@ def fmp_caan_project_reconciliation_task(queue_id: str):
             )
             return s
 
-        def all_records_using_id_primary(layout):
+        def records_using_id_primary(layout, limit = 100000):
             
             try:
                 fm_server = fmrest_server(layout)
                 fm_server.login()
                 foundset = fm_server.find(query=[{FILEMAKER_TABLE_INDEX_COLUMN_NAME : "*"}],
-                                        limit=1000000)
+                                          limit=limit)
                 df = foundset.to_df()
                 return df, None
 
@@ -52,18 +52,22 @@ def fmp_caan_project_reconciliation_task(queue_id: str):
         recon_log = {"CAAN": {"added": [], "removed": []},
                      "project": {"added": [], "removed": []},
                      "project-caans": {"added": [], "removed": []},
+                     "locations confirmed": 0,
                      "errors": []}
         
+        # Increase the timeout for the fmrest server
         fmrest.utils.TIMEOUT = 300
+        archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+        
         # Reconcile CAANs
         try:
-            fm_caan_df, fm_caan_error = all_records_using_id_primary(FILEMAKER_CAAN_LAYOUT)
+            fm_caan_df, fm_caan_error = records_using_id_primary(FILEMAKER_CAAN_LAYOUT)
             if fm_caan_error:
                 recon_log['errors'].append({"message": "Error retrieving FileMaker CAAN data:", "exception": str(fm_caan_error)})
-            fm_projects_df, fm_projects_error = all_records_using_id_primary(FILEMAKER_PROJECTS_LAYOUT)
+            fm_projects_df, fm_projects_error = records_using_id_primary(FILEMAKER_PROJECTS_LAYOUT)
             if fm_projects_error:
                 recon_log['errors'].append({"message": "Error retrieving FileMaker project data:", "exception": str(fm_projects_error)})
-            fm_project_caan_df, fm_project_caan_error = all_records_using_id_primary(FILEMAKER_PROJECT_CAANS_LAYOUT)
+            fm_project_caan_df, fm_project_caan_error = records_using_id_primary(FILEMAKER_PROJECT_CAANS_LAYOUT)
             if fm_project_caan_error:
                 recon_log['errors'].append({"message": "Error retrieving FileMaker project-caan join data:", "exception": str(fm_project_caan_error)})
 
@@ -110,8 +114,9 @@ def fmp_caan_project_reconciliation_task(queue_id: str):
                 if not db_project_df.empty:
                     missing_from_db = fm_projects_df[~fm_projects_df['ProjectNumber'].isin(db_project_df['number'])]
                 
+                # Add projects that are in FileMaker but not in the db
                 for _, row in missing_from_db.iterrows():
-                    archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+                    
                     project_location = None
                     
                     # attempt to get a project directory for the project
@@ -119,9 +124,11 @@ def fmp_caan_project_reconciliation_task(queue_id: str):
                         project_location, _ = utils.path_to_project_dir(project_number=row['ProjectNumber'],
                                                                         archives_location=archives_location)
                         if project_location:
-                            project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")):]
+                            project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")) + 1:]
 
                     except Exception as e:
+                        if type(e) == utils.ArchivesPathException:
+                                continue
                         recon_log['errors'].append({"message": f"Error getting a project directory for {row['ProjectNumber']}:",
                                                     "exception": str(e)})
                     
@@ -135,21 +142,39 @@ def fmp_caan_project_reconciliation_task(queue_id: str):
                                            file_server_location=project_location)
                     db.session.add(project)
                     recon_log['project']['added'].append(row['ProjectNumber'])
+                db.session.commit()
 
+                # Remove projects that are in the db but not in FileMaker
                 if not db_project_df.empty:
-                    missing_from_fm = db_project_df[~db_project_df['project_number'].isin(fm_projects_df['Project Number'])]
+                    missing_from_fm = db_project_df[~db_project_df['number'].isin(fm_projects_df['ProjectNumber'])]
                     for _, row in missing_from_fm.iterrows():
-                        project = ProjectModel.query.filter_by(project_number=row['project_number']).first()
+                        project = ProjectModel.query.filter_by(project_number=row['number']).first()
                         
                         # Remove the project from any caans it is associated with
                         for caan in project.caans:
                             caan.projects.remove(project)
                         
                         db.session.delete(project)
-                        recon_log['project']['removed'].append(row['project_number'])
+                        recon_log['project']['removed'].append(row['number'])
+                    db.session.commit()
                 
-                db.session.commit()
-
+                # Confirm project locations for projects that are in the db
+                if confirm_locations:
+                    to_confirm_db = db_project_df[~db_project_df['number'].isin(missing_from_fm['number'])]
+                    for _, row in to_confirm_db.iterrows():
+                        project = ProjectModel.query.filter_by(number=row['number']).first()
+                        try:
+                            project_location, _ = utils.path_to_project_dir(project_number=row['number'],
+                                                                            archives_location=archives_location)
+                            project.file_server_location = project_location
+                            db.session.commit()
+                            recon_log['locations confirmed'] += 1
+                        except Exception as e:
+                            if type(e) == utils.ArchivesPathException:
+                                continue
+                            recon_log['errors'].append({"message": f"Error confirming location for {row['number']}:",
+                                                        "exception": str(e)})
+                
         except Exception as e:
             utils.attempt_rollback(db)
             recon_log['errors'].append({"message": "Error reconciling project data:", "exception": str(e)})

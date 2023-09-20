@@ -507,7 +507,7 @@ class ServerEdit:
                             task_kwargs = {'filepath': os.path.join(root, relocated_file)}
                             utils.enqueue_new_task(db= db,
                                                    enqueued_function=archiver_tasks.add_file_to_db_task,
-                                                   function_kwargs=task_kwargs)
+                                                   task_kwargs=task_kwargs)
 
 
             utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=move_log)
