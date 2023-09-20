@@ -416,7 +416,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                     add_file_params = {"filepath": filepath}
                     utils.enqueue_new_task(db=db,
                                            enqueued_function=add_file_to_db_task, 
-                                           function_kwargs=add_file_params)
+                                           task_kwargs=add_file_params)
                     
                 except Exception as e:
                     e_dict = {"Location": root,

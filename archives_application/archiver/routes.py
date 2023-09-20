@@ -240,7 +240,7 @@ def upload_file():
                 add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': False} #TODO add archiving functionality
                 nk_results = utils.enqueue_new_task(db=db,
                                                     enqueued_function=add_file_to_db_task,
-                                                    function_kwargs=add_file_kwargs,
+                                                    task_kwargs=add_file_kwargs,
                                                     timeout=None)
                 
                 flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
@@ -466,7 +466,7 @@ def inbox_item():
                     add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': True}
                     nk_results = utils.enqueue_new_task(db=db,
                                                         enqueued_function=add_file_to_db_task,
-                                                        function_kwargs=add_file_kwargs,
+                                                        task_kwargs=add_file_kwargs,
                                                         timeout=None)
 
                     # make sure that the old file has been removed
@@ -633,7 +633,7 @@ def scrape_files():
             nk_call_kwargs = {'result_ttl': 43200}
             nk_results = utils.enqueue_new_task(db=db,
                                                 enqueued_function=scrape_file_data_task,
-                                                function_kwargs=scrape_params,
+                                                task_kwargs=scrape_params,
                                                 enqueue_call_kwargs=nk_call_kwargs,
                                                 timeout=scrape_time.seconds + 60)
             
@@ -724,7 +724,7 @@ def confirm_db_file_locations():
                               "confirming_time": confirming_time}
             nk_results = utils.enqueue_new_task(db=db,
                                                 enqueued_function=confirm_file_locations_task,
-                                                function_kwargs=confirm_params,
+                                                task_kwargs=confirm_params,
                                                 timeout=confirming_time.seconds + 600)
             
             # prepare task enqueueing info for JSON serialization
@@ -775,6 +775,9 @@ def test_confirm_files():
 
 @archiver.route("/file_search", methods=['GET', 'POST'])
 def file_search():
+    """
+    
+    """
     def user_path_from_db_data(file_server_directories, filename = None):
         server_directories_list = utils.split_path(file_server_directories)
         archives_network_location_list = utils.split_path(flask.current_app.config.get("ARCHIVES_NETWORK_LOCATION"))
@@ -893,7 +896,7 @@ def scrape_location():
                          'confirm_data': True}
         nk_results = utils.enqueue_new_task(db=db,
                                             enqueued_function=scrape_location_files_task,
-                                            function_kwargs=scrape_params,
+                                            task_kwargs=scrape_params,
                                             timeout=3600)
         id = nk_results.get("_id")
         function_call = nk_results.get("description")

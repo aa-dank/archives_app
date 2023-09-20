@@ -68,19 +68,29 @@ def filemaker_reconciliation():
         return api_exception_subroutine(m, e)    
 
     if request_is_authenticated:
-        nk_results = utils.enqueue_new_task(db=db, enqueued_function=fmp_caan_project_reconciliation_task)
+        to_confirm = flask.request.args.get('confirm_locations')
+        to_confirm = True if to_confirm.lower() == "true" else False
+        task_kwargs = {"confirm_locations": to_confirm}
+        nk_results = utils.enqueue_new_task(db=db, enqueued_function=fmp_caan_project_reconciliation_task, task_kwargs=task_kwargs)
         
-        
+
 @project_tools.route("/test/fmp_reconciliation", methods=['GET', 'POST'])
 @utils.roles_required(['ADMIN'])
 def test_fmp_reconciliation():
     from archives_application.project_tools.project_tools_tasks import fmp_caan_project_reconciliation_task
     recon_job_id = f"{fmp_caan_project_reconciliation_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
-    new_task_record = WorkerTaskModel(task_id=recon_job_id, time_enqueued=str(datetime.now()), origin="test",
-                        function_name=fmp_caan_project_reconciliation_task.__name__, status="queued")
+    new_task_record = WorkerTaskModel(task_id=recon_job_id,
+                                      time_enqueued=str(datetime.now()),
+                                      origin="test",
+                                      function_name=fmp_caan_project_reconciliation_task.__name__,
+                                      status="queued")
     db.session.add(new_task_record)
     db.session.commit()
-    task_results = fmp_caan_project_reconciliation_task(queue_id=recon_job_id)
+    
+    to_confirm = flask.request.args.get('confirm_locations')
+    to_confirm = True if to_confirm.lower() == "true" else False
+    task_results = fmp_caan_project_reconciliation_task(queue_id=recon_job_id,
+                                                        confirm_locations=to_confirm)
     
 
     # prepare scrape results for JSON serialization
