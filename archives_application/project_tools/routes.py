@@ -72,6 +72,9 @@ def filemaker_reconciliation():
         to_confirm = True if to_confirm.lower() == "true" else False
         task_kwargs = {"confirm_locations": to_confirm}
         nk_results = utils.enqueue_new_task(db=db, enqueued_function=fmp_caan_project_reconciliation_task, task_kwargs=task_kwargs)
+        return flask.Response(json.dumps(utils.serializablize_dict(nk_results)), status=200)
+    else:
+        return flask.Response("Unauthorized", status=401)
         
 
 @project_tools.route("/test/fmp_reconciliation", methods=['GET', 'POST'])
@@ -97,3 +100,12 @@ def test_fmp_reconciliation():
     return flask.Response(json.dumps(task_results), status=200)
 
 
+@project_tools.route("/drawings_locations/<caan>", methods=['GET', 'POST'])
+def caan_projects(caan):
+
+    # get all projects for a caan
+    caan_projects_query = ProjectModel.query.filter(ProjectModel.caans.any(CAANModel.caan == caan))
+    caan_projects_df = utils.db_query_to_df(query=caan_projects_query)
+    has_drawings_groups = caan_projects_df.groupby('drawings')
+    has_drawings = has_drawings_groups.get_group(True)
+    pass
