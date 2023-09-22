@@ -15,7 +15,7 @@ app = create_app()
 #  - ^\d{4,5} matches 4 to 5 digits at the start of the string.
 #  - (?:[A-Za-z](?:-\d{3})?[A-Za-z]?)? is a non-capturing group that allows for an optional letter, followed by an optional group that matches a dash and three digits, followed by an optional letter.
 #  - $ ensures that the pattern matches the entire string.
-PROJECT_NUMBER_RE_PATTERN = r'^\d{4,5}(?:[A-Za-z](?:-\d{3})?[A-Za-z]?)?$'
+PROJECT_NUMBER_RE_PATTERN = r'\b\d{4,5}(?:[A-Z])?(?:-\d{3})?(?:[A-Z])?\b'
 
 
 
@@ -36,13 +36,12 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
             )
             return s
 
-        def records_using_id_primary(layout, limit = 100000):
             
+        def all_fm_records(layout, limit = 100000):
             try:
                 fm_server = fmrest_server(layout)
                 fm_server.login()
-                foundset = fm_server.find(query=[{FILEMAKER_TABLE_INDEX_COLUMN_NAME : "*"}],
-                                          limit=limit)
+                foundset = fm_server.get_records(limit=limit)
                 df = foundset.to_df()
                 return df, None
 
@@ -61,13 +60,13 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
         
         # Reconcile CAANs
         try:
-            fm_caan_df, fm_caan_error = records_using_id_primary(FILEMAKER_CAAN_LAYOUT)
+            fm_caan_df, fm_caan_error = all_fm_records(FILEMAKER_CAAN_LAYOUT)
             if fm_caan_error:
                 recon_log['errors'].append({"message": "Error retrieving FileMaker CAAN data:", "exception": str(fm_caan_error)})
-            fm_projects_df, fm_projects_error = records_using_id_primary(FILEMAKER_PROJECTS_LAYOUT)
+            fm_projects_df, fm_projects_error = all_fm_records(FILEMAKER_PROJECTS_LAYOUT)
             if fm_projects_error:
                 recon_log['errors'].append({"message": "Error retrieving FileMaker project data:", "exception": str(fm_projects_error)})
-            fm_project_caan_df, fm_project_caan_error = records_using_id_primary(FILEMAKER_PROJECT_CAANS_LAYOUT)
+            fm_project_caan_df, fm_project_caan_error = all_fm_records(FILEMAKER_PROJECT_CAANS_LAYOUT)
             if fm_project_caan_error:
                 recon_log['errors'].append({"message": "Error retrieving FileMaker project-caan join data:", "exception": str(fm_project_caan_error)})
 
@@ -110,6 +109,9 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 db_project_df = utils.db_query_to_df(project_query)
                 is_proj_number = lambda input_string: bool(re.match(PROJECT_NUMBER_RE_PATTERN, input_string))
                 fm_projects_df = fm_projects_df[fm_projects_df['ProjectNumber'].apply(is_proj_number)]
+                # strip whitespace from project numbers
+                fm_projects_df['ProjectNumber'] = fm_projects_df['ProjectNumber'].str.strip()
+
                 missing_from_db = fm_projects_df.copy()
                 if not db_project_df.empty:
                     missing_from_db = fm_projects_df[~fm_projects_df['ProjectNumber'].isin(db_project_df['number'])]
@@ -127,10 +129,11 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                             project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")) + 1:]
 
                     except Exception as e:
-                        if type(e) == utils.ArchivesPathException:
-                                continue
                         recon_log['errors'].append({"message": f"Error getting a project directory for {row['ProjectNumber']}:",
                                                     "exception": str(e)})
+                        if type(e) == utils.ArchivesPathException:
+                                continue
+
                     
                     # Map the FileMaker 'Drawings' field to a boolean value. Note thaat it has other values esides yes and no.
                     drawing_value_map = {"Yes": True, "yes": True, "YES": True, "NO": False, "No": False, "no": False}
@@ -148,7 +151,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 if not db_project_df.empty:
                     missing_from_fm = db_project_df[~db_project_df['number'].isin(fm_projects_df['ProjectNumber'])]
                     for _, row in missing_from_fm.iterrows():
-                        project = ProjectModel.query.filter_by(project_number=row['number']).first()
+                        project = ProjectModel.query.filter_by(number=row['number']).first()
                         
                         # Remove the project from any caans it is associated with
                         for caan in project.caans:
@@ -158,8 +161,9 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                         recon_log['project']['removed'].append(row['number'])
                     db.session.commit()
                 
-                # Confirm project locations for projects that are in the db
-                if confirm_locations:
+                # if confirm_locations is true, confirm the file server locations for projects that are in the db 
+                # (but not the ones that were just added)
+                if confirm_locations and not db_project_df.empty:
                     to_confirm_db = db_project_df[~db_project_df['number'].isin(missing_from_fm['number'])]
                     for _, row in to_confirm_db.iterrows():
                         project = ProjectModel.query.filter_by(number=row['number']).first()
@@ -185,13 +189,15 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 project_groups = fm_project_caan_df.groupby('Projects::ProjectNumber')
                 for project_number, project_df in project_groups:
                     project = ProjectModel.query.filter_by(number=project_number).first()
-                    caan_numbers = project_df['CAAN'].tolist()
-                    
-                    # how many caans in the df are not in the db?
-                    missing_from_db = [caan for caan in caan_numbers if caan not in [caan.caan for caan in project.caans]]
-                    caans = CAANModel.query.filter(CAANModel.caan.in_(caan_numbers)).all()
-                    project.caans = caans
-                    recon_log['project-caans']['added'].append({"project": project_number, "caans": missing_from_db})
+                    if project:
+                        caan_numbers = project_df['CAAN'].tolist()
+            
+                        # how many caans in the df are not in the db?
+                        db_project_caans = [caan.caan for caan in project.caans] if project else []
+                        missing_from_db = [caan for caan in caan_numbers if caan not in db_project_caans]
+                        caans = CAANModel.query.filter(CAANModel.caan.in_(caan_numbers)).all()
+                        project.caans = caans
+                        recon_log['project-caans']['added'].append({"project": project_number, "caans": missing_from_db})
                 db.session.commit()
 
         except Exception as e:
@@ -199,4 +205,4 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
             recon_log['errors'].append({"message": "Error reconciling project-caan join data:", "exception": str(e)})
 
         utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=recon_log)
-        return recon_log
+        return recon_log    

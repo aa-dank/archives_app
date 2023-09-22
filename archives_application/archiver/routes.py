@@ -91,14 +91,6 @@ def get_user_handle():
     return current_user.email.split("@")[0]
 
 
-def serializablize_dict(some_dict: dict):
-    """
-    Converts a dictionary to a dictionary of strings, which can be serialized to json.
-    """
-    serial_dict = {k: v.strftime('%Y-%m-%d %H:%M:%S') if isinstance(v, datetime) else str(v) for k, v in some_dict.items()}
-    return serial_dict
-
-
 def has_admin_role(usr: UserModel):
     """
     Checks if a user has admin role
@@ -637,8 +629,8 @@ def scrape_files():
                                                 enqueue_call_kwargs=nk_call_kwargs,
                                                 timeout=scrape_time.seconds + 60)
             
-            nk_results = {"enqueueing_results": serializablize_dict(nk_results),
-                          "scrape_task_params": serializablize_dict(scrape_params)}
+            nk_results = {"enqueueing_results": utils.serializablize_dict(nk_results),
+                          "scrape_task_params": utils.serializablize_dict(scrape_params)}
             return flask.Response(json.dumps(nk_results), status=200)
 
         except Exception as e:
@@ -728,7 +720,7 @@ def confirm_db_file_locations():
                                                 timeout=confirming_time.seconds + 600)
             
             # prepare task enqueueing info for JSON serialization
-            nk_results = serializablize_dict(nk_results)
+            nk_results = utils.serializablize_dict(nk_results)
             confirm_params['confirming_time'] = str(confirm_params['confirming_time'])
             confirm_dict = {"enqueueing_results": nk_results, "confirmation_task_params": confirm_params}
             return flask.Response(json.dumps(confirm_dict), status=200)

@@ -592,9 +592,15 @@ def path_to_project_dir(project_number: Union[int, str], archives_location: str,
     
     
     def list_of_child_dirs(parent_directory_path):
-            """sub-function for getting a list of just the child directories given a parent directory path"""
-            return [dir for dir in os.listdir(parent_directory_path) if
-                    not os.path.isfile(os.path.join(parent_directory_path, dir))]
+        """Get a list of just the child directories given a parent directory path"""
+
+        child_dirs = []
+
+        for entry in os.scandir(parent_directory_path):
+            if entry.is_dir():
+                child_dirs.append(entry.name)
+
+        return child_dirs
     
     project_number = str(project_number)
 
@@ -704,3 +710,10 @@ def path_to_project_dir(project_number: Union[int, str], archives_location: str,
     
     return project_path, project_path_created
 
+
+def serializablize_dict(some_dict: dict):
+    """
+    Converts a dictionary to a dictionary of strings, which can be serialized to json.
+    """
+    serial_dict = {k: v.strftime('%Y-%m-%d %H:%M:%S') if isinstance(v, datetime) else str(v) for k, v in some_dict.items()}
+    return serial_dict
