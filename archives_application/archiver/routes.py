@@ -768,20 +768,8 @@ def test_confirm_files():
 @archiver.route("/file_search", methods=['GET', 'POST'])
 def file_search():
     """
-    
+    Endpoint for searching the database for files.
     """
-    def user_path_from_db_data(file_server_directories, filename = None):
-        server_directories_list = utils.split_path(file_server_directories)
-        archives_network_location_list = utils.split_path(flask.current_app.config.get("ARCHIVES_NETWORK_LOCATION"))
-        archives_network_location_list = [d for d in archives_network_location_list if d not in ['//', '']]
-        user_file_path_list = archives_network_location_list + server_directories_list
-        if filename:
-            user_file_path_list = user_file_path_list + [filename]
-        user_file_path = "\\".join(user_file_path_list)
-        while not user_file_path.startswith("\\\\"):
-            user_file_path = "\\" + user_file_path
-        return user_file_path
-
 
     form = FileSearchForm()
     csv_filename_prefix = "search_results_"
@@ -810,15 +798,17 @@ def file_search():
     
     if form.validate_on_submit():
         try:
+            archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
             search_query = None
             search_term = str(form.search_term.data).lower()
             if form.search_location.data:
                 search_location = utils.user_path_to_app_path(path_from_user=form.search_location.data,
-                                                                location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
+                                                                location_path_prefix=archives_location)
                 search_location_list = utils.split_path(search_location)
-                mount_path_index = len(utils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+                mount_path_index = len(utils.split_path(archives_location))
                 search_location_search_term = os.path.join(*search_location_list[mount_path_index:])
-                search_query = FileLocationModel.query.filter(FileLocationModel.file_server_directories.like(f"%{search_location_search_term}%"), func.lower(FileLocationModel.filename).like(f"%{search_term}%"))
+                search_query = FileLocationModel.query.filter(FileLocationModel.file_server_directories.like(f"%{search_location_search_term}%"),
+                                                              func.lower(FileLocationModel.filename).like(f"%{search_term}%"))
             else:
                 search_query = FileLocationModel.query.filter(func.lower(FileLocationModel.filename).like(f"%{search_term}%"))
 
@@ -827,7 +817,7 @@ def file_search():
                 flask.flash(f"No files found matching search term: {search_term}", 'warning')
                 return flask.redirect(flask.url_for('archiver.file_search'))
             
-            search_df['Location'] = search_df.apply(lambda row: user_path_from_db_data(row['file_server_directories']), axis=1)
+            search_df['Location'] = search_df.apply(lambda row: utils.user_path_from_db_data(file_server_directories=row['file_server_directories'], archives_location=archives_location), axis=1)
             cols_to_remove = ['id', 'file_id', 'file_server_directories', 'existence_confirmed', 'hash_confirmed']
             search_df.drop(columns=cols_to_remove, inplace=True)
             search_df.rename(columns={'filename': 'Filename'}, inplace=True)

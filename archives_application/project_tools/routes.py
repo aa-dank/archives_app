@@ -1,6 +1,7 @@
 import flask
-import fmrest
 import json
+import os
+import numpy as np
 from flask_login import login_required, current_user
 from archives_application import db, bcrypt
 from archives_application import utils
@@ -95,7 +96,6 @@ def test_fmp_reconciliation():
     task_results = fmp_caan_project_reconciliation_task(queue_id=recon_job_id,
                                                         confirm_locations=to_confirm)
     
-
     # prepare scrape results for JSON serialization
     return flask.Response(json.dumps(task_results), status=200)
 
@@ -103,9 +103,60 @@ def test_fmp_reconciliation():
 @project_tools.route("/drawings_locations/<caan>", methods=['GET', 'POST'])
 def caan_projects(caan):
 
+    def project_drawing_location(project_location, archives_location, drawing_folder_prefix = "f5"):
+        """
+        Returns the location of the drawings folder for a project for access by .
+        @param project_location: location of the project folder
+        @param drawing_folder_prefix: prefix of the drawings folder
+        @return: location of the drawings folder
+        """
+        archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+        project_path = os.path.join(archives_location, project_location)
+        entry = ""
+        if os.path.exists(project_path):
+            for entry in os.scandir(project_path):
+                if entry.isdir() and entry.lower().startswith(drawing_folder_prefix.lower()):
+                    project_location = project_location + entry
+                    break
+            
+            user_project_path = utils.user_path_from_db_data(file_server_directories=project_location,
+                                                             archives_location=archives_location)
+            return user_project_path
+        
+        else:
+            return None
+    
     # get all projects for a caan
     caan_projects_query = ProjectModel.query.filter(ProjectModel.caans.any(CAANModel.caan == caan))
     caan_projects_df = utils.db_query_to_df(query=caan_projects_query)
     has_drawings_groups = caan_projects_df.groupby('drawings')
-    has_drawings = has_drawings_groups.get_group(True)
-    pass
+    has_drawings_df = has_drawings_groups.get_group(True)
+
+    # get all file locations for projects with drawings
+    if has_drawings_df and not has_drawings_df.empty:
+        has_drawings_df["Location"] = has_drawings_df.apply(lambda row: project_drawing_location(project_location=row["file_server_location"],
+                                                                                                 archives_location=flask.current_app.config.get('ARCHIVES_LOCATION')), axis=1)
+        has_drawings_df = has_drawings_df[["number", "name", "Location"]]
+        has_drawings_html = has_drawings_df.to_html(classes='table-dark table-striped table-bordered table-hover table-sm',
+                                                    index=False,
+                                                    justify='left',
+                                                    render_links=True)
+        
+        # These lines add some css to the html table to format it to sit neatly within the div container.
+        has_drawings_html = has_drawings_html.replace('<table', '<table style="table-layout: auto; width: 100%;"')
+        has_drawings_html = has_drawings_html.replace('<td', '<td style="word-break: break-word;"')
+
+    maybe_drawings_df = has_drawings_groups.get_group(np.nan)
+    if maybe_drawings_df and not maybe_drawings_df.empty:
+        maybe_drawings_df["Location"] = maybe_drawings_df.apply(lambda row: project_drawing_location(project_location=row["file_server_location"], archives_location=flask.current_app.config.get('ARCHIVES_LOCATION')), axis=1)
+        maybe_drawings_df = maybe_drawings_df[["number", "name", "Location"]]
+        maybe_drawings_html = maybe_drawings_df.to_html(classes='table-dark table-striped table-bordered table-hover table-sm',
+                                                        index=False,
+                                                        justify='left',
+                                                        render_links=True)
+        
+        # These lines add some css to the html table to format it to sit neatly within the div container.
+        maybe_drawings_html = maybe_drawings_html.replace('<table', '<table style="table-layout: auto; width: 100%;"')
+        maybe_drawings_html = maybe_drawings_html.replace('<td', '<td style="word-break: break-word;"')
+
+    return flask.render_template('caan_projects.html', caan=caan, drawings_confirmed_table=has_drawings_html, drawings_maybe_table=maybe_drawings_html, hide_sidebar=True)
