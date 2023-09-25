@@ -717,3 +717,19 @@ def serializablize_dict(some_dict: dict):
     """
     serial_dict = {k: v.strftime('%Y-%m-%d %H:%M:%S') if isinstance(v, datetime) else str(v) for k, v in some_dict.items()}
     return serial_dict
+
+
+def user_path_from_db_data(file_server_directories, archives_location, filename = None):
+    """
+    Takes the file_server_directories and archives_location from the database and returns a path that can be used by the user.
+    """
+    server_directories_list = split_path(file_server_directories)
+    archives_network_location_list = split_path(archives_location)
+    archives_network_location_list = [d for d in archives_network_location_list if d not in ['//', '']]
+    user_file_path_list = archives_network_location_list + server_directories_list
+    if filename:
+        user_file_path_list = user_file_path_list + [filename]
+    user_file_path = "\\".join(user_file_path_list)
+    while not user_file_path.startswith("\\\\"):
+        user_file_path = "\\" + user_file_path
+    return user_file_path

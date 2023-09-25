@@ -1,5 +1,6 @@
 import flask
 import fmrest
+import logging
 import os
 import re
 import pandas as pd

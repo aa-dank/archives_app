@@ -1,0 +1,19 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <h2>Projects associated with CAAN {{ caan }}</h2>
+
+        <div>
+            <!-- If there is result table, display it here. -->
+            {% if drawings_confirmed_table %}
+                <h4>Projects that have drawings</h4>
+                {{ drawings_confirmed_table | safe}}
+            {% endif %}
+            {% if drawings_maybe_table %}
+                <h4>Projects maybe have drawings</h4>
+                {{ drawings_maybe_table | safe}}
+            {% endif %}
+        </div>
+    </div>
+
+{% endblock content %}
