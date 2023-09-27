@@ -309,7 +309,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
     records. Then, it adds any files in the scrape location that are not in the database by enqueuing a task to add
     the file to the database.
     """
-    
+        
     def exclude_extensions(f_path, ext_list=EXCLUDED_FILE_EXTENSIONS):
         """
         checks filepath to see if it is using excluded extensions

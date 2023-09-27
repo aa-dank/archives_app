@@ -64,6 +64,7 @@ def google_creds_from_creds_json(creds_path):
 
     return client_id, client_secret
 
+
 def assemble_location(location):
     """
     This takes paths and modifies them to work on either windows or linux systems
@@ -110,8 +111,10 @@ def assemble_postgresql_url(host, db_name, username, password="", port="", diale
 
     return uri
 
+
 def assemble_redis_url(redis_location, redis_port):
     return'redis://' + redis_location + ":" + redis_port
+
 
 def json_to_config_factory(google_creds_path: str, config_json_path: str):
     """
@@ -156,6 +159,7 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
     # the name of the class, a tuple of parent classes (empty in this case), and a dictionary of attributes and their
     # values, the config_dict here.
     return type("DynamicServerConfig", (), config_dict)
+
 
 def setup_sql_logging(log_filepath):
     """

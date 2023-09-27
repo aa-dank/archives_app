@@ -17,7 +17,7 @@ from PIL import Image, ImageFilter
 from pathlib import Path, PureWindowsPath
 from sqlalchemy import select
 from sqlalchemy.sql.expression import func
-from typing import Union 
+from typing import Union, List
 from archives_application.models import WorkerTaskModel
 
 
@@ -578,15 +578,17 @@ def attempt_rollback(db: flask_sqlalchemy.extension.SQLAlchemy):
     """
     Attempts to rollback the database session. Exceptions are generllay raised when there are no changes to rollback.
     """
-    
     try:
         db.session.rollback()
     except:
         pass
 
+
 class ArchivesPathException(Exception):
+    """Exception raised for errors in the structure of the archives server."""
     def __init__(self, message):
         super().__init__(message)
+
 
 def path_to_project_dir(project_number: Union[int, str], archives_location: str, create_new_project_dir: bool = False):
     
@@ -725,7 +727,7 @@ def user_path_from_db_data(file_server_directories, archives_location, filename 
     """
     server_directories_list = split_path(file_server_directories)
     archives_network_location_list = split_path(archives_location)
-    archives_network_location_list = [d for d in archives_network_location_list if d not in ['//', '']]
+    archives_network_location_list = [d for d in archives_network_location_list if d not in ['//', '', '///', '////']]
     user_file_path_list = archives_network_location_list + server_directories_list
     if filename:
         user_file_path_list = user_file_path_list + [filename]
@@ -733,3 +735,31 @@ def user_path_from_db_data(file_server_directories, archives_location, filename 
     while not user_file_path.startswith("\\\\"):
         user_file_path = "\\" + user_file_path
     return user_file_path
+
+def html_table_from_df(df, path_columns: List[str], space_holder: str = '1spc_hldr1'):
+    """
+    Turns a pandas dataframe into a formatted html table, ready for flask.render_template(). 
+    This function replaces spaces in dataframe values with the space_holder which is returned with the html table for use 
+    in replacement of the space_holder with the html space character, '&nbsp;'. (eg replace(space_holder, '&nbsp;')
+    """
+    # The following lines of code are to resolve an issue where html collapses multiple spaces into one space but 
+    # to_html() escapes the non-collapsing html space character. The solution is to replace spaces in filepaths with 
+    # a uncommon char sequence before the to_html() render and then replace the char sequence with the non-collapsing
+    # html space character after the to_html() render.
+    for col_name in path_columns:
+        html_spaces = lambda pth: pth.replace(' ', space_holder) if isinstance(pth, str) else pth
+        df[col_name] = df[col_name].apply(html_spaces)
+
+        # replace empty values with "UNKNOWN"
+        df[col_name] = df[col_name].apply(lambda pth: "UNKNOWN" if (pth == '' or pd.isnull(pth) or type(pth) == type(None)) else pth)
+    
+    df_html = df.to_html(classes='table-dark table-striped table-bordered table-hover table-sm',
+                         index=False,
+                         justify='left',
+                         render_links=True)
+
+    # These lines add some css to the html table to format it to sit neatly within the div container.
+    df_html = df_html.replace('<table', '<table style="table-layout: auto; width: 100%;"')
+    df_html = df_html.replace('<td', '<td style="word-break: break-word;"')
+    df_html = df_html.replace(space_holder, '&nbsp;')
+    return df_html

@@ -46,8 +46,12 @@ class FileSearchForm(FlaskForm):
         Ensures that the search location exists
         """
         if search_location.data:
-            network_path = utils.user_path_to_app_path(path_from_user=search_location.data,
+            try:
+                network_path = utils.user_path_to_app_path(path_from_user=search_location.data,
                                                            location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
+            except Exception as e:
+                raise ValidationError(f"Error converting user path to network path: \n{search_location.data}\n{e}")
+            
             if not os.path.exists(network_path):
                 raise ValidationError(f"Search location doesn't exist: \n{search_location.data}")
 
@@ -57,15 +61,19 @@ class ScrapeLocationForm(FlaskForm):
     recursive = SelectField('Recursive', choices=[('True', 'True'), ('False', 'False')], default='True')
     submit = SubmitField('Scrape')
 
-    def validate_search_location(self, search_location):
+    def validate_scrape_location(self, scrape_location):
         """
-        Ensures that the search location exists
+        Ensures that the scraping location exists
         """
-        if search_location.data:
-            network_path = utils.user_path_to_app_path(path_from_user=search_location.data,
-                                                        location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
+        if scrape_location.data:
+            try:
+                network_path = utils.user_path_to_app_path(path_from_user=scrape_location.data,
+                                                           location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
+            except Exception as e:
+                raise ValidationError(f"Error converting user path to network path: \n{scrape_location.data}\n{e}")
+            
             if not os.path.exists(network_path):
-                raise ValidationError(f"Search location doesn't exist: \n{search_location.data}")
+                raise ValidationError(f"Search location doesn't exist: \n{scrape_location.data}")
 
 
 class ServerChangeForm(FlaskForm):
@@ -90,8 +98,12 @@ class ServerChangeForm(FlaskForm):
         Ensures that the path to delete exists
         """
         if path_delete.data:
-            network_path = utils.user_path_to_app_path(path_from_user=path_delete.data,
+            try:
+                network_path = utils.user_path_to_app_path(path_from_user=path_delete.data,
                                                            location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
+            except Exception as e:
+                raise ValidationError(f"Error converting user path to network path: \n{path_delete.data}\n{e}")
+            
             if not os.path.exists(network_path):
                 raise ValidationError(f"Destination location doesn't exist: \n{path_delete.data}")
 
@@ -119,8 +131,12 @@ class ServerChangeForm(FlaskForm):
         Ensures that the current path exists
         """
         if current_path.data:
-            network_path = utils.user_path_to_app_path(path_from_user=current_path.data,
+            try:
+                network_path = utils.user_path_to_app_path(path_from_user=current_path.data,
                                                            location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
+            except Exception as e:
+                raise ValidationError(f"Error converting user path to network path: \n{current_path.data}\n{e}")
+            
             if not os.path.exists(network_path):
                 raise ValidationError(f"Destination location doesn't exist: \n{current_path.data}")
 
@@ -129,8 +145,12 @@ class ServerChangeForm(FlaskForm):
         Ensures that the destination path exists and is a directory
         """
         if destination_path.data:
-            network_path = utils.user_path_to_app_path(path_from_user=destination_path.data,
+            try:
+                network_path = utils.user_path_to_app_path(path_from_user=destination_path.data,
                                                            location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
+            except Exception as e:
+                raise ValidationError(f"Error converting user path to network path: \n{destination_path.data}\n{e}")
+            
             if not os.path.exists(network_path):
                 raise ValidationError(f"Destination location doesn't exist: \n{destination_path.data}")
 
@@ -142,7 +162,11 @@ class ServerChangeForm(FlaskForm):
         Ensures that the asset path exists
         """
         if asset_path.data:
-            network_path = utils.user_path_to_app_path(path_from_user=asset_path.data,
+            try:
+                network_path = utils.user_path_to_app_path(path_from_user=asset_path.data,
                                                            location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
+            except Exception as e:
+                raise ValidationError(f"Error converting user path to network path: \n{asset_path.data}\n{e}")
+
             if not os.path.exists(network_path):
                 raise ValidationError(f"Asset doesn't exist to move: \n{asset_path.data}")
