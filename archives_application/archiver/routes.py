@@ -826,29 +826,13 @@ def file_search():
             csv_filepath = utils.create_temp_file_path(filename=f'{csv_filename_prefix}{timestamp}.csv')
             search_df.to_csv(csv_filepath, index=False)
             search_df = search_df.head(html_table_row_limit)
-            
-            # The following lines of code are to resolve an issue where html collapses multiple spaces into one space but 
-            # to_html() escapes the non-collapsing html space character. The solution is to replace spaces in filepaths with 
-            # a uncommon char sequence durinwg the to_html() render and then replace the char sequence with the non-collapsing
-            # html space character after the to_html() render.
-            space_holder = '1spc_hldr1' # character sequence unlikely to be in a filepath.
-            html_spaces = lambda pth: pth.replace(' ', space_holder)
-            search_df['Location'] = search_df['Location'].apply(html_spaces)
-            search_df_html = search_df.to_html(classes='table-dark table-striped table-bordered table-hover table-sm',
-                                               index=False,
-                                               justify='left',
-                                               render_links=True)
-            
-            # These lines add some css to the html table to format it to sit neatly within the div container.
-            search_df_html = search_df_html.replace('<table', '<table style="table-layout: auto; width: 100%;"')
-            search_df_html = search_df_html.replace('<td', '<td style="word-break: break-word;"')
+            search_df_html = utils.html_table_from_df(df=search_df, path_columns=['Location'])
             
             search_results_html = flask.render_template('file_search_results.html',
                                                         search_results_table=search_df_html,
                                                         timestamp=timestamp,
                                                         search_term=form.search_term.data,
                                                         too_many_results=too_many_results)
-            search_results_html = search_results_html.replace(space_holder, '&nbsp;')
             return search_results_html
             
         except Exception as e:
