@@ -60,3 +60,5 @@ archives_application/config.py
 archives_application/static/temp_files/*
 archives_application\static\temp_files\*
 
+*.pyc
+*.pyc

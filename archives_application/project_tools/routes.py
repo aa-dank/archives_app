@@ -14,6 +14,7 @@ FILEMAKER_CAAN_LAYOUT = 'caan_table'
 FILEMAKER_PROJECTS_LAYOUT = 'projects_table'
 FILEMAKER_PROJECT_CAANS_LAYOUT = 'caan_project_join'
 FILEMAKER_TABLE_INDEX_COLUMN_NAME = 'ID_Primary'
+VERIFY_FILEMAKER_SSL = False
 
 project_tools = flask.Blueprint('project_tools', __name__)
 
@@ -104,28 +105,38 @@ def test_fmp_reconciliation():
 @project_tools.route("/drawings_locations/<caan>", methods=['GET', 'POST'])
 def caan_projects(caan):
 
-    def project_drawing_location(project_location, archives_location, drawing_folder_prefix = "f5"):
+    def project_drawing_location(project_location, archives_location, network_location, drawing_folder_prefix = "f5"):
         """
         Returns the location of the drawings folder for a project for access by .
         @param project_location: location of the project folder
         @param drawing_folder_prefix: prefix of the drawings folder
         @return: location of the drawings folder
         """
-        if not project_location or not archives_location:
+        if not project_location or not archives_location or not network_location:
             return None
         
-        archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
         project_path = os.path.join(archives_location, project_location)
         if os.path.exists(project_path):
             drawing_folder_prefix = drawing_folder_prefix.lower()
             for entry in os.scandir(project_path):
+            
+                if entry.is_dir() and entry.name.lower().startswith('f '):
+                    project_location = os.path.join(project_location, entry)
+                    project_path = os.path.join(project_path, entry)
+
+                    for entry2 in os.scandir(project_path):
+                        if entry2.is_dir() and entry2.name.lower().startswith(drawing_folder_prefix):
+                            project_location = os.path.join(project_location, entry2)
+                            break
+                    break
+                
                 # if the entry is a directory and starts with the drawing folder prefix, then we have found the drawings folder
                 if entry.is_dir() and entry.name.lower().startswith(drawing_folder_prefix):
                     project_location = os.path.join(project_location, entry)
                     break
             
             user_project_path = utils.user_path_from_db_data(file_server_directories=project_location,
-                                                             archives_location=archives_location)
+                                                             user_archives_location=network_location)
             return user_project_path
         
         return None
@@ -138,21 +149,21 @@ def caan_projects(caan):
         has_drawings_df = has_drawings_groups.get_group(True)
     else:
         has_drawings_df = pd.DataFrame()
-    archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
-    
+
+    row_drawing_location = lambda row: project_drawing_location(project_location=row["file_server_location"],
+                                                                archives_location=flask.current_app.config.get("ARCHIVES_LOCATION"),
+                                                                network_location=flask.current_app.config.get('ARCHIVES_NETWORK_LOCATION'))
     # get all file locations for projects with drawings
     if not has_drawings_df.empty:
         
-        has_drawings_df["Location"] = has_drawings_df.apply(lambda row: project_drawing_location(project_location=row["file_server_location"], archives_location=archives_location),
-                                                            axis=1)
+        has_drawings_df["Location"] = has_drawings_df.apply(row_drawing_location, axis=1)
         has_drawings_df = has_drawings_df[["number", "name", "Location"]]
         has_drawings_df.columns = has_drawings_df.columns.str.capitalize()
         has_drawings_html = utils.html_table_from_df(df=has_drawings_df, path_columns=["Location"])
 
     maybe_drawings_df = caan_projects_df[caan_projects_df["drawings"].isnull()]
     if not maybe_drawings_df.empty:
-        maybe_drawings_df["Location"] = maybe_drawings_df.apply(lambda row: project_drawing_location(project_location=row["file_server_location"], archives_location=archives_location),
-                                                                axis=1)
+        maybe_drawings_df["Location"] = maybe_drawings_df.apply(row_drawing_location, axis=1)
         maybe_drawings_df = maybe_drawings_df[["number", "name", "Location"]]
         maybe_drawings_df.columns = maybe_drawings_df.columns.str.capitalize()
         maybe_drawings_html = utils.html_table_from_df(df=maybe_drawings_df, path_columns=["Location"])

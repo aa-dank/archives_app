@@ -5,6 +5,7 @@ import logging
 import redis
 import rq
 import archives_application.app_config as app_config
+import pandas as pd
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
@@ -20,8 +21,8 @@ google_creds_json = r'google_client_secret.json'
 
 # These lines are used to set the config file for the app. If it is not set correctly,
 # the first error will LIKELY be issues with connecting to the database.
-config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
-#config_json = r'deploy_app_config.json'
+#config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
+config_json = r'deploy_app_config.json'
 
 def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,
                                                               config_json_path=config_json)):
@@ -29,9 +30,13 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     # logging format
     # example usage: https://github.com/tenable/flask-logging-demo
     default_formatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
-
+    
     # start app
     app = flask.Flask(__name__)
+
+    # Suppress SettingWithCopyWarning
+    # https://stackoverflow.com/questions/20625582/how-to-deal-with-settingwithcopywarning-in-pandas
+    pd.options.mode.chained_assignment = None
 
     # if the app is not being debugged, then we need to use the gunicorn logger handlers when in production.
     # also need to do something so that it can accept proxy calls
@@ -56,7 +61,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     login_manager.init_app(app)
 
     # Set a version number
-    app.config['VERSION'] = '1.2.52'
+    app.config['VERSION'] = '1.3.1'
 
     # If the SQLALCHEMY_ECHO parameter is true, need to set up logs for logging sql.
     # This is useful for debugging sql queries and postgresql errors.

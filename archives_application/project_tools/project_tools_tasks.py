@@ -6,7 +6,7 @@ import re
 import pandas as pd
 from archives_application import create_app, utils
 from archives_application.models import *
-from archives_application.project_tools.routes import FILEMAKER_API_VERSION, FILEMAKER_CAAN_LAYOUT, FILEMAKER_PROJECTS_LAYOUT, FILEMAKER_PROJECT_CAANS_LAYOUT, FILEMAKER_TABLE_INDEX_COLUMN_NAME
+from archives_application.project_tools.routes import FILEMAKER_API_VERSION, FILEMAKER_CAAN_LAYOUT, FILEMAKER_PROJECTS_LAYOUT, FILEMAKER_PROJECT_CAANS_LAYOUT, FILEMAKER_TABLE_INDEX_COLUMN_NAME, VERIFY_FILEMAKER_SSL
 
 # Create the app context so that tasks can access app extensions even though
 # they are not running in the main thread.
@@ -34,7 +34,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 database=flask.current_app.config.get('FILEMAKER_DATABASE_NAME'),
                 layout=layout,
                 api_version=FILEMAKER_API_VERSION,
-                verify_ssl=False
+                verify_ssl=VERIFY_FILEMAKER_SSL
             )
             return s
 
@@ -175,7 +175,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                     locations_confirmed = 0
                     for _, row in to_confirm_db.iterrows():
                         project = ProjectModel.query.filter_by(number=row['number']).first()
-                        utils.debug_printing(f"Attempting to confirm location for project {row['number']}.")
+                        #utils.debug_printing(f"Attempting to confirm location for project {row['number']}.")
                         try:
                             project_location, _ = utils.path_to_project_dir(project_number=row['number'],
                                                                             archives_location=archives_location)

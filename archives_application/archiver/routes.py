@@ -799,6 +799,7 @@ def file_search():
     if form.validate_on_submit():
         try:
             archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+            archives_network_location = flask.current_app.config.get('ARCHIVES_NETWORK_LOCATION')
             search_query = None
             search_term = str(form.search_term.data).lower()
             if form.search_location.data:
@@ -817,7 +818,7 @@ def file_search():
                 flask.flash(f"No files found matching search term: {search_term}", 'warning')
                 return flask.redirect(flask.url_for('archiver.file_search'))
             
-            search_df['Location'] = search_df.apply(lambda row: utils.user_path_from_db_data(file_server_directories=row['file_server_directories'], archives_location=archives_location), axis=1)
+            search_df['Location'] = search_df.apply(lambda row: utils.user_path_from_db_data(file_server_directories=row['file_server_directories'], user_archives_location=archives_network_location), axis=1)
             cols_to_remove = ['id', 'file_id', 'file_server_directories', 'existence_confirmed', 'hash_confirmed']
             search_df.drop(columns=cols_to_remove, inplace=True)
             search_df.rename(columns={'filename': 'Filename'}, inplace=True)
