@@ -721,12 +721,12 @@ def serializablize_dict(some_dict: dict):
     return serial_dict
 
 
-def user_path_from_db_data(file_server_directories, archives_location, filename = None):
+def user_path_from_db_data(file_server_directories, user_archives_location, filename = None):
     """
     Takes the file_server_directories and archives_location from the database and returns a path that can be used by the user.
     """
     server_directories_list = split_path(file_server_directories)
-    archives_network_location_list = split_path(archives_location)
+    archives_network_location_list = split_path(user_archives_location)
     archives_network_location_list = [d for d in archives_network_location_list if d not in ['//', '', '///', '////']]
     user_file_path_list = archives_network_location_list + server_directories_list
     if filename:
