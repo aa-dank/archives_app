@@ -102,7 +102,7 @@ def test_fmp_reconciliation():
     return flask.Response(json.dumps(task_results), status=200)
 
 
-@project_tools.route("/drawings_locations/<caan>", methods=['GET', 'POST'])
+@project_tools.route("/caan_projects/<caan>", methods=['GET', 'POST'])
 def caan_projects(caan):
 
     def project_drawing_location(project_location, archives_location, network_location, drawing_folder_prefix = "f5"):
@@ -115,24 +115,24 @@ def caan_projects(caan):
         if not project_location or not archives_location or not network_location:
             return None
         
-        project_path = os.path.join(archives_location, project_location)
-        if os.path.exists(project_path):
+        app_path_to_proj = os.path.join(archives_location, project_location)
+        if os.path.exists(app_path_to_proj):
             drawing_folder_prefix = drawing_folder_prefix.lower()
-            for entry in os.scandir(project_path):
+            for entry in os.scandir(app_path_to_proj):
             
                 if entry.is_dir() and entry.name.lower().startswith('f '):
-                    project_location = os.path.join(project_location, entry)
-                    project_path = os.path.join(project_path, entry)
+                    project_location = os.path.join(project_location, entry.name)
+                    app_path_to_proj = os.path.join(app_path_to_proj, entry.name)
 
-                    for entry2 in os.scandir(project_path):
+                    for entry2 in os.scandir(app_path_to_proj):
                         if entry2.is_dir() and entry2.name.lower().startswith(drawing_folder_prefix):
-                            project_location = os.path.join(project_location, entry2)
+                            project_location = os.path.join(project_location, entry2.name)
                             break
                     break
                 
                 # if the entry is a directory and starts with the drawing folder prefix, then we have found the drawings folder
                 if entry.is_dir() and entry.name.lower().startswith(drawing_folder_prefix):
-                    project_location = os.path.join(project_location, entry)
+                    project_location = os.path.join(project_location, entry.name)
                     break
             
             user_project_path = utils.user_path_from_db_data(file_server_directories=project_location,
@@ -153,22 +153,29 @@ def caan_projects(caan):
     row_drawing_location = lambda row: project_drawing_location(project_location=row["file_server_location"],
                                                                 archives_location=flask.current_app.config.get("ARCHIVES_LOCATION"),
                                                                 network_location=flask.current_app.config.get('ARCHIVES_NETWORK_LOCATION'))
+    html_col_widths = {"Number": "10%", "Name": "35%", "Location": "55%"}
+    
     # get all file locations for projects with drawings
     if not has_drawings_df.empty:
-        
+        has_drawings_df.sort_values(by=["number"], inplace=True)
         has_drawings_df["Location"] = has_drawings_df.apply(row_drawing_location, axis=1)
         has_drawings_df = has_drawings_df[["number", "name", "Location"]]
         has_drawings_df.columns = has_drawings_df.columns.str.capitalize()
-        has_drawings_html = utils.html_table_from_df(df=has_drawings_df, path_columns=["Location"])
+        has_drawings_html = utils.html_table_from_df(df=has_drawings_df,
+                                                     path_columns=["Location"],
+                                                     column_widths=html_col_widths)
 
     maybe_drawings_df = caan_projects_df[caan_projects_df["drawings"].isnull()]
     if not maybe_drawings_df.empty:
+        maybe_drawings_df.sort_values(by=["number"], inplace=True)
         maybe_drawings_df["Location"] = maybe_drawings_df.apply(row_drawing_location, axis=1)
         maybe_drawings_df = maybe_drawings_df[["number", "name", "Location"]]
         maybe_drawings_df.columns = maybe_drawings_df.columns.str.capitalize()
-        maybe_drawings_html = utils.html_table_from_df(df=maybe_drawings_df, path_columns=["Location"])
-
+        maybe_drawings_html = utils.html_table_from_df(df=maybe_drawings_df,
+                                                       path_columns=["Location"],
+                                                       column_widths=html_col_widths)
+    
     # retrieve caan data
     caan = CAANModel.query.filter(CAANModel.caan == caan).first()
 
-    return flask.render_template('caan_projects.html', caan=caan, caan_name=caan.name, drawings_confirmed_table=has_drawings_html, drawings_maybe_table=maybe_drawings_html)
+    return flask.render_template('caan_projects.html', caan=caan.caan, caan_name=caan.name, drawings_confirmed_table=has_drawings_html, drawings_maybe_table=maybe_drawings_html)
