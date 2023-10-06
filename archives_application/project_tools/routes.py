@@ -141,6 +141,11 @@ def caan_projects(caan):
         
         return None
     
+    # check if the caan value exists in the database
+    caan_query = CAANModel.query.filter(CAANModel.caan == caan)
+    if caan_query.count() == 0:
+        return flask.Response(f"CAAN {caan} not found in database.", status=404)
+
     # get all projects for a caan
     caan_projects_query = ProjectModel.query.filter(ProjectModel.caans.any(CAANModel.caan == caan))
     caan_projects_df = utils.db_query_to_df(query=caan_projects_query)
