@@ -156,6 +156,7 @@ def caan_projects(caan):
     html_col_widths = {"Number": "10%", "Name": "35%", "Location": "55%"}
     
     # get all file locations for projects with drawings
+    maybe_drawings_html, has_drawings_html = None, None
     if not has_drawings_df.empty:
         has_drawings_df.sort_values(by=["number"], inplace=True)
         has_drawings_df["Location"] = has_drawings_df.apply(row_drawing_location, axis=1)
