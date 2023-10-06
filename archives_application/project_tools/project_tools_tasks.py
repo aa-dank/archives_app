@@ -24,7 +24,6 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
         os.environ['no_proxy'] = '*'
         db = flask.current_app.extensions['sqlalchemy']
         utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-        utils.debug_printing(f"Starting FileMaker reconciliation task with queue id {queue_id}.")
         
         def fmrest_server(layout):
             s = fmrest.Server(
@@ -62,7 +61,6 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
         
         # Reconcile CAANs
         try:
-            utils.debug_printing("starting calls to FileMaker server.")
             fm_caan_df, fm_caan_error = all_fm_records(FILEMAKER_CAAN_LAYOUT)
             if fm_caan_error:
                 recon_log['errors'].append({"message": "Error retrieving FileMaker CAAN data:", "exception": str(fm_caan_error)})
@@ -73,7 +71,6 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
             if fm_project_caan_error:
                 recon_log['errors'].append({"message": "Error retrieving FileMaker project-caan join data:", "exception": str(fm_project_caan_error)})
 
-            utils.debug_printing("Finished calls to FileMaker server. Reconciling CAAN data.")
             if not fm_caan_df.empty:
                 caan_query = db.session.query(CAANModel)
                 db_caans_df = utils.db_query_to_df(caan_query)
@@ -108,7 +105,6 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
         
         # Reconcile projects
         try:
-            utils.debug_printing("Reconciling project data.")
             if not fm_projects_df.empty:
                 project_query = db.session.query(ProjectModel)
                 db_project_df = utils.db_query_to_df(project_query)
@@ -152,7 +148,6 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                     recon_log['project']['added'].append(row['ProjectNumber'])
                 db.session.commit()
 
-                utils.debug_printing("Finished adding projects to the db. Removing project data.")
                 # Remove projects that are in the db but not in FileMaker
                 if not db_project_df.empty:
                     missing_from_fm = db_project_df[~db_project_df['number'].isin(fm_projects_df['ProjectNumber'])]
@@ -170,12 +165,10 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 # if confirm_locations is true, confirm the file server locations for projects that are in the db 
                 # (but not the ones that were just added)
                 if confirm_locations and not db_project_df.empty:
-                    utils.debug_printing("Confirming the file server locations for projects that are in the db.")
                     to_confirm_db = db_project_df[~db_project_df['number'].isin(missing_from_fm['number'])]
                     locations_confirmed = 0
                     for _, row in to_confirm_db.iterrows():
                         project = ProjectModel.query.filter_by(number=row['number']).first()
-                        #utils.debug_printing(f"Attempting to confirm location for project {row['number']}.")
                         try:
                             project_location, _ = utils.path_to_project_dir(project_number=row['number'],
                                                                             archives_location=archives_location)
@@ -196,7 +189,6 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
         
         # Reconcile project-caan join table
         try:
-            utils.debug_printing("Reconciling project-caan join data.")
             if not fm_project_caan_df.empty:
                 project_groups = fm_project_caan_df.groupby('Projects::ProjectNumber')
                 for project_number, project_df in project_groups:
@@ -209,13 +201,13 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                         missing_from_db = [caan for caan in caan_numbers if caan not in db_project_caans]
                         caans = CAANModel.query.filter(CAANModel.caan.in_(caan_numbers)).all()
                         project.caans = caans
-                        recon_log['project-caans']['added'].append({"project": project_number, "caans": missing_from_db})
+                        if missing_from_db:
+                            recon_log['project-caans']['added'].append({"project": project_number, "caans": missing_from_db})
                 db.session.commit()
 
         except Exception as e:
             utils.attempt_rollback(db)
             recon_log['errors'].append({"message": "Error reconciling project-caan join data:", "exception": str(e)})
 
-        utils.debug_printing("Finished FileMaker reconciliation task.")
         utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=recon_log)
         return recon_log

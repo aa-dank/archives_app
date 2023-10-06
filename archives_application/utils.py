@@ -17,7 +17,7 @@ from PIL import Image, ImageFilter
 from pathlib import Path, PureWindowsPath
 from sqlalchemy import select
 from sqlalchemy.sql.expression import func
-from typing import Union, List
+from typing import Union, List, Dict
 from archives_application.models import WorkerTaskModel
 
 
@@ -736,7 +736,7 @@ def user_path_from_db_data(file_server_directories, user_archives_location, file
         user_file_path = "\\" + user_file_path
     return user_file_path
 
-def html_table_from_df(df, path_columns: List[str], space_holder: str = '1spc_hldr1'):
+def html_table_from_df(df, path_columns: List[str], space_holder: str = '1spc_hldr1', column_widths: Dict[str, str] = {}):
     """
     Turns a pandas dataframe into a formatted html table, ready for flask.render_template(). 
     This function replaces spaces in dataframe values with the space_holder which is returned with the html table for use 
@@ -761,5 +761,10 @@ def html_table_from_df(df, path_columns: List[str], space_holder: str = '1spc_hl
     # These lines add some css to the html table to format it to sit neatly within the div container.
     df_html = df_html.replace('<table', '<table style="table-layout: auto; width: 100%;"')
     df_html = df_html.replace('<td', '<td style="word-break: break-word;"')
+
+    # Adjust column widths based on the given column_widths dictionary
+    for column, width in column_widths.items():
+        df_html = df_html.replace(f'<th>{column}</th>', f'<th style="width: {width};">{column}</th>')
+
     df_html = df_html.replace(space_holder, '&nbsp;')
     return df_html
