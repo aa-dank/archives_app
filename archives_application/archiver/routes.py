@@ -206,7 +206,13 @@ def upload_file():
 
             if form.new_filename.data:
                 archival_filename = utils.cleanse_filename(form.new_filename.data)
-            arch_file = ArchivalFile(current_path=temp_path, project=form.project_number.data,
+
+            # cleanse the project number value
+            project_num = form.project_number.data
+            if project_num:
+                project_num = utils.sanitize_unicode(project_num.strip())
+            
+            arch_file = ArchivalFile(current_path=temp_path, project=project_num,
                                      new_filename=archival_filename, notes=form.notes.data,
                                      destination_dir=form.destination_directory.data,
                                      directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
@@ -413,7 +419,8 @@ def inbox_item():
             # strip the project number of any whitespace (in case an archivist adds a space after the project number)
             project_num = form.project_number.data
             if project_num:
-                project_num = project_num.strip()
+                project_num = utils.sanitize_unicode(project_num.strip())
+                
             arch_file = ArchivalFile(current_path=arch_file_path, project=project_num,
                                      new_filename=archival_filename, notes=form.notes.data,
                                      destination_dir=form.destination_directory.data,
