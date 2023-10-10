@@ -102,8 +102,8 @@ def test_fmp_reconciliation():
     return flask.Response(json.dumps(task_results), status=200)
 
 
-@project_tools.route("/caan_projects/<caan>", methods=['GET', 'POST'])
-def caan_projects(caan):
+@project_tools.route("/caan_drawings/<caan>", methods=['GET', 'POST'])
+def caan_drawings(caan):
 
     def project_drawing_location(project_location, archives_location, network_location, drawing_folder_prefix = "f5"):
         """
@@ -112,6 +112,7 @@ def caan_projects(caan):
         @param drawing_folder_prefix: prefix of the drawings folder
         @return: location of the drawings folder
         """
+        
         if not project_location or not archives_location or not network_location:
             return None
         
@@ -148,10 +149,19 @@ def caan_projects(caan):
 
     # get all projects for a caan
     caan_projects_query = ProjectModel.query.filter(ProjectModel.caans.any(CAANModel.caan == caan))
+    utils.debug_printing(f"First caan info: {caan_projects_query.first()}")
     caan_projects_df = utils.db_query_to_df(query=caan_projects_query)
+
+    # if there are no projects for the caan, return a 404
+    if caan_projects_df.empty:
+        return flask.Response(f"No projects found for CAAN {caan}.", status=404)
+
+    # split projects into those with drawings and those without
     has_drawings_groups = caan_projects_df.groupby('drawings')
     if True in has_drawings_groups.groups.keys():
         has_drawings_df = has_drawings_groups.get_group(True)
+        if not has_drawings_df.empty: #TODO remove
+            utils.debug_printing(f"locations:\n{has_drawings_df['file_server_location']}")
     else:
         has_drawings_df = pd.DataFrame()
 
