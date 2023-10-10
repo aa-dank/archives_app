@@ -45,7 +45,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     if not app.debug:
         app.logger.handlers = logging.getLogger('gunicorn.error').handlers
 
-        # https://flask-dance.readthedocs.io/en/v0.13.0/proxies.html
+        # https://flask.palletsprojects.com/en/2.3.x/deploying/proxy_fix/
         # https://werkzeug.palletsprojects.com/en/1.0.x/middleware/proxy_fix/
         app.wsgi_app = ProxyFix(app.wsgi_app)
 
