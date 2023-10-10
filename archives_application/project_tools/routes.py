@@ -194,4 +194,4 @@ def caan_drawings(caan):
     # retrieve caan data
     caan = CAANModel.query.filter(CAANModel.caan == caan).first()
 
-    return flask.render_template('caan_projects.html', caan=caan.caan, caan_name=caan.name, drawings_confirmed_table=has_drawings_html, drawings_maybe_table=maybe_drawings_html)
+    return flask.render_template('caan_drawings.html', caan=caan.caan, caan_name=caan.name, drawings_confirmed_table=has_drawings_html, drawings_maybe_table=maybe_drawings_html)

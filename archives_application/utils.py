@@ -736,6 +736,7 @@ def user_path_from_db_data(file_server_directories, user_archives_location, file
         user_file_path = "\\" + user_file_path
     return user_file_path
 
+
 def html_table_from_df(df, path_columns: List[str], space_holder: str = '1spc_hldr1', column_widths: Dict[str, str] = {}):
     """
     Turns a pandas dataframe into a formatted html table, ready for flask.render_template(). 
