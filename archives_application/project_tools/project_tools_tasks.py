@@ -127,8 +127,6 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                         project_location, _ = utils.path_to_project_dir(project_number=row['ProjectNumber'],
                                                                         archives_location=archives_location)
                         if project_location:
-                            if 'opt' in project_location.lower():
-                                utils.debug_printing(f"Project {row['ProjectNumber']} is in the opt folder. Path: {project_location}")
                             project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")) + 1:]
 
                     except Exception as e:
@@ -174,6 +172,9 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                         try:
                             project_location, _ = utils.path_to_project_dir(project_number=row['number'],
                                                                             archives_location=archives_location)
+                            if project_location:
+                                project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")) + 1:]
+                            
                             project.file_server_location = project_location
                             locations_confirmed += 1
                     
