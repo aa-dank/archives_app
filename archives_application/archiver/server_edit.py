@@ -194,7 +194,7 @@ class ServerEdit:
                     raise Exception(e_str)
 
         # if the change_type is 'MAKE'
-        if self.change_type.upper() == 'MAKE':
+        if self.change_type.upper() == 'CREATE':
             if os.path.exists(self.new_path):
                 raise Warning(f"Trying to make a directory that already exists: {self.new_path}")
             os.makedirs(self.new_path)
