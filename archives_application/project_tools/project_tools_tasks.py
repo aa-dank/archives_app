@@ -23,7 +23,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
     with app.app_context():
         os.environ['no_proxy'] = '*'
         db = flask.current_app.extensions['sqlalchemy']
-        utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
         
         def fmrest_server(layout):
             s = fmrest.Server(
@@ -73,7 +73,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
 
             if not fm_caan_df.empty:
                 caan_query = db.session.query(CAANModel)
-                db_caans_df = utils.db_query_to_df(caan_query)
+                db_caans_df = utils.FlaskAppUtils.db_query_to_df(caan_query)
 
                 missing_from_db = fm_caan_df
                 if not db_caans_df.empty:
@@ -100,14 +100,14 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 db.session.commit()
             
         except Exception as e:
-            utils.attempt_rollback(db)
+            utils.FlaskAppUtils.attempt_db_rollback(db)
             recon_log['errors'].append({"message": "Error reconciling CAAN data:", "exception": str(e)})
         
         # Reconcile projects
         try:
             if not fm_projects_df.empty:
                 project_query = db.session.query(ProjectModel)
-                db_project_df = utils.db_query_to_df(project_query)
+                db_project_df = utils.FlaskAppUtils.db_query_to_df(project_query)
                 is_proj_number = lambda input_string: bool(re.match(PROJECT_NUMBER_RE_PATTERN, input_string))
                 fm_projects_df = fm_projects_df[fm_projects_df['ProjectNumber'].apply(is_proj_number)]
                 # strip whitespace from project numbers
@@ -124,8 +124,8 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                     
                     # attempt to get a project directory for the project
                     try:
-                        project_location, _ = utils.path_to_project_dir(project_number=row['ProjectNumber'],
-                                                                        archives_location=archives_location)
+                        project_location, _ = utils.FileServerUtils.path_to_project_dir(project_number=row['ProjectNumber'],
+                                                                                        archives_location=archives_location)
                         if project_location:
                             project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")) + 1:]
 
@@ -170,8 +170,8 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                     for _, row in to_confirm_db.iterrows():
                         project = ProjectModel.query.filter_by(number=row['number']).first()
                         try:
-                            project_location, _ = utils.path_to_project_dir(project_number=row['number'],
-                                                                            archives_location=archives_location)
+                            project_location, _ = utils.FileServerUtils.path_to_project_dir(project_number=row['number'],
+                                                                                            archives_location=archives_location)
                             if project_location:
                                 project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")) + 1:]
                             
@@ -187,7 +187,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                     db.session.commit()
 
         except Exception as e:
-            utils.attempt_rollback(db)
+            utils.FlaskAppUtils.attempt_db_rollback(db)
             recon_log['errors'].append({"message": "Error reconciling project data:", "exception": str(e)})
         
         # Reconcile project-caan join table
@@ -209,8 +209,8 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 db.session.commit()
 
         except Exception as e:
-            utils.attempt_rollback(db)
+            utils.FlaskAppUtils.attempt_db_rollback(db)
             recon_log['errors'].append({"message": "Error reconciling project-caan join data:", "exception": str(e)})
 
-        utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=recon_log)
+        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=recon_log)
         return recon_log

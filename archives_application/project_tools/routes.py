@@ -74,14 +74,16 @@ def filemaker_reconciliation():
         to_confirm = flask.request.args.get('confirm_locations')
         to_confirm = True if to_confirm.lower() == "true" else False
         task_kwargs = {"confirm_locations": to_confirm}
-        nk_results = utils.enqueue_new_task(db=db, enqueued_function=fmp_caan_project_reconciliation_task, task_kwargs=task_kwargs)
+        nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                        enqueued_function=fmp_caan_project_reconciliation_task,
+                                                        task_kwargs=task_kwargs)
         return flask.Response(json.dumps(utils.serializablize_dict(nk_results)), status=200)
     else:
         return flask.Response("Unauthorized", status=401)
         
 
 @project_tools.route("/test/fmp_reconciliation", methods=['GET', 'POST'])
-@utils.roles_required(['ADMIN'])
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def test_fmp_reconciliation():
     from archives_application.project_tools.project_tools_tasks import fmp_caan_project_reconciliation_task
     recon_job_id = f"{fmp_caan_project_reconciliation_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
@@ -136,8 +138,8 @@ def caan_drawings(caan):
                     project_location = os.path.join(project_location, entry.name)
                     break
             
-            user_project_path = utils.user_path_from_db_data(file_server_directories=project_location,
-                                                             user_archives_location=network_location)
+            user_project_path = utils.FileServerUtils.user_path_from_db_data(file_server_directories=project_location,
+                                                                             user_archives_location=network_location)
             return user_project_path
         
         return None
@@ -149,8 +151,7 @@ def caan_drawings(caan):
 
     # get all projects for a caan
     caan_projects_query = ProjectModel.query.filter(ProjectModel.caans.any(CAANModel.caan == caan))
-    utils.debug_printing(f"First caan info: {caan_projects_query.first()}")
-    caan_projects_df = utils.db_query_to_df(query=caan_projects_query)
+    caan_projects_df = utils.FlaskAppUtils.db_query_to_df(query=caan_projects_query)
 
     # if there are no projects for the caan, return a 404
     if caan_projects_df.empty:
@@ -160,8 +161,7 @@ def caan_drawings(caan):
     has_drawings_groups = caan_projects_df.groupby('drawings')
     if True in has_drawings_groups.groups.keys():
         has_drawings_df = has_drawings_groups.get_group(True)
-        if not has_drawings_df.empty: #TODO remove
-            utils.debug_printing(f"locations:\n{has_drawings_df['file_server_location']}")
+
     else:
         has_drawings_df = pd.DataFrame()
 

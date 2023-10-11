@@ -34,24 +34,11 @@ def web_exception_subroutine(flash_message, thrown_exception, app_obj):
     app_obj.logger.error(thrown_exception, exc_info=True)
     return flask.redirect(flask.url_for('main.home'))
 
-
-def db_query_to_df(query: flask_sqlalchemy.query.Query):
-    results = query.all()
-    df = pd.DataFrame([row.__dict__ for row in results])
-    
-    # Remove the sqlalchemy state column
-    sa = '_sa_instance_state'
-    if sa in df.columns:
-        df.drop(columns=[sa], inplace=True)
-    return df
-
-
 def temp_file_url(filename: str): 
     """
     Pattern for getting the url for a temp file which has already been saved to the server.
     """
     return flask.url_for(r"static", filename="temp_files/" + filename)
-
 
 def daterange(start_date: datetime, end_date: datetime):
     """
@@ -63,7 +50,6 @@ def daterange(start_date: datetime, end_date: datetime):
     """
     for n in range(int((end_date - start_date).days)):
         yield start_date + timedelta(n)
-
 
 def hours_worked_in_day(day: datetime.date, user_id: int):
 
@@ -95,7 +81,7 @@ def hours_worked_in_day(day: datetime.date, user_id: int):
                                               TimekeeperEventModel.datetime >= day.strftime("%Y-%m-%d"),
                                               TimekeeperEventModel.datetime < days_end.strftime("%Y-%m-%d"))
 
-    timesheet_df = db_query_to_df(query=query)
+    timesheet_df = utils.FlaskAppUtils.db_query_to_df(query=query)
     if timesheet_df.shape[0] == 0:
         clock_ins_have_clock_outs = True
     else:
@@ -145,7 +131,7 @@ def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str: st
 
 @timekeeper.route("/timekeeper", methods=['GET', 'POST'])
 @login_required
-@utils.roles_required(['ADMIN', 'ARCHIVIST'])
+@utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def timekeeper_event():
     """
     Main timekeeper endpoint that spits out html form for clocking in and clocking out. Clocking events
@@ -168,7 +154,7 @@ def timekeeper_event():
         db.session.commit()
         todays_events_query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == user_id,
                                                                 TimekeeperEventModel.datetime > start_of_today)
-        todays_events_df = db_query_to_df(todays_events_query)
+        todays_events_df = utils.FlaskAppUtils.db_query_to_df(todays_events_query)
 
 
 
@@ -238,7 +224,7 @@ def timekeeper_event():
 
 @timekeeper.route("/timekeeper/<employee_id>", methods=['GET', 'POST'])
 @login_required
-@utils.roles_required(['ADMIN', 'ARCHIVIST'])
+@utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def user_timesheet(employee_id):
 
     form = TimeSheetForm()
@@ -268,7 +254,7 @@ def user_timesheet(employee_id):
         query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == employee_id,
                                                   TimekeeperEventModel.datetime >= query_start_date,
                                                   TimekeeperEventModel.datetime <= query_end_date)
-        timesheet_df = db_query_to_df(query=query)
+        timesheet_df = utils.FlaskAppUtils.db_query_to_df(query=query)
 
 
         # issues with sending commands to DB can result in pd.read_sql returning None instead of Dataframe
@@ -300,7 +286,7 @@ def user_timesheet(employee_id):
                 archived_files_query = ArchivedFileModel.query.filter(ArchivedFileModel.archivist_id == employee_id,
                                                                       ArchivedFileModel.date_archived >= range_date,
                                                                       ArchivedFileModel.date_archived <= range_date + timedelta(days=1))
-                arched_files_df = db_query_to_df(query=archived_files_query)
+                arched_files_df = utils.FlaskAppUtils.db_query_to_df(query=archived_files_query)
                 day_data["Archived Files"] = arched_files_df.shape[0]
                 day_data["Archived Megabytes"] = 0
                 if not arched_files_df.empty:
@@ -323,7 +309,7 @@ def user_timesheet(employee_id):
 
 @timekeeper.route("/timekeeper/all", methods=['GET', 'POST'])
 @login_required
-@utils.roles_required(['ADMIN', 'ARCHIVIST'])
+@utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def all_timesheets():
     """
     Endpoint to display all timesheets for archivists.
@@ -387,7 +373,7 @@ def all_timesheets():
             .filter(and_(UserModel.active == True, UserModel.roles.like("%ARCHIVIST%"),
                          TimekeeperEventModel.datetime.between(query_start_date, query_end_date)))
 
-        timesheet_df = db_query_to_df(query=query)
+        timesheet_df = utils.FlaskAppUtils.db_query_to_df(query=query)
 
     except Exception as e:
         web_exception_subroutine(flash_message="Error creating dataframe for all archivists: ",
@@ -417,7 +403,7 @@ def all_timesheets():
                         archived_files_query = ArchivedFileModel.query.filter(ArchivedFileModel.archivist_id == archivist_dict['id'],
                                                                 ArchivedFileModel.date_archived >= range_date,
                                                                 ArchivedFileModel.date_archived <= range_date + timedelta(days=1))
-                        arched_files_df = db_query_to_df(query=archived_files_query)
+                        arched_files_df = utils.FlaskAppUtils.db_query_to_df(query=archived_files_query)
                         day_data["Archived Files"] = arched_files_df.shape[0]
                         day_data["Archived Megabytes"] = 0
                         if not arched_files_df.empty:
@@ -442,7 +428,7 @@ def all_timesheets():
 
 @timekeeper.route("/timekeeper/admin", methods=['GET', 'POST'])
 @login_required
-@utils.roles_required(['ADMIN'])
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def choose_employee():
     try:
         form = TimeSheetAdminForm()
@@ -475,7 +461,7 @@ def choose_employee():
 
 @timekeeper.route("/archiving_dashboard/<archiver_id>", methods=['GET', 'POST'])
 @login_required
-@utils.roles_required(['ADMIN', 'ARCHIVIST'])
+@utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def archiving_dashboard(archiver_id):
     """
     Endpoint to display archiving metrics for a specific archivist.
@@ -617,7 +603,7 @@ def archiving_dashboard(archiver_id):
         query_start_date = query_start_date - timedelta(days=rolling_avg_window)
         query = db.session.query(ArchivedFileModel)\
             .filter(ArchivedFileModel.date_archived.between(query_start_date, query_end_date))
-        df = utils.db_query_to_df(query= query)
+        df = utils.FlaskAppUtils.db_query_to_df(query= query)
         archivist_df = df.query(f'archivist_id == {archiver_id}')
         date_range = pd.date_range(start=query_start_date, end=query_end_date)
         if df.shape[0] != 0:
@@ -626,7 +612,7 @@ def archiving_dashboard(archiver_id):
                                                                                                                                        rolling_avg_days=rolling_avg_window)
             timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
             collective_filename = f"collective_metrics_{timestamp}.png"
-            collective_chart_path = utils.create_temp_file_path(collective_filename)
+            collective_chart_path = utils.FlaskAppUtils.create_temp_file_path(collective_filename)
             collective_chart_path = metrics_plot_file(lines_df=collective_lines_df,
                                                       bars_df=collective_bars_df,
                                                       mb_ticks=collective_mb_ticks,
@@ -647,7 +633,7 @@ def archiving_dashboard(archiver_id):
                                                                                                         date_range=date_range,
                                                                                                         rolling_avg_days=rolling_avg_window)
             archiver_filename = f"{archiver_name}_metrics_{timestamp}.png"
-            archiver_chart_path = utils.create_temp_file_path(archiver_filename)
+            archiver_chart_path = utils.FlaskAppUtils.create_temp_file_path(archiver_filename)
             archiver_chart_path = metrics_plot_file(lines_df=archivist_lines_df,
                                                     bars_df=archivist_bars_df,
                                                     mb_ticks=archvivist_mb_ticks,
@@ -671,7 +657,7 @@ def archiving_dashboard(archiver_id):
         # convert archivist_total_data bytes to gigabytes and round to 3 decimal places
         archivist_total_data = round((archivist_total_data / (1024**3)), 3)
 
-        start_date_str = query_start_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT')[:-10])
+        start_date_str = (query_start_date + timedelta(days=rolling_avg_window)).strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT')[:-10])
         end_date_str = query_end_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT')[:-10])
 
         return flask.render_template('archivist_dashboard.html',

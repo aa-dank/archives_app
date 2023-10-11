@@ -3,7 +3,7 @@ import flask
 import os
 import random
 import shutil
-from sqlalchemy import text, func
+from sqlalchemy import func
 from archives_application import create_app, utils
 from archives_application.archiver import archiver_tasks
 from archives_application.models import  FileLocationModel, FileModel, ArchivedFileModel
@@ -27,13 +27,13 @@ class ServerEdit:
         self.change_type = change_type
         self.new_path = None
         if new_path:
-            self.new_path = utils.user_path_to_app_path(path_from_user=new_path,
-                                                        location_path_prefix=server_location)
+            self.new_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=new_path,
+                                                                      location_path_prefix=server_location)
 
         self.old_path = None
         if old_path:
-            self.old_path = utils.user_path_to_app_path(path_from_user=old_path,
-                                                        location_path_prefix=server_location)
+            self.old_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=old_path,
+                                                                      location_path_prefix=server_location)
             if not os.path.exists(self.old_path):
                 e_message = f"Path to asset does not exists: {self.new_path}\nEntered path: {old_path}"
                 raise Exception(e_message)
@@ -97,8 +97,8 @@ class ServerEdit:
                 os.remove(self.old_path)
                 self.change_executed = True
                 self.files_effected = 1
-                enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
-                                                            enqueued_function=self.add_deletion_to_db_task)
+                enqueueing_results = utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
+                                                                        enqueued_function=self.add_deletion_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
                 return enqueueing_results
 
@@ -111,8 +111,8 @@ class ServerEdit:
             # remove directory and contents
             shutil.rmtree(self.old_path)
             self.change_executed = True
-            enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
-                                                        enqueued_function=self.add_deletion_to_db_task)
+            enqueueing_results = utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
+                                                                    enqueued_function=self.add_deletion_to_db_task)
             # for testing:
             #self.add_deletion_to_db_task(task_id=f"{self.add_deletion_to_db_task.__name__}_test01")
             enqueueing_results['change_executed'] = self.change_executed
@@ -122,8 +122,8 @@ class ServerEdit:
         if self.change_type.upper() == 'RENAME':
             enqueueing_results = {}
             old_path = self.old_path
-            old_path_list = utils.split_path(old_path)
-            new_path_list = utils.split_path(self.new_path)
+            old_path_list = utils.FileServerUtils.split_path(old_path)
+            new_path_list = utils.FileServerUtils.split_path(self.new_path)
             if not len(old_path_list) == len(new_path_list):
                 raise Exception(
                     f"Attempt at renaming paths failed. Parent directories are not the same: \n {self.new_path}\n{self.old_path}")
@@ -132,7 +132,7 @@ class ServerEdit:
             if self.is_file:
                 self.files_effected = 1
                 self.data_effected = os.path.getsize(old_path) #bytes
-                new_path_list[-1] = utils.cleanse_filename(new_path_list[-1])
+                new_path_list[-1] = utils.FilesUtils.cleanse_filename(new_path_list[-1])
 
             else:
                 get_quantity_effected(self.old_path)
@@ -145,8 +145,8 @@ class ServerEdit:
             try:
                 os.rename(self.old_path, self.new_path)
                 self.change_executed = True
-                enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
-                                                            enqueued_function=self.add_renaming_to_db_task)
+                enqueueing_results = utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
+                                                                        enqueued_function=self.add_renaming_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
             except Exception as e:
                 raise Exception(f"There was an issue trying to change the name. If it is permissions issue, consider that it might be someone using a directory that would be changed \n{e}")
@@ -157,7 +157,7 @@ class ServerEdit:
         if self.change_type.upper() == 'MOVE':
             try:
                 if os.path.isfile(self.old_path):
-                    filename = utils.split_path(self.old_path)[-1]
+                    filename = utils.FileServerUtils.split_path(self.old_path)[-1]
                     destination_path = os.path.join(self.new_path, filename)
                     self.files_effected = 1
                     self.data_effected = os.path.getsize(self.old_path)
@@ -183,8 +183,8 @@ class ServerEdit:
                 #db_edit = self.add_move_to_db_task(queue_id=f"{self.add_deletion_to_db_task.__name__}_test{random.randint(1, 1000)}")
                 #return db_edit
                 
-                enqueueing_results = utils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
-                                                            enqueued_function=self.add_move_to_db_task)
+                enqueueing_results = utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
+                                                                        enqueued_function=self.add_move_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
                 return enqueueing_results
             
@@ -217,8 +217,8 @@ class ServerEdit:
         :param file_path: path to the file
         """
 
-        filename = utils.split_path(file_path)[-1]
-        db_path = os.path.join(*utils.split_path(file_path)[root_index:-1])   
+        filename = utils.FileServerUtils.split_path(file_path)[-1]
+        db_path = os.path.join(*utils.FileServerUtils.split_path(file_path)[root_index:-1])   
         location_entry_removed = False
         file_entry_removed = False
         location_entry = db.session.query(FileLocationModel)\
@@ -253,8 +253,8 @@ class ServerEdit:
         
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy']
-            utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-            file_server_root_index = len(utils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+            utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
             deletion_log = {}
             deletion_log['task_id'] = queue_id
             deletion_log['location_entries_effected'] = 0
@@ -262,8 +262,8 @@ class ServerEdit:
             deletion_log['old_path'] = self.old_path
 
             if self.is_file:
-                server_dirs = utils.split_path(self.old_path)[file_server_root_index:-1]
-                filename = utils.split_path(self.old_path)[-1]
+                server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:-1]
+                filename = utils.FileServerUtils.split_path(self.old_path)[-1]
                 server_path = os.path.join(*server_dirs)
                 file_location_entry = db.session.query(FileLocationModel)\
                     .filter(FileLocationModel.file_server_directories == server_path,
@@ -289,7 +289,7 @@ class ServerEdit:
                         deletion_log['files_entries_effected'] = 1
 
             else:
-                server_dirs = utils.split_path(self.old_path)[file_server_root_index:]
+                server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:]
                 server_path = os.path.join(*server_dirs)
                 file_location_entries = db.session.query(FileLocationModel)\
                     .filter(FileLocationModel.file_server_directories.like(func.concat(server_path, '%'))).all()
@@ -310,7 +310,7 @@ class ServerEdit:
                         db.session.commit()
                         deletion_log['files_entries_effected'] += 1
             
-            utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=deletion_log)
+            utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=deletion_log)
             return deletion_log
     
 
@@ -318,8 +318,8 @@ class ServerEdit:
 
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy']
-            utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-            file_server_root_index = len(utils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+            utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
             rename_log = {}
             rename_log['task_id'] = queue_id
             rename_log['location_entries_effected'] = 0
@@ -329,9 +329,9 @@ class ServerEdit:
 
             if self.is_file:
                 rename_log['is_file'] = True
-                server_dirs = utils.split_path(self.old_path)[file_server_root_index:-1]
-                old_filename = utils.split_path(self.old_path)[-1]
-                new_filename = utils.split_path(self.new_path)[-1]
+                server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:-1]
+                old_filename = utils.FileServerUtils.split_path(self.old_path)[-1]
+                new_filename = utils.FileServerUtils.split_path(self.new_path)[-1]
                 server_path = os.path.join(*server_dirs)
                 
                 # first make sure that if there is already a file with the new name, it is deleted,
@@ -355,9 +355,9 @@ class ServerEdit:
             # for all files within the directory
             else:
                 rename_log['is_file'] = False
-                old_server_dirs = utils.split_path(self.old_path)[file_server_root_index:]
+                old_server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:]
                 old_server_path = os.path.join(*old_server_dirs)
-                new_server_dirs = utils.split_path(self.new_path)[file_server_root_index:]
+                new_server_dirs = utils.FileServerUtils.split_path(self.new_path)[file_server_root_index:]
                 new_server_path = os.path.join(*new_server_dirs)
                 file_location_entries = db.session.query(FileLocationModel)\
                     .filter(FileLocationModel.file_server_directories.like(func.concat(old_server_path, '%'))).all()
@@ -365,7 +365,7 @@ class ServerEdit:
 
                 for file_location_entry in file_location_entries:
                     old_file_path = file_location_entry.file_server_directories
-                    old_path_list = utils.split_path(old_file_path)
+                    old_path_list = utils.FileServerUtils.split_path(old_file_path)
                     new_server_path = os.path.join(*new_server_dirs, *old_path_list[len(new_server_dirs):])
                     
                     #TODO what if a file with the same name already exists in the new location?
@@ -386,7 +386,7 @@ class ServerEdit:
                     db.session.commit()
                     rename_log['location_entries_effected'] += 1
             
-            utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=rename_log)
+            utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=rename_log)
             return rename_log
                 
     
@@ -398,8 +398,8 @@ class ServerEdit:
         """
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy']
-            utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-            file_server_root_index = len(utils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+            utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
             move_log = {}
             move_log['task_id'] = queue_id
             move_log['location_entries_effected'] = 0
@@ -407,8 +407,8 @@ class ServerEdit:
             move_log['old_path'] = self.old_path
             move_log['new_path'] = self.new_path
 
-            old_path_list = utils.split_path(self.old_path)
-            new_path_list = utils.split_path(self.new_path)
+            old_path_list = utils.FileServerUtils.split_path(self.old_path)
+            new_path_list = utils.FileServerUtils.split_path(self.new_path)
             if self.is_file:
                 old_server_dirs_list = old_path_list[file_server_root_index:-1]
                 filename = old_path_list[-1]
@@ -437,7 +437,7 @@ class ServerEdit:
 
                 # if there is not an entry for the file in db, add it.
                 else:
-                    file_hash = utils.get_hash(os.path.join(self.new_path, filename))
+                    file_hash = utils.FilesUtils.get_hash(os.path.join(self.new_path, filename))
                     file_entry = None
                     while not file_entry:
                         
@@ -469,7 +469,7 @@ class ServerEdit:
                     .filter(FileLocationModel.file_server_directories.like(func.concat(old_server_path, '%'))).all()
                 
                 for location_entry in effected_location_entries:
-                    entry_dir_list = utils.split_path(location_entry.file_server_directories)
+                    entry_dir_list = utils.FileServerUtils.split_path(location_entry.file_server_directories)
                     new_location_list = new_path_list[file_server_root_index:] + entry_dir_list[len(old_server_dirs_list)-1:]
                     new_location_server_dirs = os.path.join(*new_location_list)
 
@@ -497,7 +497,7 @@ class ServerEdit:
                 for root, _, files in os.walk(move_result_path):
                     for relocated_file in files:
                         located_in_db = False
-                        root_server_dirs = os.path.join(*utils.split_path(root)[file_server_root_index:])
+                        root_server_dirs = os.path.join(*utils.FileServerUtils.split_path(root)[file_server_root_index:])
                         for location_entry in effected_location_entries:
                             if location_entry.filename == relocated_file and location_entry.file_server_directories == root_server_dirs:
                                 located_in_db = True
@@ -505,11 +505,11 @@ class ServerEdit:
                         
                         if not located_in_db:
                             task_kwargs = {'filepath': os.path.join(root, relocated_file)}
-                            utils.enqueue_new_task(db= db,
-                                                   enqueued_function=archiver_tasks.add_file_to_db_task,
-                                                   task_kwargs=task_kwargs)
+                            nk_results = utils.RQTaskUtils.enqueue_new_task(db= db,
+                                                                            enqueued_function=archiver_tasks.add_file_to_db_task,
+                                                                            task_kwargs=task_kwargs)
 
 
-            utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=move_log)
+            utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=move_log)
             return move_log
 

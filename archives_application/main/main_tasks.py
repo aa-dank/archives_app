@@ -39,8 +39,8 @@ class AppCustodian:
         results = {}
         for task_name in task_functions:
             task_function = getattr(self, task_name)
-            enqueuement_results = utils.enqueue_new_task(db=db,
-                                                         enqueued_function=task_function)
+            enqueuement_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                                     enqueued_function=task_function)
             results[task_name] = enqueuement_results
         
         return results
@@ -52,7 +52,7 @@ class AppCustodian:
         """
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy']
-            utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             now = datetime.now()
             log = {"task_id": queue_id, "files_removed": 0, "quantity_removed": 0, "errors": []}
             expiration_date = now - timedelta(days=self.temporary_file_lifespan)
@@ -71,7 +71,7 @@ class AppCustodian:
                      log["errors"].append(error_dict)
 
             serializable_log = {k: str(v) if not isinstance(str(v), Exception) else v for k, v in log.items()}
-            utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=serializable_log)
+            utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=serializable_log)
             return log
 
 
@@ -81,7 +81,7 @@ class AppCustodian:
         """
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy']
-            utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             now = datetime.now()
             log = {"task_id": queue_id, "records_removed": 0, "errors": []}
             
@@ -95,7 +95,7 @@ class AppCustodian:
                     [db.session.delete(record) for record in records]
                     db.session.commit()
             
-            utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
             return log
 
 
@@ -105,7 +105,7 @@ class AppCustodian:
         """
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy']
-            utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             now = datetime.now()
             log = {"task_id": queue_id, "files_removed": 0, "errors": []}
             expiration_date = now - timedelta(days=self.db_backup_file_lifespan)
@@ -123,14 +123,14 @@ class AppCustodian:
                         error_dict = {"filepath": path, "error": e}
                         log["errors"].append(error_dict)
             
-            utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
             return log
 
 
 def restart_app_task(queue_id: str, delay: int = 0):
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
-        utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
         log = {"task_id": queue_id, "errors": []}
         cmd = "sudo supervisorctl restart archives_app"
         time.sleep(delay)
@@ -144,7 +144,7 @@ def restart_app_task(queue_id: str, delay: int = 0):
             log["cmd_result"] = cmd_result
         except Exception as e:
             log["errors"].append(e)
-        utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
         return log
 
 
@@ -166,7 +166,7 @@ def db_backup_task(queue_id: str):
         """
 
         if not output_filepath:
-            input_filepath_list = utils.split_path(input_filepath)
+            input_filepath_list = utils.FileServerUtils.split_path(input_filepath)
             filename = input_filepath_list[-1]
             output_filepath = os.path.join(input_filepath_list[:-1], filename + '.bz2')
 
@@ -178,12 +178,12 @@ def db_backup_task(queue_id: str):
     with app.app_context():
         try:
             db = flask.current_app.extensions['sqlalchemy']
-            utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             log = {"task_id": queue_id, "errors": []}
             db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
             timestamp = datetime.now().strftime(DB_BACKUP_FILE_TIMESTAMP_FORMAT)
             temp_backup_filename = f"{DB_BACKUP_FILE_PREFIX}{timestamp}.sql"
-            temp_backup_path =  utils.create_temp_file_path(temp_backup_filename)
+            temp_backup_path =  utils.FlaskAppUtils.create_temp_file_path(temp_backup_filename)
             
             # An example of desired shell pg_dump command:
             # pg_dump postgresql://archives:password@localhost:5432/archives > /opt/app/data/Archive_Data/backup101.sql
@@ -214,7 +214,7 @@ def db_backup_task(queue_id: str):
             log["errors"].append(e)
 
         log = {k: str(val) for k, val in log.items() if hasattr(val, '__str__')} # Convert all values to strings to avoid JSON serialization errors
-        utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
         return log
 
         

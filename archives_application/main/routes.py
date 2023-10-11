@@ -6,7 +6,7 @@ import subprocess
 import archives_application.app_config as app_config
 from flask_login import current_user
 from archives_application.main import forms
-from archives_application.utils import roles_required, enqueue_new_task
+from archives_application.utils import *
 from archives_application import db, bcrypt
 from archives_application.models import *
 
@@ -95,9 +95,9 @@ def backup_database():
                 authenticated_to_make_request = True
 
         if authenticated_to_make_request:
-            nk_result = enqueue_new_task(db=db,
-                                         enqueued_function=db_backup_task,
-                                         timeout=60)
+            nk_result = RQTaskUtils.enqueue_new_task(db=db,
+                                                     enqueued_function=db_backup_task,
+                                                     timeout=60)
             job_id = nk_result["task_id"]
             if flask.request.args.get('user'):
                 return flask.Response(f"Database Back-up Task Enqueued. Job ID: {job_id}", status=200)
@@ -167,7 +167,7 @@ def app_maintenance():
 
 
 @main.route("/admin/config", methods=['GET', 'POST'])
-@roles_required(['ADMIN'])
+@FlaskAppUtils.roles_required(['ADMIN'])
 def change_config_settings():
 
     # import task here to avoid circular import
@@ -204,9 +204,9 @@ def change_config_settings():
                 json.dump(config_dict, config_file)
 
             restart_params = {'delay': 15}
-            nk_result = enqueue_new_task(db=db,
-                                         enqueued_function=restart_app_task,
-                                         task_kwargs=restart_params)
+            nk_result = RQTaskUtils.enqueue_new_task(db=db,
+                                                     enqueued_function=restart_app_task,
+                                                     task_kwargs=restart_params)
             
             flask.flash("Values entered were stored in the config file. Application restart is immenent.", 'success')
             return flask.redirect(flask.url_for('main.home'))
@@ -219,7 +219,7 @@ def change_config_settings():
 
 
 @main.route("/test/logging", methods=['GET', 'POST'])
-@roles_required(['ADMIN'])
+@FlaskAppUtils.roles_required(['ADMIN'])
 def test_logging():
     """
     endpoint for seeing how the system responds to different logging events
@@ -245,7 +245,7 @@ def get_db_uri():
 
 
 @main.route("/admin/sql_logging", methods=['GET', 'POST'])
-@roles_required(['ADMIN'])
+@FlaskAppUtils.roles_required(['ADMIN'])
 def toggle_sql_logging():
     """
     The purpose of this endpoint is to toggle the logging of sql statements to the console.
