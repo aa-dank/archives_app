@@ -9,7 +9,7 @@ import pandas as pd
 from datetime import timedelta
 from flask_login import login_required, current_user
 from sqlalchemy import func
-from typing import Union
+
 
 # imports from this application
 from archives_application.archiver.archival_file import ArchivalFile
@@ -62,7 +62,7 @@ def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
         os.remove(file_path)
     
     # extract the directories it is nested within and the filename; use these to query the database
-    path_list = utils.split_path(file_path)
+    path_list = utils.FileServerUtils.split_path(file_path)
     file_server_root_index = os.path.join(*path_list[:-1]) 
     server_dirs_list = path_list[file_server_root_index:-1]
     server_dirs = os.path.join(*server_dirs_list)
@@ -99,7 +99,7 @@ def has_admin_role(usr: UserModel):
 
 
 @archiver.route("/server_change", methods=['GET', 'POST'])
-@utils.roles_required(['ADMIN', 'ARCHIVIST'])
+@utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def server_change():
     
     # imported here to avoid circular import
@@ -196,7 +196,7 @@ def upload_file():
     if form.validate_on_submit():
         try:
             archival_filename = form.upload.data.filename
-            temp_path = utils.create_temp_file_path(archival_filename)
+            temp_path = utils.FlaskAppUtils.create_temp_file_path(archival_filename)
             form.upload.data.save(temp_path)
 
             # raise exception if there is not the required fields filled out in the submitted form.
@@ -205,7 +205,7 @@ def upload_file():
                     "Missing required fields -- either project_number and Destination_directory or destination_path")
 
             if form.new_filename.data:
-                archival_filename = utils.cleanse_filename(form.new_filename.data)
+                archival_filename = utils.FilesUtils.cleanse_filename(form.new_filename.data)
 
             # cleanse the project number value
             project_num = form.project_number.data
@@ -220,7 +220,7 @@ def upload_file():
             
             # If a user enters a path to destination directory instead of File code and project number...
             if form.destination_path.data:
-                destination_path_list = utils.split_path(form.destination_path.data)
+                destination_path_list = utils.FileServerUtils.split_path(form.destination_path.data)
                 if len(destination_path_list) > 1:
                     destination_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
                                                     *destination_path_list[1:],
@@ -236,10 +236,10 @@ def upload_file():
             if archiving_successful:
                 # enqueue the task of adding the file to the database
                 add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': False} #TODO add archiving functionality
-                nk_results = utils.enqueue_new_task(db=db,
-                                                    enqueued_function=add_file_to_db_task,
-                                                    task_kwargs=add_file_kwargs,
-                                                    timeout=None)
+                nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                                enqueued_function=add_file_to_db_task,
+                                                                task_kwargs=add_file_kwargs,
+                                                                timeout=None)
                 
                 flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
                 return flask.redirect(flask.url_for('archiver.upload_file'))
@@ -258,7 +258,7 @@ def upload_file():
 
 
 @archiver.route("/inbox_item", methods=['GET', 'POST'])
-@utils.roles_required(['ADMIN', 'ARCHIVIST'])
+@utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def inbox_item():
     """
     This function handles the archivist inbox mechanism for iterating (through each request) over the files in the user's inbox,
@@ -284,7 +284,7 @@ def inbox_item():
         # file types that might end up in the INBOX directory but do not need to be archived
         filenames_to_ignore = ["thumbs.db"]
         file_extensions_to_ignore = ["git", "ini"]
-        filename = utils.split_path(filepath)[-1]
+        filename = utils.FileServerUtils.split_path(filepath)[-1]
         file_ext = filename.split(".")[-1]
 
         if filename.lower() in filenames_to_ignore:
@@ -333,26 +333,25 @@ def inbox_item():
         arch_file_preview_image_path = None
         arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
         if arch_file_filename.split(".")[-1].lower() in ['pdf']:
-            arch_file_preview_image_path = utils.pdf_preview_image(pdf_path=arch_file_path,
-                                                                       image_destination=utils.create_temp_file_path(''),
-                                                                       )
-            preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.split_path(arch_file_preview_image_path)[-1])
+            arch_file_preview_image_path = utils.FilesUtils.pdf_preview_image(pdf_path=arch_file_path,
+                                                                              image_destination=utils.FlaskAppUtils.create_temp_file_path(''))
+            preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.FileServerUtils.split_path(arch_file_preview_image_path)[-1])
             preview_generated = True
 
         # if the file is a tiff, create a preview image that can be rendered in html
         tiff_file_extensions = ['tif', 'tiff']
         if arch_file_filename.split(".")[-1].lower() in tiff_file_extensions:
-            arch_file_preview_image_path = utils.convert_tiff(tiff_path=arch_file_path,
-                                                                  destination_directory=utils.create_temp_file_path(''),
-                                                                  output_file_type='png')
-            preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.split_path(arch_file_preview_image_path)[-1])
+            arch_file_preview_image_path = utils.FilesUtils.convert_tiff(tiff_path=arch_file_path,
+                                                                         destination_directory=utils.FlaskAppUtils.create_temp_file_path(''),
+                                                                         output_file_type='png')
+            preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.FileServerUtils.split_path(arch_file_preview_image_path)[-1])
 
         # If the filetype can be rendered natively in html, copy file as preview of itself if the file is an image
         image_file_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp']
         if arch_file_filename.split(".")[-1].lower() in image_file_extensions:
-            preview_path = utils.create_temp_file_path(arch_file_filename)
+            preview_path = utils.FlaskAppUtils.create_temp_file_path(arch_file_filename)
             shutil.copy2(arch_file_path, preview_path)
-            preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.split_path(preview_path)[-1])
+            preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.FileServerUtils.split_path(preview_path)[-1])
             preview_generated = True
         
         # If we made a preview image, record the path in the session so it can be removed upon logout
@@ -409,7 +408,7 @@ def inbox_item():
             upload_size = os.path.getsize(arch_file_path)
             archival_filename = arch_file_filename
             if form.new_filename.data:
-                archival_filename = utils.cleanse_filename(form.new_filename.data)
+                archival_filename = utils.FilesUtils.cleanse_filename(form.new_filename.data)
             
             # make sure the archival filename includes the file extension
             file_ext = arch_file_filename.split(".")[-1]
@@ -431,7 +430,7 @@ def inbox_item():
             destination_filename = arch_file.assemble_destination_filename()
             # If a user enters a path to destination directory instead of File code and project number...
             if form.destination_path.data: #TODO make sure this is not a typo 
-                destination_path_list = utils.split_path(form.destination_path.data)
+                destination_path_list = utils.FileServerUtils.split_path(form.destination_path.data)
                 if len(destination_path_list) > 1:
                     destination_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
                                                     *destination_path_list[1:],
@@ -463,10 +462,10 @@ def inbox_item():
 
                     # add the file to the database
                     add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': True}
-                    nk_results = utils.enqueue_new_task(db=db,
-                                                        enqueued_function=add_file_to_db_task,
-                                                        task_kwargs=add_file_kwargs,
-                                                        timeout=None)
+                    nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                                    enqueued_function=add_file_to_db_task,
+                                                                    task_kwargs=add_file_kwargs,
+                                                                    timeout=None)
 
                     # make sure that the old file has been removed
                     if os.path.exists(arch_file_path):
@@ -514,9 +513,9 @@ def archived_or_not():
         try:
             # Save file to temporary directory
             filename = form.upload.data.filename
-            temp_path = utils.create_temp_file_path(filename)
+            temp_path = utils.FlaskAppUtils.create_temp_file_path(filename)
             form.upload.data.save(temp_path)
-            file_hash = utils.get_hash(filepath=temp_path)
+            file_hash = utils.FilesUtils.get_hash(filepath=temp_path)
 
             matching_file = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
             if not matching_file:
@@ -525,7 +524,7 @@ def archived_or_not():
             
             # Create html table of all locations that match the hash
             locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == matching_file.id)
-            locations_df = utils.db_query_to_df(locations)
+            locations_df = utils.FlaskAppUtils.db_query_to_df(locations)
             os.remove(temp_path)
             if locations_df.empty:
                 raise Exception(f"No locations found for file, {filename}, with hash {file_hash}, though file was found in database.")
@@ -569,7 +568,7 @@ def exclude_extensions(f_path, ext_list=EXCLUDED_FILE_EXTENSIONS):
     """
     checks filepath to see if it is using excluded extensions
     """
-    filename = utils.split_path(f_path)[-1]
+    filename = utils.FileServerUtils.split_path(f_path)[-1]
     return any([filename.endswith(ext) for ext in ext_list])
 
 
@@ -577,7 +576,7 @@ def exclude_filenames(f_path, excluded_names=EXCLUDED_FILENAMES):
     """
     excludes files with certain names
     """
-    filename = utils.split_path(f_path)[-1]
+    filename = utils.FileServerUtils.split_path(f_path)[-1]
     return filename in excluded_names
 
 
@@ -616,7 +615,7 @@ def scrape_files():
             # Retrieve scrape parameters
             scrape_location = retrieve_location_to_start_scraping()
             scrape_time = 8
-            file_server_root_index = len(utils.split_path(flask.current_app.config.get("ARCHIVES_LOCATION")))
+            file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get("ARCHIVES_LOCATION")))
             if flask.request.args.get('scrape_time'):
                 scrape_time = int(flask.request.args.get('scrape_time'))
             scrape_time = timedelta(minutes=scrape_time)
@@ -630,11 +629,11 @@ def scrape_files():
                             "scrape_time": scrape_time,
                             "queue_id": scrape_job_id}
             nk_call_kwargs = {'result_ttl': 43200}
-            nk_results = utils.enqueue_new_task(db=db,
-                                                enqueued_function=scrape_file_data_task,
-                                                task_kwargs=scrape_params,
-                                                enqueue_call_kwargs=nk_call_kwargs,
-                                                timeout=scrape_time.seconds + 60)
+            nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                            enqueued_function=scrape_file_data_task,
+                                                            task_kwargs=scrape_params,
+                                                            enqueue_call_kwargs=nk_call_kwargs,
+                                                            timeout=scrape_time.seconds + 60)
             
             nk_results = {"enqueueing_results": utils.serializablize_dict(nk_results),
                           "scrape_task_params": utils.serializablize_dict(scrape_params)}
@@ -650,7 +649,7 @@ def scrape_files():
 
 
 @archiver.route("/test/scrape_files", methods=['GET', 'POST'])
-@utils.roles_required(['ADMIN'])
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def test_scrape_files():
     """
     Endpoint for testing archiver_tasks.scrape_file_data function in development.
@@ -661,7 +660,7 @@ def test_scrape_files():
     # Retrieve scrape parameters
     scrape_location = retrieve_location_to_start_scraping()
     scrape_time = 8
-    file_server_root_index = len(utils.split_path(flask.current_app.config.get("ARCHIVES_LOCATION")))
+    file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get("ARCHIVES_LOCATION")))
     if flask.request.args.get('scrape_time'):
         scrape_time = int(flask.request.args.get('scrape_time'))
     scrape_time = timedelta(minutes=scrape_time)
@@ -721,10 +720,10 @@ def confirm_db_file_locations():
             confirming_time = timedelta(minutes=confirming_time)
             confirm_params = {"archive_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
                               "confirming_time": confirming_time}
-            nk_results = utils.enqueue_new_task(db=db,
-                                                enqueued_function=confirm_file_locations_task,
-                                                task_kwargs=confirm_params,
-                                                timeout=confirming_time.seconds + 600)
+            nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                            enqueued_function=confirm_file_locations_task,
+                                                            task_kwargs=confirm_params,
+                                                            timeout=confirming_time.seconds + 600)
             
             # prepare task enqueueing info for JSON serialization
             nk_results = utils.serializablize_dict(nk_results)
@@ -742,7 +741,7 @@ def confirm_db_file_locations():
 
 
 @archiver.route("/test/confirm_files", methods=['GET', 'POST'])
-@utils.roles_required(['ADMIN'])
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def test_confirm_files():
     """
     Endpoint for testing archiver_tasks.confirm_file_locations function in development.
@@ -788,7 +787,7 @@ def file_search():
     if flask.request.args.get('timestamp'):
         try:
             timestamp = flask.request.args.get('timestamp')
-            csv_filepath = utils.create_temp_file_path(f'{csv_filename_prefix}{timestamp}.csv')
+            csv_filepath = utils.FlaskAppUtils.create_temp_file_path(f'{csv_filename_prefix}{timestamp}.csv')
             if not os.path.exists(csv_filepath):
                 # reformat timestamp to be more human-readable
                 timestamp = datetime.strftime(datetime.strptime(timestamp, timestamp_format), r'%Y-%m-%d %H:%M:%S')
@@ -810,28 +809,28 @@ def file_search():
             search_query = None
             search_term = str(form.search_term.data).lower()
             if form.search_location.data:
-                search_location = utils.user_path_to_app_path(path_from_user=form.search_location.data,
-                                                                location_path_prefix=archives_location)
-                search_location_list = utils.split_path(search_location)
-                mount_path_index = len(utils.split_path(archives_location))
+                search_location = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=form.search_location.data,
+                                                                            location_path_prefix=archives_location)
+                search_location_list = utils.FileServerUtils.split_path(search_location)
+                mount_path_index = len(utils.FileServerUtils.split_path(archives_location))
                 search_location_search_term = os.path.join(*search_location_list[mount_path_index:])
                 search_query = FileLocationModel.query.filter(FileLocationModel.file_server_directories.like(f"%{search_location_search_term}%"),
                                                               func.lower(FileLocationModel.filename).like(f"%{search_term}%"))
             else:
                 search_query = FileLocationModel.query.filter(func.lower(FileLocationModel.filename).like(f"%{search_term}%"))
 
-            search_df = utils.db_query_to_df(search_query)
+            search_df = utils.FlaskAppUtils.db_query_to_df(search_query)
             if search_df.empty:
                 flask.flash(f"No files found matching search term: {search_term}", 'warning')
                 return flask.redirect(flask.url_for('archiver.file_search'))
             
-            search_df['Location'] = search_df.apply(lambda row: utils.user_path_from_db_data(file_server_directories=row['file_server_directories'], user_archives_location=archives_network_location), axis=1)
+            search_df['Location'] = search_df.apply(lambda row: utils.FileServerUtils.user_path_from_db_data(file_server_directories=row['file_server_directories'], user_archives_location=archives_network_location), axis=1)
             cols_to_remove = ['id', 'file_id', 'file_server_directories', 'existence_confirmed', 'hash_confirmed']
             search_df.drop(columns=cols_to_remove, inplace=True)
             search_df.rename(columns={'filename': 'Filename'}, inplace=True)
             timestamp = datetime.now().strftime(r'%Y%m%d%H%M%S')
             too_many_results = len(search_df) > html_table_row_limit
-            csv_filepath = utils.create_temp_file_path(filename=f'{csv_filename_prefix}{timestamp}.csv')
+            csv_filepath = utils.FlaskAppUtils.create_temp_file_path(filename=f'{csv_filename_prefix}{timestamp}.csv')
             search_df.to_csv(csv_filepath, index=False)
             search_df = search_df.head(html_table_row_limit)
             search_df_html = utils.html_table_from_df(df=search_df, path_columns=['Location'])
@@ -862,16 +861,16 @@ def scrape_location():
 
     form = ScrapeLocationForm()
     if form.validate_on_submit():
-        search_location = utils.user_path_to_app_path(path_from_user=form.scrape_location.data,
-                                                        location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
+        search_location = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=form.scrape_location.data,
+                                                                    location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
         
         scrape_params = {'scrape_location': search_location,
                          'recursively': form.recursive.data,
                          'confirm_data': True}
-        nk_results = utils.enqueue_new_task(db=db,
-                                            enqueued_function=scrape_location_files_task,
-                                            task_kwargs=scrape_params,
-                                            timeout=3600)
+        nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                        enqueued_function=scrape_location_files_task,
+                                                        task_kwargs=scrape_params,
+                                                        timeout=3600)
         id = nk_results.get("_id")
         function_call = nk_results.get("description")
         m = f"Scraping task has been successfully enqueued. Function Enqueued: {function_call}"

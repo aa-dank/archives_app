@@ -22,11 +22,12 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
         task_results = {'queue_id': queue_id, 'filepath': filepath}
         try:
             db = flask.current_app.extensions['sqlalchemy']
-            utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id,
+                                                       sql_db=db)
             
-            file_hash = utils.get_hash(filepath)
+            file_hash = utils.FilesUtils.get_hash(filepath)
             file_id = None
-            filename = utils.split_path(filepath)[-1]
+            filename = utils.FileServerUtils.split_path(filepath)[-1]
             
             # check if the file is already in the database and add it if it is not
             while not file_id:
@@ -42,11 +43,11 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
                     file_id = db_file_entry.id
             
             # extract the path from the root of the windows share
-            file_server_root_index = len(utils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+            file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
             server_directories = filepath[:-(len(filename)+1)]
             task_results['server_directories'] = server_directories # TODO remove this line after debugging
             task_results['root_index'] = file_server_root_index # TODO remove this line after debugging
-            server_dirs_list = utils.split_path(server_directories)[file_server_root_index:]
+            server_dirs_list = utils.FileServerUtils.split_path(server_directories)[file_server_root_index:]
             server_directories = os.path.join(*server_dirs_list)
 
             # check if the file location is already in the database and add it if it is not
@@ -88,12 +89,14 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
                 db.session.commit()
             task_results["file_id"] = file_id 
             task_results["filepath"] = filepath
-            utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_results)
+            utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id,
+                                                       sql_db=db,
+                                                       task_result=task_results)
             return file_id
         
         except Exception as e:
             task_results['error'] = str(e)
-            utils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_results)
+            utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_results)
 
 
 def scrape_file_data_task(archives_location: str, start_location: str, file_server_root_index: int,
@@ -113,7 +116,7 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
     
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
-        utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
 
         # create a log of the scraping process
         scrape_log = {"Scrape Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
@@ -148,7 +151,7 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
                 if timedelta(seconds=(time.time() - start_time)) >= scrape_time:
                     # process root to be agnostic to where the archives location is mounted
                     scrape_time_expired = True
-                    next_start                                                                                                                                                                                                                                                                                                                                                     = utils.split_path(root)[file_server_root_index:]
+                    next_start                                                                                                                                                                                                                                                                                                                                                     = utils.FileServerUtils.split_path(root)[file_server_root_index:]
                     scrape_log["Next Start Location"] = os.path.join(*next_start)
                     break
 
@@ -174,11 +177,11 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
 
                         # if there is not an equivalent entry in database, we add it.
                         file_is_new = False # flag to indicate if the file is new to the database
-                        file_hash = utils.get_hash(filepath=file)
+                        file_hash = utils.FilesUtils.get_hash(filepath=file)
                         db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
                         if not db_file_entry:
                             file_is_new = True
-                            path_list = utils.split_path(file)
+                            path_list = utils.FileServerUtils.split_path(file)
                             extension = path_list[-1].split(".")[-1].lower()
                             model = FileModel(hash=file_hash,
                                             size=file_size,
@@ -188,7 +191,7 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
                             db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
                             scrape_log["Files Added"] += 1
 
-                        path_list = utils.split_path(file)
+                        path_list = utils.FileServerUtils.split_path(file)
                         # This is for if there is a file in the root directory of the share (eg R:\some_file.pdf) )
                         file_server_dirs = ""
                         if path_list[file_server_root_index:-1] != []:
@@ -227,20 +230,22 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
                         scrape_log["File Locations Added"] += 1
 
                     except Exception as e:
-                        utils.attempt_rollback(db)
+                        utils.FlaskAppUtils.attempt_db_rollback(db)
                         e_dict = {"Filepath": file, "Exception": str(e)}
                         scrape_log["Errors"].append(e_dict)
 
         # update the task entry in the database
         scrape_log["Time Elapsed"] = str(time.time() - start_time) + "s"
-        utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=scrape_log)
+        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id,
+                                                   sql_db=db,
+                                                   task_result=scrape_log)
         return scrape_log
 
 
 def confirm_file_locations_task(archive_location: str, confirming_time: timedelta, queue_id: str):
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
-        utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
 
         start_time = time.time()
         confirm_locations_log = {"Confirm Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
@@ -290,7 +295,7 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
                         confirm_locations_log["Files Confirmed"] += 1
                 
                 except Exception as e:
-                    utils.attempt_rollback(db)
+                    utils.FlaskAppUtils.attempt_db_rollback(db)
                     e_dict = {"Location": file_location.file_server_directories,
                             "filename": file_location.filename,
                             "Exception": str(e)}
@@ -298,7 +303,9 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
                 
         # update the task entry in the database
         confirm_locations_log["Time Elapsed"] = str(time.time() - start_time) + "s"
-        utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=confirm_locations_log)
+        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id,
+                                                   sql_db=db,
+                                                   task_result=confirm_locations_log)
         return confirm_locations_log
 
 
@@ -314,7 +321,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
         """
         checks filepath to see if it is using excluded extensions
         """
-        filename = utils.split_path(f_path)[-1]
+        filename = utils.FileServerUtils.split_path(f_path)[-1]
         return any([filename.endswith(ext) for ext in ext_list])
 
 
@@ -322,14 +329,14 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
         """
         excludes files with certain names
         """
-        filename = utils.split_path(f_path)[-1]
+        filename = utils.FileServerUtils.split_path(f_path)[-1]
         return filename in excluded_names
     
 
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
-        utils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-        file_server_root_index = len(utils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
+        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+        file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
         location_scrape_log = {"queue_id": queue_id,
                                "Location": scrape_location,
                                "Recursive": recursively,
@@ -341,7 +348,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
         relevant_file_data_list = []
         if confirm_data:
             try:
-                location_db_dirs_list = utils.split_path(scrape_location)[file_server_root_index:]
+                location_db_dirs_list = utils.FileServerUtils.split_path(scrape_location)[file_server_root_index:]
                 query_dirs = os.path.join(*location_db_dirs_list)
                 archive_location = flask.current_app.config.get('ARCHIVES_LOCATION')
                 relevant_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories.startswith(query_dirs)).all()
@@ -379,7 +386,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                             location_scrape_log["Files Confirmed"] += 1
                     
                     except Exception as e:
-                        utils.attempt_rollback(db)
+                        utils.FlaskAppUtils.attempt_db_rollback(db)
                         e_dict = {"Location": location_record.file_server_directories,
                                 "filename": location_record.filename,
                                 "Exception": str(e)}
@@ -389,7 +396,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                 relevant_file_data_list = [(location_record.file_server_directories, location_record.filename) for location_record in relevant_locations]
 
             except Exception as e:
-                utils.attempt_rollback(db)
+                utils.FlaskAppUtils.attempt_db_rollback(db)
                 e_dict = {"Location": location_record.file_server_directories,
                           "filename": location_record.filename,
                           "Exception": str(e)}
@@ -407,16 +414,16 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                     
                     # If the file is already in our previous query results, we move to the next file.
                     if confirm_data:
-                        server_dirs_list = utils.split_path(root)[file_server_root_index:]
+                        server_dirs_list = utils.FileServerUtils.split_path(root)[file_server_root_index:]
                         server_dirs = os.path.join(*server_dirs_list)
                         if (server_dirs, file) in relevant_file_data_list:
                             continue
                     
                     location_scrape_log["Files Enqueued to Add"] += 1
                     add_file_params = {"filepath": filepath}
-                    utils.enqueue_new_task(db=db,
-                                           enqueued_function=add_file_to_db_task, 
-                                           task_kwargs=add_file_params)
+                    utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                       enqueued_function=add_file_to_db_task, 
+                                                       task_kwargs=add_file_params)
                     
                 except Exception as e:
                     e_dict = {"Location": root,
@@ -427,5 +434,5 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
             if scrape_location == root and not recursively:
                 break
         
-        utils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=location_scrape_log)
+        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=location_scrape_log)
         return location_scrape_log
