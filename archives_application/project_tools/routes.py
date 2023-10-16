@@ -167,7 +167,7 @@ def caan_drawings(caan):
 
     row_drawing_location = lambda row: project_drawing_location(project_location=row["file_server_location"],
                                                                 archives_location=flask.current_app.config.get("ARCHIVES_LOCATION"),
-                                                                network_location=flask.current_app.config.get('ARCHIVES_NETWORK_LOCATION'))
+                                                                network_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION'))
     html_col_widths = {"Number": "10%", "Name": "35%", "Location": "55%"}
     
     # get all file locations for projects with drawings
