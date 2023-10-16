@@ -245,7 +245,7 @@ class FileServerUtils:
         return new_network_path
     
     @staticmethod
-    def user_path_from_db_data(file_server_directories, user_archives_location, filename = None):
+    def user_path_from_db_data(file_server_directories, user_archives_location, user_location_networked = False, filename = None):
         """
         Takes the file_server_directories and archives_location from the database and returns a path that can be used by the user.
         """
@@ -255,9 +255,13 @@ class FileServerUtils:
         user_file_path_list = archives_network_location_list + server_directories_list
         if filename:
             user_file_path_list = user_file_path_list + [filename]
+        
         user_file_path = "\\".join(user_file_path_list)
-        while not user_file_path.startswith("\\\\"):
-            user_file_path = "\\" + user_file_path
+        user_file_path = user_file_path.lstrip('\\')
+        if user_location_networked:
+            while not user_file_path.startswith("\\\\"):
+                user_file_path = "\\" + user_file_path
+        
         return user_file_path
     
     @staticmethod

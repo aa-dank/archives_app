@@ -673,11 +673,11 @@ def test_scrape_files():
     db.session.commit()
 
     scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
-                    "start_location": scrape_location,
-                    "file_server_root_index": file_server_root_index,
-                    "exclusion_functions": [exclude_extensions, exclude_filenames],
-                    "scrape_time": scrape_time,
-                    "queue_id": scrape_job_id}
+                     "start_location": scrape_location,
+                     "file_server_root_index": file_server_root_index,
+                     "exclusion_functions": [exclude_extensions, exclude_filenames],
+                     "scrape_time": scrape_time,
+                     "queue_id": scrape_job_id}
     scrape_results = scrape_file_data_task(**scrape_params)
     
     # prepare scrape results for JSON serialization
@@ -805,7 +805,7 @@ def file_search():
     if form.validate_on_submit():
         try:
             archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
-            archives_network_location = flask.current_app.config.get('ARCHIVES_NETWORK_LOCATION')
+            user_archives_location = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
             search_query = None
             search_term = str(form.search_term.data).lower()
             if form.search_location.data:
@@ -824,7 +824,9 @@ def file_search():
                 flask.flash(f"No files found matching search term: {search_term}", 'warning')
                 return flask.redirect(flask.url_for('archiver.file_search'))
             
-            search_df['Location'] = search_df.apply(lambda row: utils.FileServerUtils.user_path_from_db_data(file_server_directories=row['file_server_directories'], user_archives_location=archives_network_location), axis=1)
+            user_usable_path = lambda row: utils.FileServerUtils.user_path_from_db_data(file_server_directories=row['file_server_directories'],
+                                                                                        user_archives_location=user_archives_location)
+            search_df['Location'] = search_df.apply(user_usable_path, axis=1)
             cols_to_remove = ['id', 'file_id', 'file_server_directories', 'existence_confirmed', 'hash_confirmed']
             search_df.drop(columns=cols_to_remove, inplace=True)
             search_df.rename(columns={'filename': 'Filename'}, inplace=True)
