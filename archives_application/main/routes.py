@@ -47,6 +47,11 @@ def home():
     return flask.render_template('home.html')
 
 
+@main.route("/about")
+def about():
+    return flask.render_template('about.html', title='About')
+
+
 @main.route("/admin")
 def main_admin():
     #TODO add page of links to admin pages
@@ -75,6 +80,7 @@ def backup_database():
         """
         flask.current_app.logger.error(thrown_exception, exc_info=True)
         return flask.Response(response_message + "\n" + thrown_exception, status=500)
+    
     try:
         
         # first determine if the request is being made by an admin user

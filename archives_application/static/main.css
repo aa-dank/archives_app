@@ -79,3 +79,15 @@ a.article-title:hover {
 .account-heading {
   font-size: 2.5rem;
 }
+
+.responsive-iframe {
+  width: 100%;
+  height: 100vh; /* or whatever height you prefer */
+}
+
+/* Adjustments for smaller screens if needed */
+@media (max-width: 768px) {
+  .responsive-iframe {
+      height: 60vh;
+  }
+}
