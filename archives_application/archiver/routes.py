@@ -9,6 +9,7 @@ import pandas as pd
 from datetime import timedelta
 from flask_login import login_required, current_user
 from sqlalchemy import func
+from urllib import parse
 
 
 # imports from this application
@@ -99,8 +100,44 @@ def has_admin_role(usr: UserModel):
 
 
 @archiver.route("/server_change", methods=['GET', 'POST'])
-@utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def server_change():
+    """
+    Handles server change requests for the file server, either through a form submission or API request.
+    
+    This endpoint can be accessed in two primary ways:
+    1. Through a web form that users fill out to make changes on the file server.
+    2. Directly through an API request with parameters passed in the request URL.
+
+    Supported Methods:
+    - GET: Displays the server change form to the user.
+    - POST: Processes the server change request, either from the submitted form or directly through API request.
+
+    URL Parameters (for API requests):
+    - user (str): The email of the user making the request.
+    - password (str): The password of the user making the request.
+    - new_path (str): The new path for file/directory operations (e.g., RENAME, MOVE, or CREATE).
+                     Note: Should be URL-encoded.
+    - old_path (str): The original path for file/directory operations (e.g., DELETE, RENAME, or MOVE).
+                     Note: Should be URL-encoded.
+    - edit_type (str): Specifies the type of server edit to perform. Can be one of:
+                       - DELETE: Deletes a specified path.
+                       - RENAME: Renames a file/directory from old_path to new_path.
+                       - MOVE: Moves an asset from old_path to new_path.
+                       - CREATE: Creates a new directory at new_path.
+
+    Returns:
+    - HTML template: If accessed via web, either displays the server change form or redirects after successful form submission.
+    - JSON response: If accessed via API, returns success or error messages in JSON format.
+
+    Notes:
+    - The user must be authenticated and have the correct permissions (ADMIN or ARCHIVIST) to make server changes.
+    - There are certain limits on the number of files and data size that can be changed unless the user has admin credentials.
+    - In the case of an exception during the server change operation, an appropriate error message is returned.
+
+    Raises:
+    - Unauthorized: If the user is not authenticated or lacks the necessary permissions.
+    - Various errors: Depending on the issues encountered during the server change operation.
+    """
     
     # imported here to avoid circular import
     from archives_application.archiver.server_edit import ServerEdit
@@ -117,29 +154,60 @@ def server_change():
                                          change_type=executed_edit.change_type,
                                          files_effected=executed_edit.files_effected,
                                          data_effected=executed_edit.data_effected,
-                                         user_id=editor.id
-                                         )
+                                         user_id=editor.id)
         db.session.add(change_model)
         db.session.commit()
 
-    form = ServerChangeForm()
-    if form.validate_on_submit():
-        try:
-            user_email = current_user.email
-            archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+    roles_allowed = ['ADMIN', 'ARCHIVIST']
+    has_correct_permissions = lambda user: any([role in user.roles.split(",") for role in roles_allowed])
+    new_path = None
+    old_path = None
+    edit_type = None
+    user_email = None
 
-            # retrieve limits to how much can be changed on the server, but if the user has admin credentials,
-            # there are no limits and they are set to zero
-            files_limit = flask.current_app.config.get('SERVER_CHANGE_FILES_LIMIT')
-            data_limit = flask.current_app.config.get('SERVER_CHANGE_DATA_LIMIT')
+    # Check if the request includes user credent ials or is from a logged in user. 
+    # User needs to have ADMIN role.
+    request_is_authenticated = False
+    form_request = True
+    if flask.request.args.get('user'):
+        form_request = False
+        user_param = flask.request.args.get('user')
+        password_param = flask.request.args.get('password')
+        user = UserModel.query.filter_by(email=user_param).first()
+
+        # If there is a matching user to the request parameter, the password matches and that account has admin role...
+        if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
+            request_is_authenticated = True
+            new_path = parse.unquote(flask.request.args.get('new_path'))
+            old_path = parse.unquote(flask.request.args.get('old_path'))
+            edit_type = flask.request.args.get('edit_type')
+            user_email = user.email
+
+    elif current_user:
+        if current_user.is_authenticated and has_correct_permissions(current_user):
+            request_is_authenticated = True
+
+    if not request_is_authenticated:
+        return flask.Response("Unauthorized", status=401)
+    
+    # retrieve limits to how much can be changed on the server, but if the user has admin credentials,
+    # there are no limits and they are set to zero
+    files_limit = flask.current_app.config.get('SERVER_CHANGE_FILES_LIMIT')
+    data_limit = flask.current_app.config.get('SERVER_CHANGE_DATA_LIMIT')
+    archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+    
+    # if this is a user using the form to elicit a server change, we will validate the form
+    # and retrieve ServerEdit object params
+    if form_request:
+        
+        form = ServerChangeForm()
+        if form.validate_on_submit():
+
+            user_email = current_user.email
             
             # if the user has admin credentials, there are no limits
             if 'ADMIN' in current_user.roles:
                 files_limit, data_limit = 0, 0
-
-            new_path = None
-            old_path = None
-            edit_type = None
 
             # If the user entered a path to delete
             if form.path_delete.data:
@@ -162,22 +230,33 @@ def server_change():
             if form.new_directory.data:
                 new_path = form.new_directory.data
                 edit_type = 'CREATE'
-
+    
+    # if we have ServerEdit object params, we will execute the change
+    if edit_type:
+        try:   
             server_edit = ServerEdit(server_location=archives_location,
-                                     change_type=edit_type,
-                                     user=user_email,
-                                     new_path=new_path,
-                                     old_path=old_path)
+                                        change_type=edit_type,
+                                        user=user_email,
+                                        new_path=new_path,
+                                        old_path=old_path)
             server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit)
             save_server_change(server_edit)
 
-            flask.flash(f"Requested '{edit_type}' change executed and recorded.", 'success')
-            return flask.redirect(flask.url_for('archiver.server_change'))
+            if form_request:
+                flask.flash(f"Requested '{edit_type}' change executed and recorded.", 'success')
+                return flask.redirect(flask.url_for('archiver.server_change'))
+            
+            return flask.Response("Success", status=200)
 
         except Exception as e:
-            return web_exception_subroutine(flash_message="Error processing or executing change: ",
-                                            thrown_exception=e,
-                                            app_obj=flask.current_app)
+            m = "Error processing or executing change: "
+            if form_request:
+                return web_exception_subroutine(flash_message=m,
+                                                thrown_exception=e,
+                                                app_obj=flask.current_app)
+            
+            return api_exception_subroutine(response_message=m, thrown_exception=e)
+    
     return flask.render_template('server_change.html', title='Make change to file server', form=form)
 
 
