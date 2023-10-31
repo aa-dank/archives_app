@@ -33,7 +33,7 @@ class ArchivedFileModel(db.Model):
     destination_directory = db.Column(db.String)
     file_code = db.Column(db.String)
     file_size = db.Column(db.Float, nullable=False)
-    date_archived = db.Column(db.DateTime, nullable=False, default=datetime.now()) #TODO remove these and fill the datetime columns during api call
+    date_archived = db.Column(db.DateTime, nullable=False, default=datetime.now) #TODO remove these and fill the datetime columns during api call
     archivist_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     notes = db.Column(db.String)
     filename = db.Column(db.String)
@@ -50,7 +50,7 @@ class ServerChangeModel(db.Model):
     change_type = db.Column(db.String, nullable=False)
     files_effected = db.Column(db.Integer)
     data_effected = db.Column(db.Numeric)
-    date = db.Column(db.DateTime, nullable=False, default=datetime.now())
+    date = db.Column(db.DateTime, nullable=False, default=datetime.now)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 
     def __repr__(self):
