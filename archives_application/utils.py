@@ -517,7 +517,20 @@ class FlaskAppUtils:
         """
         Pattern for creating a path for a temp file on the server.
         """
-        return os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", filename])
+        temp_path = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", filename])
+        
+        # if the file already exists, add a random number to the end of the filename
+        while os.path.exists(temp_path):
+            filename_parts = filename.split(".")
+            if len(filename_parts) > 1:
+                filename_parts[-2] += str(random.randint(0, 1000000))
+            else:
+                filename_parts[0] += str(random.randint(0, 1000000))
+            filename = ".".join(filename_parts)
+            temp_path = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", filename])
+        
+        return temp_path
+
     
     @staticmethod
     def db_query_to_df(query: flask_sqlalchemy.query.Query, dataframe_size_limit= None, query_count_concern_threshold = 100000):

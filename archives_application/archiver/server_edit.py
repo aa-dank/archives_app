@@ -15,15 +15,6 @@ app = create_app()
 
 class ServerEdit:
     def __init__(self, server_location, change_type, user, new_path=None, old_path=None):
-        """
-
-        :param server_location:
-        :param change_type:
-        :param new_path: resulting path after the change will be made
-        :param old_path: resultin
-        :param user:
-        :return:
-        """
         self.change_type = change_type
         self.new_path = None
         if new_path:
