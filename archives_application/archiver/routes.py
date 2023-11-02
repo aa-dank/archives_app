@@ -98,7 +98,7 @@ def has_admin_role(usr: UserModel):
     """
     return any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
 
-
+@archiver.route("/api/server_change", methods=['GET', 'POST'])
 @archiver.route("/server_change", methods=['GET', 'POST'])
 def server_change():
     """
@@ -141,22 +141,6 @@ def server_change():
     
     # imported here to avoid circular import
     from archives_application.archiver.server_edit import ServerEdit
-    
-    def save_server_change(executed_edit: ServerEdit):
-        """
-        Subroutine for saving server changes to database
-        :param change: ServerEdit object
-        :return: None
-        """
-        editor = UserModel.query.filter_by(email=executed_edit.user).first()
-        change_model = ServerChangeModel(old_path=executed_edit.old_path,
-                                         new_path=executed_edit.new_path,
-                                         change_type=executed_edit.change_type,
-                                         files_effected=executed_edit.files_effected,
-                                         data_effected=executed_edit.data_effected,
-                                         user_id=editor.id)
-        db.session.add(change_model)
-        db.session.commit()
 
     roles_allowed = ['ADMIN', 'ARCHIVIST']
     has_correct_permissions = lambda user: any([role in user.roles.split(",") for role in roles_allowed])
@@ -235,17 +219,29 @@ def server_change():
     if edit_type:
         try:   
             server_edit = ServerEdit(server_location=archives_location,
-                                        change_type=edit_type,
-                                        user=user_email,
-                                        new_path=new_path,
-                                        old_path=old_path)
+                                     change_type=edit_type,
+                                     user=user_email,
+                                     new_path=new_path,
+                                     old_path=old_path)
             server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit)
-            save_server_change(server_edit)
 
+            # record the change in the database
+            editor = UserModel.query.filter_by(email=server_edit.user).first()
+            change_model = ServerChangeModel(old_path=server_edit.old_path,
+                                             new_path=server_edit.new_path,
+                                             change_type=server_edit.change_type,
+                                             files_effected=server_edit.files_effected,
+                                             data_effected=server_edit.data_effected,
+                                             user_id=editor.id)
+            db.session.add(change_model)
+            db.session.commit()
+
+            # if this is a form request, we will flash a message and redirect to the server change form
             if form_request:
                 flask.flash(f"Requested '{edit_type}' change executed and recorded.", 'success')
                 return flask.redirect(flask.url_for('archiver.server_change'))
             
+            # if this is an API request, we will return a success message
             return flask.Response("Success", status=200)
 
         except Exception as e:
@@ -576,17 +572,97 @@ def inbox_item():
                                         app_obj=flask.current_app)
 
 
+def cleanse_locations_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    # New df is only the columns we want, 'file_server_directories' and 'filename'
+    df = df[['file_server_directories', 'filename']]
+    # New row  'filepath' which joins the directories and the filename
+    df['filepath'] = df.apply(lambda row: (row['file_server_directories'] + "/" + row['filename']), axis=1)
+    return df[['filepath']]
+
+
+@archiver.route("/api/archived_or_not", methods=['POST'])
+def file_archived_or_not():
+    """
+    API endpoint to determine if the uploaded file via the form exists in the app database.
+    
+    This function requires a POST request with a file part and 'user' and
+    'password' as query parameters for authentication. It processes the uploaded file,
+    calculates its hash, and checks against the database to see if the file with the
+    same hash is already archived. If authenticated and found, it returns the locations
+    of the archived file in JSON format.
+
+    Returns:
+        flask.Response: A JSON response containing the locations if the file is found,
+                        a "No file found" with 404 status if the file is not in the database,
+                        "Unauthorized" with 401 status if authentication fails,
+                        or "No file in request"/"No file selected" with 400 status if the file is missing.
+    Raises:
+        Exception: An exception is raised when an error occurs during file processing or database querying.
+    """
+    request_authenticated = False
+    if flask.request.args.get('user'):
+        user_param = flask.request.args.get('user')
+        password_param = flask.request.args.get('password')
+        user = UserModel.query.filter_by(email=user_param).first()
+
+        if user and bcrypt.check_password_hash(user.password, password_param):
+            request_authenticated = True
+    
+    if not request_authenticated:
+        return flask.Response("Unauthorized", status=401)
+    
+    try:
+        if 'file' not in flask.request.files:
+            return flask.Response("No file in request", status=400)
+        
+        uploaded_file = flask.request.files['file']
+        if uploaded_file.filename == '':
+            return flask.Response("No file selected", status=400)
+
+        # Save file to temporary directory
+        filename = uploaded_file.filename
+        temp_path = utils.FlaskAppUtils.create_temp_file_path(filename)
+        uploaded_file.save(temp_path)
+        
+        file_hash = utils.FilesUtils.get_hash(filepath=temp_path)
+        os.remove(temp_path)
+        matching_file = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
+        if not matching_file:
+            return flask.Response("No file found", status=404)
+        
+        locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == matching_file.id)
+        locations_df = utils.FlaskAppUtils.db_query_to_df(locations)
+        if locations_df.empty:
+            return flask.Response("No locations found", status=404)
+        
+        locations_df = cleanse_locations_dataframe(locations_df)
+
+        return flask.jsonify(locations_df.to_json(orient='records'))
+
+    except Exception as e:
+        return api_exception_subroutine(response_message="Error processing request: ",
+                                        thrown_exception=e)
+
+
 @archiver.route("/archived_or_not", methods=['GET', 'POST'])
 def archived_or_not():
+    """
+    Web endpoint for checking if a file is archived, intended for form submissions.
 
-    def cleanse_locations_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-        # New df is only the columns we want, 'file_server_directories' and 'filename'
-        df = df[['file_server_directories', 'filename']]
-        # New row  'filepath' which joins the directories and the filename
-        df['filepath'] = df.apply(lambda row: (row['file_server_directories'] + "/" + row['filename']), axis=1)
-        return df[['filepath']]
+    GET requests render an upload form where users can submit a file to check if it's archived.
+    POST requests take the submitted file, save it temporarily, calculate its hash, and query
+    the database to check for its existence. If the file is found, an HTML table with file
+    locations is returned. Otherwise, a flash message is displayed and the user is redirected.
 
-
+    Returns:
+        flask.Response: A rendered template of the upload form on GET,
+                        a rendered template with file locations on successful POST,
+                        or a redirect with a flash message if the file is not found.
+    Raises:
+        Exception: An exception is raised when an error occurs during file processing,
+                    querying the database, or if the file is found in the database but
+                    no locations are associated with it.
+    """
     form = ArchivedOrNotForm()
     if form.validate_on_submit():
         try:
