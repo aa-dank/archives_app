@@ -228,13 +228,7 @@ class FileServerUtils:
         :param network_location:
         :return:
         """
-        def is_already_network_location(location, some_network_location): #TODO fix this sub-function
-            test_location = "".join(i for i in str(location) if i not in "\/:.")
-            test_network_loc = "".join(i for i in str(some_network_location) if i not in "\/:.")
-            if test_location.lower().startswith(test_network_loc.lower()):
-                return True
-            return False
-
+        
         mounted_path = Path(mounted_path)
         new_path_list = [network_location] + list(mounted_path.parts[1:])
         new_network_path = os.path.join(*new_path_list)
@@ -431,6 +425,7 @@ class FlaskAppUtils:
 
         return decorator
     
+
     @staticmethod
     def user_path_to_app_path(path_from_user, location_path_prefix):
         '''
