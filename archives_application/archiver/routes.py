@@ -581,7 +581,7 @@ def cleanse_locations_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @archiver.route("/api/archived_or_not", methods=['POST'])
-def file_archived_or_not():
+def archived_or_not_api():
     """
     API endpoint to determine if the uploaded file via the form exists in the app database.
     
@@ -630,14 +630,13 @@ def file_archived_or_not():
         if not matching_file:
             return flask.Response("No file found", status=404)
         
-        locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == matching_file.id)
-        locations_df = utils.FlaskAppUtils.db_query_to_df(locations)
+        locations_query = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == matching_file.id)
+        locations_df = utils.FlaskAppUtils.db_query_to_df(locations_query)
         if locations_df.empty:
             return flask.Response("No locations found", status=404)
         
         locations_df = cleanse_locations_dataframe(locations_df)
-
-        return flask.jsonify(locations_df.to_json(orient='records'))
+        return flask.jsonify(locations_df['filepath'].to_list())
 
     except Exception as e:
         return api_exception_subroutine(response_message="Error processing request: ",
