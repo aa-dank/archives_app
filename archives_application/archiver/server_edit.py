@@ -4,6 +4,7 @@ import os
 import random
 import shutil
 from sqlalchemy import func
+from typing import List, Callable
 from archives_application import create_app, utils
 from archives_application.archiver import archiver_tasks
 from archives_application.models import  FileLocationModel, FileModel, ArchivedFileModel
@@ -14,8 +15,9 @@ app = create_app()
 
 
 class ServerEdit:
-    def __init__(self, server_location, change_type, user, new_path=None, old_path=None):
+    def __init__(self, server_location, change_type, user, exclusion_functions: List[Callable[[str], bool]] = [], new_path: str=None, old_path: str=None):
         self.change_type = change_type
+        self.exclusion_functions = exclusion_functions
         self.new_path = None
         if new_path:
             self.new_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=new_path,
@@ -428,7 +430,13 @@ class ServerEdit:
 
                 # if there is not an entry for the file in db, add it.
                 else:
-                    file_hash = utils.FilesUtils.get_hash(os.path.join(self.new_path, filename))
+                    new_path = os.path.join(self.new_path, filename)
+                    
+                    # if the file is excluded by the exclusion functions, do not add it to the database
+                    if any([exclusion_func(new_path) for exclusion_func in self.exclusion_functions]):
+                        return move_log
+                    
+                    file_hash = utils.FilesUtils.get_hash(new_path)
                     file_entry = None
                     while not file_entry:
                         
@@ -436,7 +444,7 @@ class ServerEdit:
                             .filter(FileModel.hash == file_hash).first()
                         if not file_entry:
                             file_entry = FileModel(hash=file_hash,
-                                                   size=os.path.getsize(os.path.join(self.new_path, filename)),
+                                                   size=os.path.getsize(new_path),
                                                    extension=filename.split('.')[-1])
                             db.session.add(file_entry)
                             db.session.commit()
@@ -472,7 +480,8 @@ class ServerEdit:
                     if remove_location_entry:
                         move_log['location_entries_effected'] += 1
 
-                    file_exists = os.path.exists(os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), new_location_server_dirs, location_entry.filename))
+                    # check if the file exists in the new location. If it does, update the location entry.
+                    file_exists = os.path.exists(existing_loc_path)
                     if file_exists:
                         location_entry.file_server_directories = new_location_server_dirs
                         location_entry.existence_confirmed = datetime.datetime.now()
@@ -495,6 +504,10 @@ class ServerEdit:
                                 break
                         
                         if not located_in_db:
+                            # if the file is excluded by the exclusion functions, do not add it to the database
+                            if any([exclusion_func(relocated_file) for exclusion_func in self.exclusion_functions]):
+                                continue
+                            
                             task_kwargs = {'filepath': os.path.join(root, relocated_file)}
                             nk_results = utils.RQTaskUtils.enqueue_new_task(db= db,
                                                                             enqueued_function=archiver_tasks.add_file_to_db_task,

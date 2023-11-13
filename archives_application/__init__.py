@@ -12,7 +12,7 @@ from flask_login import LoginManager
 from oauthlib.oauth2 import WebApplicationClient
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-VERSION = '1.3.10'
+VERSION = '1.3.11'
 
 db = SQLAlchemy()
 bcrypt = Bcrypt()
@@ -23,8 +23,8 @@ google_creds_json = r'google_client_secret.json'
 
 # These lines are used to set the config file for the app. If it is not set correctly,
 # the first error will LIKELY be issues with connecting to the database.
-config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
-#config_json = r'deploy_app_config.json'
+#config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
+config_json = r'deploy_app_config.json'
 
 def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,
                                                               config_json_path=config_json)):
@@ -41,7 +41,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     pd.options.mode.chained_assignment = None
 
     # if the app is not being debugged, then we need to use the gunicorn logger handlers when in production.
-    # also need to do something so that it can accept proxy calls
+    # also need to do 'something' so that it can accept proxy calls
     if not app.debug:
         app.logger.handlers = logging.getLogger('gunicorn.error').handlers
 

@@ -98,6 +98,23 @@ def has_admin_role(usr: UserModel):
     """
     return any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
 
+
+def exclude_extensions(f_path, extensions_list=EXCLUDED_FILE_EXTENSIONS):
+    """
+    checks filepath to see if it is using excluded extensions
+    """
+    filename = utils.FileServerUtils.split_path(f_path)[-1]
+    return any([filename.endswith(ext) for ext in extensions_list])
+
+
+def exclude_filenames(f_path, excluded_names=EXCLUDED_FILENAMES):
+    """
+    excludes files with certain names
+    """
+    filename = utils.FileServerUtils.split_path(f_path)[-1]
+    return filename in excluded_names
+
+
 @archiver.route("/api/server_change", methods=['GET', 'POST'])
 @archiver.route("/server_change", methods=['GET', 'POST'])
 def server_change():
@@ -230,6 +247,7 @@ def server_change():
             change_model = ServerChangeModel(old_path=server_edit.old_path,
                                              new_path=server_edit.new_path,
                                              change_type=server_edit.change_type,
+                                             exclusion_functions = [exclude_filenames, exclude_extensions]
                                              files_effected=server_edit.files_effected,
                                              data_effected=server_edit.data_effected,
                                              user_id=editor.id)
@@ -716,22 +734,6 @@ def retrieve_location_to_start_scraping():
         previous_scrape_location = most_recent_scrape.task_results["Next Start Location"]  
         location = os.path.join(location, previous_scrape_location)
     return location
-
-
-def exclude_extensions(f_path, ext_list=EXCLUDED_FILE_EXTENSIONS):
-    """
-    checks filepath to see if it is using excluded extensions
-    """
-    filename = utils.FileServerUtils.split_path(f_path)[-1]
-    return any([filename.endswith(ext) for ext in ext_list])
-
-
-def exclude_filenames(f_path, excluded_names=EXCLUDED_FILENAMES):
-    """
-    excludes files with certain names
-    """
-    filename = utils.FileServerUtils.split_path(f_path)[-1]
-    return filename in excluded_names
 
 
 @archiver.route("/scrape_files", methods=['GET', 'POST'])
