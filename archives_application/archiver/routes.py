@@ -247,7 +247,7 @@ def server_change():
             change_model = ServerChangeModel(old_path=server_edit.old_path,
                                              new_path=server_edit.new_path,
                                              change_type=server_edit.change_type,
-                                             exclusion_functions = [exclude_filenames, exclude_extensions]
+                                             exclusion_functions = [exclude_filenames, exclude_extensions],
                                              files_effected=server_edit.files_effected,
                                              data_effected=server_edit.data_effected,
                                              user_id=editor.id)
