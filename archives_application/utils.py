@@ -228,7 +228,7 @@ class FileServerUtils:
         :param network_location:
         :return:
         """
-        
+
         mounted_path = Path(mounted_path)
         new_path_list = [network_location] + list(mounted_path.parts[1:])
         new_network_path = os.path.join(*new_path_list)
@@ -508,12 +508,16 @@ class FlaskAppUtils:
         return app_path
     
     @staticmethod
-    def create_temp_file_path(filename: str):
+    def create_temp_file_path(filename: str = None):
         """
         Pattern for creating a path for a temp file on the server.
         """
         temp_path = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", filename])
         
+        # if no filename is provided, return the path to the temp file directory
+        if not filename:
+            return temp_path
+
         # if the file already exists, add a random number to the end of the filename
         while os.path.exists(temp_path):
             filename_parts = filename.split(".")
