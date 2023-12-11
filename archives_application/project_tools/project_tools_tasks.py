@@ -59,7 +59,6 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
         fmrest.utils.TIMEOUT = 300
         archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
         
-        # Reconcile CAANs
         try:
             fm_caan_df, fm_caan_error = all_fm_records(FILEMAKER_CAAN_LAYOUT)
             if fm_caan_error:
@@ -71,6 +70,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
             if fm_project_caan_error:
                 recon_log['errors'].append({"message": "Error retrieving FileMaker project-caan join data:", "exception": str(fm_project_caan_error)})
 
+            # Reconcile CAAN data 
             if not fm_caan_df.empty:
                 caan_query = db.session.query(CAANModel)
                 db_caans_df = utils.FlaskAppUtils.db_query_to_df(caan_query)

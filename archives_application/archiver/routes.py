@@ -247,7 +247,6 @@ def server_change():
             change_model = ServerChangeModel(old_path=server_edit.old_path,
                                              new_path=server_edit.new_path,
                                              change_type=server_edit.change_type,
-                                             exclusion_functions = [exclude_filenames, exclude_extensions],
                                              files_effected=server_edit.files_effected,
                                              data_effected=server_edit.data_effected,
                                              user_id=editor.id)
@@ -646,12 +645,12 @@ def archived_or_not_api():
         os.remove(temp_path)
         matching_file = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
         if not matching_file:
-            return flask.Response("No file found", status=404)
+            return flask.Response("File not found in database.", status=404)
         
         locations_query = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == matching_file.id)
         locations_df = utils.FlaskAppUtils.db_query_to_df(locations_query)
         if locations_df.empty:
-            return flask.Response("No locations found", status=404)
+            return flask.Response("No locations found in database for file.", status=404)
         
         locations_df = cleanse_locations_dataframe(locations_df)
         return flask.jsonify(locations_df['filepath'].to_list())
