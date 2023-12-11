@@ -20,8 +20,9 @@ DB_BACKUP_FILE_TIMESTAMP_FORMAT = r"%Y%m%d%H%M%S"
 class AppCustodian:
     def __init__(self, temp_file_lifespan: int, db_backup_file_lifespan: int, task_records_lifespan_map: Dict[str, int]):
             """
-            temp_file_lifespan: the number of days that a file can remain in the temp_files directory before it is removed
-            task_records_lifespan_map: a dictionary mapping task names to the number of days that the task records can remain in the database before they are removed.
+            :param temp_file_lifespan: the number of days that a file can remain in the temp_files directory before it is removed
+            :param task_records_lifespan_map: a dictionary mapping task names to the number of days that the task records can remain in the database before they are removed.
+            :param db_backup_file_lifespan: the number of days that a database backup file can remain in the DATABASE_BACKUP_LOCATION directory before it is removed
             """
             self.temporary_files_location = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files"])
             self.temporary_file_lifespan = temp_file_lifespan
@@ -30,10 +31,13 @@ class AppCustodian:
 
 
     def enqueue_maintenance_tasks(self, db: flask_sqlalchemy.SQLAlchemy):
+        """
+        This function will enqueue all of the maintenance tasks that are defined in this class.
+        :param db: the SQLAlchemy database object
+        """
         # interrogate self for all functions that end int '_task'
         # call each of those functions
         # return a dictionary of results
-
         # get all functions that end in '_task'
         task_functions = [f for f in dir(self) if f.endswith('_task')]
         results = {}
@@ -46,9 +50,10 @@ class AppCustodian:
         return results
 
 
-    def temp_file_clean_up_task(self, queue_id: str):
+    def _temp_file_clean_up_task(self, queue_id: str):
         """
         This task will remove all files in the temp_files directory that are older than the specified lifespan.
+        :param queue_id: the id of the task in the RQ queue
         """
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy']
@@ -75,9 +80,10 @@ class AppCustodian:
             return log
 
 
-    def task_records_clean_up_task(self, queue_id: str):
+    def _task_records_clean_up_task(self, queue_id: str):
         """
-        This task will remove all files in the temp_files directory that are older than the specified lifespan.
+        This task will remove all records in the WorkerTaskModel table that are older than the specified lifespan.
+        :param queue_id: the id of the task in the RQ queue
         """
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy']
@@ -99,9 +105,10 @@ class AppCustodian:
             return log
 
 
-    def db_backup_clean_up_task(self, queue_id: str):
+    def _db_backup_clean_up_task(self, queue_id: str):
         """
-        This task will remove all files in the temp_files directory that are older than the specified lifespan.
+        This task will remove all files in the DATABASE_BACKUP_LOCATION directory that are older than the specified lifespan.
+        :param queue_id: the id of the task in the RQ queue
         """
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy']
@@ -128,6 +135,11 @@ class AppCustodian:
 
 
 def restart_app_task(queue_id: str, delay: int = 0):
+    """
+    This task will restart the app using the supervisorctl command.
+    :param queue_id: the id of the task in the RQ queue
+    :param delay: the number of seconds to wait before restarting the app
+    """
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
         utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
@@ -155,6 +167,7 @@ def db_backup_task(queue_id: str):
     https://stackoverflow.com/questions/63299534/backup-postgres-from-python-on-win10
     https://stackoverflow.com/questions/43380273/pg-dump-pg-restore-password-using-python-module-subprocess
     https://medium.com/poka-techblog/5-different-ways-to-backup-your-postgresql-database-using-python-3f06cea4f51
+    :param queue_id: the id of the task in the RQ queue
 
     """
     
