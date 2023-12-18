@@ -5,23 +5,23 @@
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Upload File</legend>
-                <h4>Instructions:</h4>
-                <p>Enter a project number and choose destination directory (filing code). Alternatively, enter a "Destination Path" which is a complete path (likely copied from Windows file explorer) to the location for the file to be archived; useful for archiving non-project files and archiving files within additional folder structure. However the file location is entered, all non-existing directories needed to complete the path to the location will be created.</p>
+                <h3>Instructions:</h3>
+                <p>Enter a project number and choose destination directory (filing code). Alternatively, enter a "Destination Path" which is a complete path (likely copied from Windows file explorer) to the location for the file to be archived; useful for archiving non-project files and archiving files within additional folder structure. However the file location is entered, all non-existing directories needed to complete the path to the archiving destination will be created.</p>
                 <div class="form-group">
-                    <h6>{{ form.project_number.label(class="form-control-label") }}</h6>
-                    {% if form.project_number.errors %}
-                        {{ form.project_number(class="form-control form-control-lg is-invalid") }}
+                    <h5>{{ form.upload.label(class="form-control-file") }}</h5>
+                    {% if form.upload.errors %}
+                        {{ form.upload(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
-                            {% for error in form.project_number.errors %}
-                                <span>{{ error }}</span>
+                            {% for error in form.upload.errors %}
+                                <span class="text-danger">{{ error }}</span></br>
                             {% endfor %}
                         </div>
                     {% else %}
-                        {{ form.project_number(class="form-control form-control-lg") }}
+                        {{ form.upload(class="form-control form-control-lg") }}
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    <h6>{{ form.new_filename.label(class="form-control-label") }}</h6>
+                    <h5>{{ form.new_filename.label(class="form-control-label") }} (Optional)</h5>
                     {% if form.new_filename.errors %}
                         {{ form.new_filename(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -34,34 +34,8 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    <h6>{{ form.destination_directory.label(class="form-control-label") }} (ie "Filing Code")</h6>
-                    {% if form.destination_directory.errors %}
-                        {{ form.destination_directory(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.destination_directory.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.destination_directory(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
-                <h4>--OR--</h4>
-                <div class="form-group">
-                    <h6>{{ form.destination_path.label(class="form-control-label") }}</h6>
-                    {% if form.destination_path.errors %}
-                        {{ form.destination_path(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.destination_path.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.destination_path(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
-                <div class="form-group">
-                    <h6>{{ form.notes.label(class="form-control-label") }}</h6>
+                    <h5>{{ form.notes.label(class="form-control-label") }} (Optional)</h5>
+                    <p>Useful for documenting any issues with the file.</p>
                     {% if form.notes.errors %}
                         {{ form.notes(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -73,17 +47,49 @@
                         {{ form.notes(class="form-control form-control-lg") }}
                     {% endif %}
                 </div>
+                <hr>
+                <hr>
+                <h6>Either enter a...</h6>
                 <div class="form-group">
-                    <h6>{{ form.upload.label(class="form-control-file") }}</h6>
-                    {% if form.upload.errors %}
-                        {{ form.upload(class="form-control form-control-lg is-invalid") }}
+                    <h5>{{ form.project_number.label(class="form-control-label") }}</h5>
+                    {% if form.project_number.errors %}
+                        {{ form.project_number(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
-                            {% for error in form.upload.errors %}
-                                <span class="text-danger">{{ error }}</span></br>
+                            {% for error in form.project_number.errors %}
+                                <span>{{ error }}</span>
                             {% endfor %}
                         </div>
                     {% else %}
-                        {{ form.upload(class="form-control form-control-lg") }}
+                        {{ form.project_number(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <h6>..and choose a...</h6>
+                <div class="form-group">
+                    <h5>{{ form.destination_directory.label(class="form-control-label") }} (ie "Filing Code")</h5>
+                    {% if form.destination_directory.errors %}
+                        {{ form.destination_directory(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.destination_directory.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.destination_directory(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <h6>...or, alternatively, enter path to archiving destination directory:</h6>
+                <div class="form-group">
+                    <h5>{{ form.destination_path.label(class="form-control-label") }}</h5>
+                    <p>Useful for archiving a file that doesn't have a corresponding project or that needs to be archived in a custom directory.</p>
+                    {% if form.destination_path.errors %}
+                        {{ form.destination_path(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.destination_path.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.destination_path(class="form-control form-control-lg") }}
                     {% endif %}
                 </div>
             </fieldset>

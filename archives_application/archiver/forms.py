@@ -26,7 +26,7 @@ class ArchivedOrNotForm(FlaskForm):
 
 
 class InboxItemForm(FlaskForm):
-    download_item = SubmitField('Download')
+    download_item = SubmitField('Download Copy')
     project_number = StringField('Project Number')
     new_filename = StringField('New Filename')
     document_date = StringField('Document Date')
