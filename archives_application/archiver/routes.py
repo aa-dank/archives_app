@@ -327,7 +327,7 @@ def upload_file():
             # If the file was successfully moved to its destination, we will save the data to the database
             if archiving_successful:
                 # enqueue the task of adding the file to the database
-                add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': False} #TODO add archiving functionality
+                add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': False} #TODO add archiving functionality for if the file is being uploaded by archivist
                 nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                                 enqueued_function=add_file_to_db_task,
                                                                 task_kwargs=add_file_kwargs,
@@ -347,6 +347,95 @@ def upload_file():
                                             app_obj=flask.current_app)
 
     return flask.render_template('upload_file.html', title='Upload File to Archive', form=form)
+
+
+@archiver.route("/api/upload_file", methods=['POST'])
+def upload_file_api():
+    # import task function here to avoid circular import
+    from archives_application.archiver.archiver_tasks import add_file_to_db_task
+
+    request_authenticated = False
+    if flask.request.args.get('user'):
+        user_param = flask.request.args.get('user')
+        password_param = flask.request.args.get('password')
+        user = UserModel.query.filter_by(email=user_param).first()
+
+        if user and bcrypt.check_password_hash(user.password, password_param):
+            request_authenticated = True
+    
+    if not request_authenticated:
+        return flask.Response("Unauthorized", status=401)
+    
+    try:
+        if 'file' not in flask.request.files:
+            return flask.Response("No file in request", status=400)
+        
+        uploaded_file = flask.request.files['file']
+        if uploaded_file.filename == '':
+            return flask.Response("No file selected", status=400)
+        
+        filing_code = flask.request.args.get('filing_code')
+        destination = flask.request.args.get('destination')
+
+        # raise exception if there is not the required parameters in the submitted request.
+        project_number = flask.request.args.get('project_number')
+        if not (destination or (project_number and filing_code)):
+            response_args = flask.request.args.copy()
+            if 'password' in response_args:
+                response_args['password'] = ''.join(['*' for _ in range(len(response_args['password']))])
+            
+            response_text = f"""
+            Need either a destination or project_number and filing_code to archive the file.
+            Request args: {flask.request.args}
+            """
+            return flask.Response(response_text, status=400)
+
+        # Save file to temporary directory
+        filename = utils.FilesUtils.cleanse_filename(uploaded_file.filename)
+        temp_path = utils.FlaskAppUtils.create_temp_file_path(filename)
+        uploaded_file.save(temp_path)
+
+        if project_number:
+            project_number = utils.sanitize_unicode(project_number.strip())
+
+        arch_file = ArchivalFile(current_path=temp_path,
+                                 project=project_number,
+                                 new_filename=filename,
+                                 notes=flask.request.args.get('notes'),
+                                 destination_dir=filing_code,
+                                 directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
+                                 archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'))
+        
+        if destination:
+            destination_path_list = utils.FileServerUtils.split_path(destination)
+            if len(destination_path_list) > 1:
+                destination_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
+                                                *destination_path_list[1:],
+                                                filename)
+            else:
+                destination_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
+                                                filename)
+            arch_file.cached_destination_path = destination_path
+        
+        archiving_successful, archiving_exception = arch_file.archive_in_destination()
+        if archiving_successful:
+            # enqueue the task of adding the file to the database
+            add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': False} #TODO add archiving functionality for if the file is being uploaded by archivist
+            nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                            enqueued_function=add_file_to_db_task,
+                                                            task_kwargs=add_file_kwargs,
+                                                            timeout=None)
+            nk_results = utils.serializablize_dict(nk_results)
+            return flask.Response(json.dumps(nk_results), status=200)
+        
+        else:
+            raise Exception(
+                f"Following error while trying to archive file, {filename}:\nException: {archiving_exception}")
+        
+    except Exception as e:
+        return api_exception_subroutine(response_message="Error processing archiving request:",
+                                        thrown_exception=e)
+
 
 
 @archiver.route("/inbox_item", methods=['GET', 'POST'])
@@ -521,7 +610,7 @@ def inbox_item():
             
             destination_filename = arch_file.assemble_destination_filename()
             # If a user enters a path to destination directory instead of File code and project number...
-            if form.destination_path.data: #TODO make sure this is not a typo 
+            if form.destination_path.data:
                 destination_path_list = utils.FileServerUtils.split_path(form.destination_path.data)
                 if len(destination_path_list) > 1:
                     destination_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'),
