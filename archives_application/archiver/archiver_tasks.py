@@ -17,6 +17,9 @@ app = create_app()
 def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
     """
     This function adds a file to the database.
+    :param filepath: The path of the file to add to the database.
+    :param queue_id: The id of task in the worker queue.
+    :param archiving: A flag to indicate if the file is being added to the database as part of an archiving event.
     """
     with app.app_context():
         task_results = {'queue_id': queue_id, 'filepath': filepath}
@@ -80,8 +83,9 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
             if archiving:
                 search_path = os.path.join(server_directories, filename)
                 archived_file = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.destination_path.endswith(search_path),
-                                                                        ArchivedFileModel.filename == filename)\
-                                                                            .order_by(db.asc(ArchivedFileModel.date_archived)).first()
+                                                                           ArchivedFileModel.filename == filename)\
+                                                                            .order_by(db.asc(ArchivedFileModel.date_archived))\
+                                                                                .first()
                 if archived_file:
                     archived_file.file_id = file_id
                 else:
