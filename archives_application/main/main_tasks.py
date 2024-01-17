@@ -196,7 +196,7 @@ def db_backup_task(queue_id: str):
             db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
             timestamp = datetime.now().strftime(DB_BACKUP_FILE_TIMESTAMP_FORMAT)
             temp_backup_filename = f"{DB_BACKUP_FILE_PREFIX}{timestamp}.sql"
-            temp_backup_path =  utils.FlaskAppUtils.create_temp_file_path(temp_backup_filename)
+            temp_backup_path =  utils.FlaskAppUtils.create_temp_filepath(temp_backup_filename)
             
             # An example of desired shell pg_dump command:
             # pg_dump postgresql://archives:password@localhost:5432/archives > /opt/app/data/Archive_Data/backup101.sql
