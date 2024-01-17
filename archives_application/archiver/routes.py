@@ -288,7 +288,7 @@ def upload_file():
     if form.validate_on_submit():
         try:
             archival_filename = form.upload.data.filename
-            temp_path = utils.FlaskAppUtils.create_temp_file_path(archival_filename)
+            temp_path = utils.FlaskAppUtils.create_temp_filepath(archival_filename)
             form.upload.data.save(temp_path)
 
             # raise exception if there is not the required fields filled out in the submitted form.
@@ -392,7 +392,7 @@ def upload_file_api():
 
         # Save file to temporary directory
         filename = utils.FilesUtils.cleanse_filename(uploaded_file.filename)
-        temp_path = utils.FlaskAppUtils.create_temp_file_path(filename)
+        temp_path = utils.FlaskAppUtils.create_temp_filepath(filename)
         uploaded_file.save(temp_path)
 
         if project_number:
@@ -435,7 +435,6 @@ def upload_file_api():
     except Exception as e:
         return api_exception_subroutine(response_message="Error processing archiving request:",
                                         thrown_exception=e)
-
 
 
 @archiver.route("/inbox_item", methods=['GET', 'POST'])
@@ -515,7 +514,7 @@ def inbox_item():
         arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
         if arch_file_filename.split(".")[-1].lower() in ['pdf']:
             arch_file_preview_image_path = utils.FilesUtils.pdf_preview_image(pdf_path=arch_file_path,
-                                                                              image_destination=utils.FlaskAppUtils.create_temp_file_path(''))
+                                                                              image_destination=utils.FlaskAppUtils.create_temp_filepath(''))
             preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.FileServerUtils.split_path(arch_file_preview_image_path)[-1])
             preview_generated = True
 
@@ -523,14 +522,14 @@ def inbox_item():
         tiff_file_extensions = ['tif', 'tiff']
         if arch_file_filename.split(".")[-1].lower() in tiff_file_extensions:
             arch_file_preview_image_path = utils.FilesUtils.convert_tiff(tiff_path=arch_file_path,
-                                                                         destination_directory=utils.FlaskAppUtils.create_temp_file_path(''),
+                                                                         destination_directory=utils.FlaskAppUtils.create_temp_filepath(''),
                                                                          output_file_type='png')
             preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.FileServerUtils.split_path(arch_file_preview_image_path)[-1])
 
         # If the filetype can be rendered natively in html, copy file as preview of itself if the file is an image
         image_file_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp']
         if arch_file_filename.split(".")[-1].lower() in image_file_extensions:
-            preview_path = utils.FlaskAppUtils.create_temp_file_path(arch_file_filename)
+            preview_path = utils.FlaskAppUtils.create_temp_filepath(arch_file_filename)
             shutil.copy2(arch_file_path, preview_path)
             preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.FileServerUtils.split_path(preview_path)[-1])
             preview_generated = True
@@ -727,7 +726,7 @@ def archived_or_not_api():
 
         # Save file to temporary directory
         filename = uploaded_file.filename
-        temp_path = utils.FlaskAppUtils.create_temp_file_path(filename)
+        temp_path = utils.FlaskAppUtils.create_temp_filepath(filename)
         uploaded_file.save(temp_path)
         
         file_hash = utils.FilesUtils.get_hash(filepath=temp_path)
@@ -773,7 +772,7 @@ def archived_or_not():
         try:
             # Save file to temporary directory
             filename = form.upload.data.filename
-            temp_path = utils.FlaskAppUtils.create_temp_file_path(filename)
+            temp_path = utils.FlaskAppUtils.create_temp_filepath(filename)
             form.upload.data.save(temp_path)
             file_hash = utils.FilesUtils.get_hash(filepath=temp_path)
 
@@ -1031,7 +1030,8 @@ def file_search():
     if flask.request.args.get('timestamp'):
         try:
             timestamp = flask.request.args.get('timestamp')
-            csv_filepath = utils.FlaskAppUtils.create_temp_file_path(f'{csv_filename_prefix}{timestamp}.csv')
+            csv_filepath = utils.FlaskAppUtils.create_temp_filepath(filename=f'{csv_filename_prefix}{timestamp}.csv',
+                                                                     unique_filepath=False)
             if not os.path.exists(csv_filepath):
                 # reformat timestamp to be more human-readable
                 timestamp = datetime.strftime(datetime.strptime(timestamp, timestamp_format), r'%Y-%m-%d %H:%M:%S')
@@ -1076,7 +1076,7 @@ def file_search():
             search_df.rename(columns={'filename': 'Filename'}, inplace=True)
             timestamp = datetime.now().strftime(r'%Y%m%d%H%M%S')
             too_many_results = len(search_df) > html_table_row_limit
-            csv_filepath = utils.FlaskAppUtils.create_temp_file_path(filename=f'{csv_filename_prefix}{timestamp}.csv')
+            csv_filepath = utils.FlaskAppUtils.create_temp_filepath(filename=f'{csv_filename_prefix}{timestamp}.csv')
             search_df.to_csv(csv_filepath, index=False)
             search_df = search_df.head(html_table_row_limit)
             search_df_html = utils.html_table_from_df(df=search_df, path_columns=['Location'])

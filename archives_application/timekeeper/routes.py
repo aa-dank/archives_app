@@ -612,7 +612,7 @@ def archiving_dashboard(archiver_id):
                                                                                                                                        rolling_avg_days=rolling_avg_window)
             timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
             collective_filename = f"collective_metrics_{timestamp}.png"
-            collective_chart_path = utils.FlaskAppUtils.create_temp_file_path(collective_filename)
+            collective_chart_path = utils.FlaskAppUtils.create_temp_filepath(collective_filename)
             collective_chart_path = metrics_plot_file(lines_df=collective_lines_df,
                                                       bars_df=collective_bars_df,
                                                       mb_ticks=collective_mb_ticks,
@@ -633,7 +633,7 @@ def archiving_dashboard(archiver_id):
                                                                                                         date_range=date_range,
                                                                                                         rolling_avg_days=rolling_avg_window)
             archiver_filename = f"{archiver_name}_metrics_{timestamp}.png"
-            archiver_chart_path = utils.FlaskAppUtils.create_temp_file_path(archiver_filename)
+            archiver_chart_path = utils.FlaskAppUtils.create_temp_filepath(archiver_filename)
             archiver_chart_path = metrics_plot_file(lines_df=archivist_lines_df,
                                                     bars_df=archivist_bars_df,
                                                     mb_ticks=archvivist_mb_ticks,
