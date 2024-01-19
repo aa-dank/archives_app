@@ -322,10 +322,25 @@ def upload_file():
                                                     archival_filename)
                 arch_file.cached_destination_path = destination_path
             
+            destination_filename = arch_file.assemble_destination_filename()
             archiving_successful, archiving_exception = arch_file.archive_in_destination()
 
             # If the file was successfully moved to its destination, we will save the data to the database
             if archiving_successful:
+                                    # add the archiving event to the database
+                upload_size = os.path.getsize(temp_path)
+                archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
+                                                    project_number=arch_file.project_number,
+                                                    date_archived=datetime.now(),
+                                                    document_date=form.document_date.data,
+                                                    destination_directory=arch_file.destination_dir,
+                                                    file_code=arch_file.file_code, archivist_id=current_user.id,
+                                                    file_size=upload_size, notes=arch_file.notes,
+                                                    filename=destination_filename)
+                db.session.add(archived_file)
+                db.session.commit()
+                
+                
                 # enqueue the task of adding the file to the database
                 add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': False} #TODO add archiving functionality for if the file is being uploaded by archivist
                 nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
