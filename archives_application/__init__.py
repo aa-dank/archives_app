@@ -12,7 +12,7 @@ from flask_login import LoginManager
 from oauthlib.oauth2 import WebApplicationClient
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-VERSION = '1.3.16'
+VERSION = '1.3.17'
 
 db = SQLAlchemy()
 bcrypt = Bcrypt()
