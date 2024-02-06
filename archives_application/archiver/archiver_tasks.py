@@ -401,8 +401,8 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
 
             except Exception as e:
                 utils.FlaskAppUtils.attempt_db_rollback(db)
-                e_dict = {"Location": location_record.file_server_directories,
-                          "filename": location_record.filename,
+                e_dict = {"Location": None,
+                          "filename": None,
                           "Exception": str(e)}
                 location_scrape_log["Errors"].append(e_dict)
 

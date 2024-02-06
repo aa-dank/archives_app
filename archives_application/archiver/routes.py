@@ -330,13 +330,13 @@ def upload_file():
                                     # add the archiving event to the database
                 upload_size = os.path.getsize(temp_path)
                 archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
-                                                    project_number=arch_file.project_number,
-                                                    date_archived=datetime.now(),
-                                                    document_date=form.document_date.data,
-                                                    destination_directory=arch_file.destination_dir,
-                                                    file_code=arch_file.file_code, archivist_id=current_user.id,
-                                                    file_size=upload_size, notes=arch_file.notes,
-                                                    filename=destination_filename)
+                                                  project_number=arch_file.project_number,
+                                                  date_archived=datetime.now(),
+                                                  document_date=form.document_date.data,
+                                                  destination_directory=arch_file.destination_dir,
+                                                  file_code=arch_file.file_code, archivist_id=current_user.id,
+                                                  file_size=upload_size, notes=arch_file.notes,
+                                                  filename=destination_filename)
                 db.session.add(archived_file)
                 db.session.commit()
                 
