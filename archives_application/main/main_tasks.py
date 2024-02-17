@@ -72,7 +72,7 @@ class AppCustodian:
                     log["files_removed"] += 1
                     log["quantity_removed"] += filesize
                 except Exception as e:
-                     error_dict = {"filepath": filepath, "error": e}
+                     error_dict = {"filepath": filepath, "error": e, "stack_trace": str(e.__traceback__)}
                      log["errors"].append(error_dict)
 
             serializable_log = {k: str(v) if not isinstance(str(v), Exception) else v for k, v in log.items()}
@@ -127,7 +127,7 @@ class AppCustodian:
                         os.remove(path)
                         log["files_removed"] += 1
                     except Exception as e:
-                        error_dict = {"filepath": path, "error": e}
+                        error_dict = {"filepath": path, "error": e, "stack_trace": str(e.__traceback__)}
                         log["errors"].append(error_dict)
             
             utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
@@ -155,7 +155,7 @@ def restart_app_task(queue_id: str, delay: int = 0):
                                         text=True)
             log["cmd_result"] = cmd_result
         except Exception as e:
-            log["errors"].append(e)
+            log["errors"].append({"error": e, "stack_trace": str(e.__traceback__)})
         utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
         return log
 
@@ -224,7 +224,9 @@ def db_backup_task(queue_id: str):
             log["compressed_size"] = os.path.getsize(destination_path)
 
         except Exception as e:
-            log["errors"].append(e)
+            # log stack trace and error message
+            log["errors"].append({"error": e, "stack_trace": str(e.__traceback__)})
+
 
         log = {k: str(val) for k, val in log.items() if hasattr(val, '__str__')} # Convert all values to strings to avoid JSON serialization errors
         utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
