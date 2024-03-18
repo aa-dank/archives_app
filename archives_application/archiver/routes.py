@@ -166,7 +166,7 @@ def server_change():
     edit_type = None
     user_email = None
 
-    # Check if the request includes user credent ials or is from a logged in user. 
+    # Check if the request includes user credentials or is from a logged in user. 
     # User needs to have ADMIN role.
     request_is_authenticated = False
     form_request = True
@@ -177,7 +177,7 @@ def server_change():
         user = UserModel.query.filter_by(email=user_param).first()
 
         # If there is a matching user to the request parameter, the password matches and that account has admin role...
-        if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
+        if user and bcrypt.check_password_hash(user.password, password_param) and has_correct_permissions(user=user):
             request_is_authenticated = True
             new_path = parse.unquote(flask.request.args.get('new_path'))
             old_path = parse.unquote(flask.request.args.get('old_path'))
@@ -323,12 +323,12 @@ def upload_file():
                 arch_file.cached_destination_path = destination_path
             
             destination_filename = arch_file.assemble_destination_filename()
+            upload_size = os.path.getsize(temp_path)
             archiving_successful, archiving_exception = arch_file.archive_in_destination()
 
             # If the file was successfully moved to its destination, we will save the data to the database
             if archiving_successful:
-                                    # add the archiving event to the database
-                upload_size = os.path.getsize(temp_path)
+                # add the archiving event to the database
                 archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
                                                   project_number=arch_file.project_number,
                                                   date_archived=datetime.now(),

@@ -37,7 +37,6 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
             )
             return s
 
-            
         def all_fm_records(layout, limit = 100000):
             try:
                 fm_server = fmrest_server(layout)
