@@ -43,7 +43,7 @@ class ServerEdit:
         if self.old_path:
             self.is_file = os.path.isfile(self.old_path)
 
-    def execute(self, files_limit = 500, effected_data_limit=500000000):
+    def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=600):
         """
         This function executes the server change that was specified during the creation of the ServerEdit object. The change can be of the following types:
 
@@ -59,6 +59,7 @@ class ServerEdit:
         :type files_limit: int
         :param effected_data_limit: Maximum amount of data that can be affected by the change (default is 50,000,000).
         :type effected_data_limit: int
+        :param timeout: Maximum time in seconds that the function can run before it is terminated (default is 600).
         :return: True if the change is successfully executed, False otherwise.
         :rtype: bool
         """
@@ -91,7 +92,8 @@ class ServerEdit:
                 self.change_executed = True
                 self.files_effected = 1
                 enqueueing_results = utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
-                                                                        enqueued_function=self.add_deletion_to_db_task)
+                                                                        enqueued_function=self.add_deletion_to_db_task,
+                                                                        timeout=timeout)
                 enqueueing_results['change_executed'] = self.change_executed
                 return enqueueing_results
 
@@ -105,7 +107,8 @@ class ServerEdit:
             shutil.rmtree(self.old_path)
             self.change_executed = True
             enqueueing_results = utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
-                                                                    enqueued_function=self.add_deletion_to_db_task)
+                                                                    enqueued_function=self.add_deletion_to_db_task,
+                                                                    timeout=timeout)
             # for testing:
             #self.add_deletion_to_db_task(task_id=f"{self.add_deletion_to_db_task.__name__}_test01")
             enqueueing_results['change_executed'] = self.change_executed
@@ -139,7 +142,8 @@ class ServerEdit:
                 os.rename(self.old_path, self.new_path)
                 self.change_executed = True
                 enqueueing_results = utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
-                                                                        enqueued_function=self.add_renaming_to_db_task)
+                                                                        enqueued_function=self.add_renaming_to_db_task,
+                                                                        timeout=timeout)
                 enqueueing_results['change_executed'] = self.change_executed
             except Exception as e:
                 raise Exception(f"There was an issue trying to change the name. If it is permissions issue, consider that it might be someone using a directory that would be changed \n{e}")
@@ -177,7 +181,8 @@ class ServerEdit:
                 #return db_edit
                 
                 enqueueing_results = utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
-                                                                        enqueued_function=self.add_move_to_db_task)
+                                                                        enqueued_function=self.add_move_to_db_task,
+                                                                        timeout=timeout)
                 enqueueing_results['change_executed'] = self.change_executed
                 return enqueueing_results
             
