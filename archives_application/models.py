@@ -1,6 +1,7 @@
 from archives_application import db, login_manager
 from datetime import datetime
 from flask_login import UserMixin
+from sqlalchemy import func
 
 
 @login_manager.user_loader
@@ -93,6 +94,11 @@ class FileLocationModel(db.Model):
     def __repr__(self):
         return f"File Location: {self.id}, {self.file_id}, {self.file_server_directories}, {self.filename}, {self.existence_confirmed}, {self.hash_confirmed}"
     
+    @classmethod
+    def search_filenames(cls, query_str):
+        vector = func.to_tsvector('english', cls.filename)
+        query_results = cls.query.filter(vector @@ func.plainto_tsquery(query_str)).all()
+        return query_results
 
 class WorkerTaskModel(db.Model):
     __tablename__ = 'worker_tasks'
