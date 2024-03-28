@@ -86,6 +86,7 @@ class FileLocationModel(db.Model):
     __tablename__ = "file_locations"
     id = db.Column(db.Integer, primary_key=True)
     file_id = db.Column(db.Integer, db.ForeignKey('files.id'), nullable=False)
+    file = db.relationship('FileModel', backref=db.backref('locations', lazy=True))
     file_server_directories = db.Column("file_server_directories", db.String)
     filename = db.Column("filename", db.String)
     existence_confirmed = db.Column("existence_confirmed", db.DateTime)
@@ -95,10 +96,12 @@ class FileLocationModel(db.Model):
         return f"File Location: {self.id}, {self.file_id}, {self.file_server_directories}, {self.filename}, {self.existence_confirmed}, {self.hash_confirmed}"
     
     @classmethod
-    def search_filenames(cls, query_str):
+    def search(cls, query):
         vector = func.to_tsvector('english', cls.filename)
-        query_results = cls.query.filter(vector @@ func.plainto_tsquery(query_str)).all()
+        query_str = func.plainto_tsquery('english', query)
+        query_results = cls.query.filter(vector.op('@@')(query_str)).all()
         return query_results
+
 
 class WorkerTaskModel(db.Model):
     __tablename__ = 'worker_tasks'

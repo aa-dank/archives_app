@@ -45,7 +45,7 @@ def is_valid_email(potential_email: str):
     email_regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
     return re.fullmatch(email_regex, potential_email)
 
-def serializablize_dict(some_dict: dict):
+def serializable_dict(some_dict: dict):
     """
     Converts a dictionary to a dictionary of strings, which can be serialized to json.
     """
@@ -760,10 +760,10 @@ class RQTaskUtils:
 
         task = flask.current_app.q.enqueue_call(**enqueue_call_kwargs)
         new_task_record = WorkerTaskModel(task_id=job_id,
-                                        time_enqueued=str(datetime.now()),
-                                        origin=task.origin,
-                                        function_name=enqueued_function.__name__,
-                                        status="queued")
+                                          time_enqueued=str(datetime.now()),
+                                          origin=task.origin,
+                                          function_name=enqueued_function.__name__,
+                                          status="queued")
         db.session.add(new_task_record)
         db.session.commit()
         results = task.__dict__

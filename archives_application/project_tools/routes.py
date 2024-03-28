@@ -77,7 +77,7 @@ def filemaker_reconciliation():
         nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                         enqueued_function=fmp_caan_project_reconciliation_task,
                                                         task_kwargs=task_kwargs)
-        return flask.Response(json.dumps(utils.serializablize_dict(nk_results)), status=200)
+        return flask.Response(json.dumps(utils.serializable_dict(nk_results)), status=200)
     else:
         return flask.Response("Unauthorized", status=401)
         
