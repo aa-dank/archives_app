@@ -240,7 +240,7 @@ def server_change():
                                      user=user_email,
                                      new_path=new_path,
                                      old_path=old_path)
-            server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit)
+            server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit, timeout=1200)
 
             # record the change in the database
             editor = UserModel.query.filter_by(email=server_edit.user).first()
@@ -440,7 +440,7 @@ def upload_file_api():
                                                             enqueued_function=add_file_to_db_task,
                                                             task_kwargs=add_file_kwargs,
                                                             timeout=None)
-            nk_results = utils.serializablize_dict(nk_results)
+            nk_results = utils.serializable_dict(nk_results)
             return flask.Response(json.dumps(nk_results), status=200)
         
         else:
@@ -893,8 +893,8 @@ def scrape_files():
                                                             enqueue_call_kwargs=nk_call_kwargs,
                                                             timeout=scrape_time.seconds + 60)
             
-            nk_results = {"enqueueing_results": utils.serializablize_dict(nk_results),
-                          "scrape_task_params": utils.serializablize_dict(scrape_params)}
+            nk_results = {"enqueueing_results": utils.serializable_dict(nk_results),
+                          "scrape_task_params": utils.serializable_dict(scrape_params)}
             return flask.Response(json.dumps(nk_results), status=200)
 
         except Exception as e:
@@ -984,7 +984,7 @@ def confirm_db_file_locations():
                                                             timeout=confirming_time.seconds + 600)
             
             # prepare task enqueueing info for JSON serialization
-            nk_results = utils.serializablize_dict(nk_results)
+            nk_results = utils.serializable_dict(nk_results)
             confirm_params['confirming_time'] = str(confirm_params['confirming_time'])
             confirm_dict = {"enqueueing_results": nk_results, "confirmation_task_params": confirm_params}
             return flask.Response(json.dumps(confirm_dict), status=200)

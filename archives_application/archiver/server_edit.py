@@ -16,6 +16,7 @@ app = create_app()
 
 class ServerEdit:
     def __init__(self, server_location, change_type, user, exclusion_functions: List[Callable[[str], bool]] = [], new_path: str=None, old_path: str=None):
+        self.server_location = server_location
         self.change_type = change_type
         self.exclusion_functions = exclusion_functions
         self.new_path = None
@@ -43,7 +44,7 @@ class ServerEdit:
         if self.old_path:
             self.is_file = os.path.isfile(self.old_path)
 
-    def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=600):
+    def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=15):
         """
         This function executes the server change that was specified during the creation of the ServerEdit object. The change can be of the following types:
 
@@ -74,14 +75,18 @@ class ServerEdit:
                     f"ServerEdit file limit breached. Too many files effected by change type '{self.change_type}.'\nOld path: {self.old_path}\nNew path: {self.new_path}")
 
 
-        def get_quantity_effected(dir_path):
-            #TODO this should be a database query, not a loop
-            
-            for root, _, files in os.walk(dir_path):
-                for file in files:
-                    self.files_effected += 1
-                    self.data_effected += os.path.getsize(os.path.join(root, file))
+        def get_quantity_effected(dir_path, db=flask.current_app.extensions['sqlalchemy']):
+            dir_query_str = dir_path.replace(self.server_location, '')[1:]
+            file_location_entries = db.session.query(FileLocationModel)\
+                .filter(FileLocationModel.file_server_directories.like(func.concat(dir_query_str, '%')))\
+                .all()
+            self.files_effected = len(file_location_entries)
+            for file_location_entry in file_location_entries:
+                self.data_effected += file_location_entry.file.size
 
+        enqueue_change_task = lambda task_func: utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
+                                                                                   enqueued_function=task_func,
+                                                                                   timeout=timeout)
 
         # If the change type is 'DELETE'
         if self.change_type.upper() == 'DELETE':
@@ -91,9 +96,7 @@ class ServerEdit:
                 os.remove(self.old_path)
                 self.change_executed = True
                 self.files_effected = 1
-                enqueueing_results = utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
-                                                                        enqueued_function=self.add_deletion_to_db_task,
-                                                                        timeout=timeout)
+                enqueueing_results = enqueue_change_task(self.add_deletion_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
                 return enqueueing_results
 
@@ -106,11 +109,7 @@ class ServerEdit:
             # remove directory and contents
             shutil.rmtree(self.old_path)
             self.change_executed = True
-            enqueueing_results = utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
-                                                                    enqueued_function=self.add_deletion_to_db_task,
-                                                                    timeout=timeout)
-            # for testing:
-            #self.add_deletion_to_db_task(task_id=f"{self.add_deletion_to_db_task.__name__}_test01")
+            enqueueing_results = enqueue_change_task(self.add_deletion_to_db_task)
             enqueueing_results['change_executed'] = self.change_executed
             return enqueueing_results
 
@@ -141,9 +140,7 @@ class ServerEdit:
             try:
                 os.rename(self.old_path, self.new_path)
                 self.change_executed = True
-                enqueueing_results = utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
-                                                                        enqueued_function=self.add_renaming_to_db_task,
-                                                                        timeout=timeout)
+                enqueueing_results = enqueue_change_task(self.add_renaming_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
             except Exception as e:
                 raise Exception(f"There was an issue trying to change the name. If it is permissions issue, consider that it might be someone using a directory that would be changed \n{e}")
@@ -175,14 +172,8 @@ class ServerEdit:
                     # move directory and contents
                     shutil.move(self.old_path, self.new_path, copy_function=shutil.copytree)
                     self.change_executed = True
-                
-                # for testing:
-                #db_edit = self.add_move_to_db_task(queue_id=f"{self.add_deletion_to_db_task.__name__}_test{random.randint(1, 1000)}")
-                #return db_edit
-                
-                enqueueing_results = utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
-                                                                        enqueued_function=self.add_move_to_db_task,
-                                                                        timeout=timeout)
+              
+                enqueueing_results = enqueue_change_task(self.add_move_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
                 return enqueueing_results
             
