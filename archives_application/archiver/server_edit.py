@@ -74,16 +74,6 @@ class ServerEdit:
                 raise Exception(
                     f"ServerEdit file limit breached. Too many files effected by change type '{self.change_type}.'\nOld path: {self.old_path}\nNew path: {self.new_path}")
 
-
-        def get_quantity_effected(dir_path, db=flask.current_app.extensions['sqlalchemy']):
-            dir_query_str = dir_path.replace(self.server_location, '')[1:]
-            file_location_entries = db.session.query(FileLocationModel)\
-                .filter(FileLocationModel.file_server_directories.like(func.concat(dir_query_str, '%')))\
-                .all()
-            self.files_effected = len(file_location_entries)
-            for file_location_entry in file_location_entries:
-                self.data_effected += file_location_entry.file.size
-
         enqueue_change_task = lambda task_func: utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
                                                                                    enqueued_function=task_func,
                                                                                    timeout=timeout)
@@ -101,7 +91,7 @@ class ServerEdit:
                 return enqueueing_results
 
             # if the deleted asset is a dir we need to add up all the files and their sizes before removing
-            get_quantity_effected(self.old_path)
+            self.get_quantity_effected(self.old_path)
 
             # make sure change is not in excess of limits set
             check_against_limits()
@@ -130,7 +120,7 @@ class ServerEdit:
                 new_path_list[-1] = utils.FilesUtils.cleanse_filename(new_path_list[-1])
 
             else:
-                get_quantity_effected(self.old_path)
+                self.get_quantity_effected(self.old_path)
 
             # make sure change is not in excess of limits set
             check_against_limits()
@@ -161,7 +151,7 @@ class ServerEdit:
                 
                 else:
                     # make sure change is not in excess of limits set
-                    get_quantity_effected(self.old_path)
+                    self.get_quantity_effected(self.old_path)
                     check_against_limits()
 
                     # cannot move a directory within itself
@@ -196,7 +186,17 @@ class ServerEdit:
         results = {'change_executed': self.change_executed}
         return results
 
-    
+    def get_quantity_effected(self, dir_path, db=flask.current_app.extensions['sqlalchemy']):
+            dir_query_str = dir_path.replace(self.server_location, '')[1:]
+            file_location_entries = db.session.query(FileLocationModel)\
+                .filter(FileLocationModel.file_server_directories.like(func.concat(dir_query_str, '%')))\
+                .all()
+            self.files_effected = len(file_location_entries)
+            for file_location_entry in file_location_entries:
+                self.data_effected += file_location_entry.file.size
+
+            return self.files_effected, self.data_effected
+
     @staticmethod
     def remove_file_from_db(db, root_index, file_path):
         """
