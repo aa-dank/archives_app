@@ -187,15 +187,15 @@ class ServerEdit:
         return results
 
     def get_quantity_effected(self, dir_path, db=flask.current_app.extensions['sqlalchemy']):
-            dir_query_str = dir_path.replace(self.server_location, '')[1:]
-            file_location_entries = db.session.query(FileLocationModel)\
-                .filter(FileLocationModel.file_server_directories.like(func.concat(dir_query_str, '%')))\
-                .all()
-            self.files_effected = len(file_location_entries)
-            for file_location_entry in file_location_entries:
-                self.data_effected += file_location_entry.file.size
+        dir_query_str = dir_path.replace(self.server_location, '')[1:]
+        file_location_entries = db.session.query(FileLocationModel) \
+            .filter(FileLocationModel.file_server_directories.like(func.concat(dir_query_str, '%'))) \
+            .with_entities(func.count(FileLocationModel.id).label('count'), func.sum(FileLocationModel.file.size).label('total_size')) \
+            .one()
 
-            return self.files_effected, self.data_effected
+        self.files_effected = file_location_entries.count
+        self.data_effected = file_location_entries.total_size
+        return self.files_effected, self.data_effected
 
     @staticmethod
     def remove_file_from_db(db, root_index, file_path):
