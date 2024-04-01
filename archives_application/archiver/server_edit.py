@@ -190,11 +190,12 @@ class ServerEdit:
         dir_query_str = dir_path.replace(self.server_location, '')[1:]
         file_location_entries = db.session.query(FileLocationModel) \
             .filter(FileLocationModel.file_server_directories.like(func.concat(dir_query_str, '%'))) \
-            .with_entities(func.count(FileLocationModel.id).label('count'), func.sum(FileLocationModel.file.size).label('total_size')) \
+            .join(FileModel, FileLocationModel.file_id == FileModel.id) \
+            .with_entities(func.count(FileLocationModel.id).label('count'), func.sum(FileModel.size).label('total_size')) \
             .one()
 
         self.files_effected = file_location_entries.count
-        self.data_effected = file_location_entries.total_size
+        self.data_effected = int(file_location_entries.total_size)
         return self.files_effected, self.data_effected
 
     @staticmethod
