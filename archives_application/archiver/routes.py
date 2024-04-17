@@ -1,3 +1,5 @@
+# 
+
 import datetime
 import flask
 import flask_sqlalchemy
@@ -1066,17 +1068,16 @@ def file_search():
             archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
             user_archives_location = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
             search_query = None
-            search_term = str(form.search_term.data).lower()
+            search_term = str(form.search_term.data)
+            search_full_filepath = not bool(form.filename_only.data)
+            search_query = FileLocationModel.filepath_search_query(query_str=search_term, full_path=search_full_filepath)
             if form.search_location.data:
                 search_location = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=form.search_location.data,
                                                                             location_path_prefix=archives_location)
                 search_location_list = utils.FileServerUtils.split_path(search_location)
                 mount_path_index = len(utils.FileServerUtils.split_path(archives_location))
                 search_location_search_term = os.path.join(*search_location_list[mount_path_index:])
-                search_query = FileLocationModel.query.filter(FileLocationModel.file_server_directories.like(f"%{search_location_search_term}%"),
-                                                              func.lower(FileLocationModel.filename).like(f"%{search_term}%"))
-            else:
-                search_query = FileLocationModel.query.filter(func.lower(FileLocationModel.filename).like(f"%{search_term}%"))
+                search_query = search_query.filter(FileLocationModel.file_server_directories.like(f"%{search_location_search_term}%"))
 
             search_df = utils.FlaskAppUtils.db_query_to_df(search_query)
             if search_df.empty:
