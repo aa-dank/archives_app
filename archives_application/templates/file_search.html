@@ -5,7 +5,40 @@
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Filename Search</legend>
-                <p>This tool searches for filenames that contain the given search term. The results can be filtered to only those from the search location. A spreadsheet will be available for refining large search results.</p>
+                <p>This tool searches through filepaths. The results can be filtered to only those from the search location. A spreadsheet will be available for refining large search results.</p>
+                <div class="form-group">
+                   <p>(Not case sensitive.)</p>
+                   {% if form.search_term.errors %}
+                       {{ form.search_term(class="form-control form-control-lg is-invalid") }}
+                       <div class="invalid-feedback">
+                           {% for error in form.search_term.errors %}
+                               <span>{{ error }}</span>
+                           {% endfor %}
+                       </div>
+                   {% else %}
+                       {{ form.search_term(class="form-control form-control-lg") }}
+                   {% endif %}
+               </div>
+               <div class="form-group">
+               <p>Toggle whether results include directory name matches or only matches to filenames:</p>
+               {% if form.filename_only.errors %}
+                   <div class="custom-control custom-checkbox">
+                       {{ form.filename_only(class="custom-control-input is-invalid") }}
+                       {{ form.filename_only.label(class="custom-control-label") }}
+                       <div class="invalid-feedback">
+                           {% for error in form.filename_only.errors %}
+                               <span>{{ error }}</span>
+                           {% endfor %}
+                       </div>
+                   </div>
+               {% else %}
+                   <div class="custom-control custom-checkbox">
+                       {{ form.filename_only(class="custom-control-input") }}
+                       {{ form.filename_only.label(class="custom-control-label") }}
+                   </div>
+               {% endif %}
+                </div>
+            </br>
                 <div class="form-group">
                     <h6>{{ form.search_location.label(class="form-control-label") }}</h6>
                     <p>(Case sensitive. Copy this from Windows File Explorer address bar.)</p>
@@ -18,20 +51,6 @@
                         </div>
                     {% else %}
                         {{ form.search_location(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
-                <div class="form-group">
-                     <h6>{{ form.search_term.label(class="form-control-label") }}</h6>
-                    <p>(Not case sensitive.)</p>
-                    {% if form.search_term.errors %}
-                        {{ form.search_term(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.search_term.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.search_term(class="form-control form-control-lg") }}
                     {% endif %}
                 </div>
             </fieldset>

@@ -1,7 +1,7 @@
 import os
 import flask
 from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField, SelectField
+from wtforms import StringField, SubmitField, SelectField, BooleanField
 from wtforms.validators import DataRequired, ValidationError
 from flask_wtf.file import FileField, FileRequired
 from .. import utils
@@ -37,8 +37,9 @@ class InboxItemForm(FlaskForm):
 
 
 class FileSearchForm(FlaskForm):
-    search_location = StringField('Search Location')
+    search_location = StringField('Limit Search to Location')
     search_term = StringField('Search Term', validators=[DataRequired()])
+    filename_only = BooleanField('Search Filenames Only', default=True)
     submit = SubmitField('Search')
 
     def validate_search_location(self, search_location):
