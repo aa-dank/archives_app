@@ -59,4 +59,134 @@
             </div>
         </form>
     </div>
+<style>
+
+.ac-label {
+    font-weight: 700;
+    position: relative;
+    padding: 0.5em 1em;
+    margin-bottom: .5em;
+    display: block;
+    cursor: pointer;
+    background-color: whiteSmoke;
+    color: #003c6c;
+    border: 1px solid whiteSmoke;
+    transition: background-color .15s ease-in-out;
+}
+
+.ac-input:checked+label,
+.ac-label:hover {
+    box-shadow: -4px 4px 8px rgba(0, 0, 0, 0.08);
+}
+
+.ac-label:after,
+.ac-input:checked+.ac-label:after {
+    content: "+";
+    position: absolute;
+    display: block;
+    right: 0;
+    top: 0;
+    width: 2em;
+    height: 100%;
+    line-height: 2.25em;
+    text-align: center;
+    background-color: #e5e5e5;
+    transition: background-color .15s ease-in-out;
+}
+
+.ac-label:hover:after,
+.ac-input:checked+.ac-label:after {
+    background-color: #b5b5b5;
+}
+
+.ac-input:checked+.ac-label:after {
+    content: "-";
+}
+
+.ac-input {
+    display: none;
+}
+
+.ac-text,
+.ac-sub-text {
+    opacity: 0;
+    height: 0;
+    margin-bottom: .5em;
+    transition: opacity .5s ease-in-out;
+    overflow: hidden;
+}
+
+.ac-input:checked~.ac-text,
+.ac-sub .ac-input:checked~.ac-sub-text {
+    opacity: 1;
+    height: auto;
+}
+
+.ac-sub .ac-label {
+    background: none;
+    font-weight: 600;
+    padding: .5em 2em;
+    margin-bottom: 0;
+}
+
+.ac-sub .ac-label:checked {
+    background: none;
+    border-bottom: 1px solid whitesmoke;
+}
+
+.ac-sub .ac-label:after,
+.ac-sub .ac-input:checked+.ac-label:after {
+    left: 0;
+    background: none;
+}
+
+.ac-sub .ac-input:checked+label,
+.ac-sub .ac-label:hover {
+    background: none;
+}
+
+.ac-sub-text {
+    padding: 0 1em 0 2em;
+}
+    </style>
+    <div class="ac">
+        <input class="ac-input" id="ac-search" name="ac-search" type="checkbox" />
+        <label class="ac-label" for="ac-search">Search Documentation</label>
+        <article class="ac-text">
+            <h4>Basic Usage</h4>
+            <p><strong>Simple Terms:</strong> Input keywords to search for. <code>websearch_to_tsquery</code> will treat these keywords combined with an AND operator by default.</p>
+            <div class="example">
+                <p>Example: Typing <code>apple banana</code> results in a search for <code>apple &amp; banana</code>.</p>
+            </div>
+            <h4>Search Operators</h4>
+            <ul>
+                <li><strong>Quotation Marks for Phrase Search:</strong> Put words in quotation marks " " to search for the exact phrase.
+                    <div class="example">
+                        <p>Example: <code>"climate change"</code> will return results containing exactly "climate change".</p>
+                    </div>
+                </li>
+                <li><strong>OR Operator:</strong> Use the word OR to include any of the specified terms.
+                    <div class="example">
+                        <p>Example: <code>apple OR banana</code> will find documents with either "apple" or "banana".</p>
+                    </div>
+                </li>
+                <li><strong>Exclusion:</strong> Prefix a word with <code>-</code> to exclude documents containing that word.
+                    <div class="example">
+                        <p>Example: <code>apple -banana</code> searches for documents with "apple" and without "banana".</p>
+                    </div>
+                </li>
+                <li><strong>Prefix Matching:</strong> Append <code>:*</code> to a term to search for words starting with that prefix.
+                    <div class="example">
+                        <p>Example: <code>comput:*</code> will find documents containing words starting with "comput", such as "computer", "computing", etc.</p>
+                    </div>
+                </li>
+            </ul>
+            <h4>Advanced Tips</h4>
+            <p>Combine these operators to create complex search queries.</p>
+            <div class="example">
+                <p>Example: <code>"global warming" OR "climate change" -ice</code> searches for documents containing "global warming" or "climate change" but not "ice".</p>
+            </div>
+        </article>
+    </div>
+    
 {% endblock content %}
