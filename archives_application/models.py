@@ -102,7 +102,11 @@ class FileLocationModel(db.Model):
         :param query_str: str: The query string to search for.
         :param full_path: bool: If true, search the full path and filename, otherwise just search the filename.
         """
-        vector = func.to_tsvector('english', cls.filename)
+        # replace periods with spaces in the filename to ensure file extensions are treated as separate words
+        adjusted_filename = func.regexp_replace(cls.filename, r'\.', ' ', 'gi')
+        
+        # create the tsvector and tsquery
+        vector = func.to_tsvector('english', adjusted_filename)
         query_vector = func.websearch_to_tsquery(query_str)
 
         # if full_path is true, then run the query against the combined path and filename
