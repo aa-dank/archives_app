@@ -91,7 +91,7 @@ class ServerChangeForm(FlaskForm):
 
     # Form field for adding a new directory
     new_directory = StringField('New Directory Path')
-    submit = SubmitField('Execute Change(s)')
+    submit = SubmitField('Execute Change')
 
 
     def validate_path_delete(self, path_delete):

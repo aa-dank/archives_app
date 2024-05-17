@@ -202,7 +202,8 @@ def server_change():
     # if this is a user using the form to elicit a server change, we will validate the form
     # and retrieve ServerEdit object params
     if form_request:
-        
+        # TODO raise error if multiple edits are submitted on single form
+
         form = ServerChangeForm()
         if form.validate_on_submit():
 
