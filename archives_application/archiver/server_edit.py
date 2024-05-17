@@ -195,7 +195,7 @@ class ServerEdit:
             .one()
 
         self.files_effected = file_location_entries.count
-        self.data_effected = int(file_location_entries.total_size)
+        self.data_effected = int(file_location_entries.total_size) if file_location_entries.total_size else 0
         return self.files_effected, self.data_effected
 
     @staticmethod
