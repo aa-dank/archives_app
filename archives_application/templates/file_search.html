@@ -1,5 +1,5 @@
 {% extends "layout.html" %}
-{% block content %}=
+{% block content %}
     <div class="content-section">
         <form method="POST" action="" id="search-form-main">
             {{ form.hidden_tag() }}
@@ -48,7 +48,7 @@
                             {% for error in form.search_location.errors %}
                                 <span>{{ error }}</span>
                             {% endfor %}
-                        </div>
+                        </div>  
                     {% else %}
                         {{ form.search_location(class="form-control form-control-lg") }}
                     {% endif %}
@@ -173,11 +173,6 @@
             <li><strong>Exclusion:</strong> Prefix a word with <code>-</code> to exclude documents containing that word.
                 <div class="example">
                     <p>Example: <code>apple -banana</code> searches for documents with "apple" and without "banana".</p>
-                </div>
-            </li>
-            <li><strong>Prefix Matching:</strong> Append <code>:*</code> to a term to search for words starting with that prefix.
-                <div class="example">
-                    <p>Example: <code>comput:*</code> will find documents containing words starting with "comput", such as "computer", "computing", etc.</p>
                 </div>
             </li>
         </ul>
