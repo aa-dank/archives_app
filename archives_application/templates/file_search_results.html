@@ -10,7 +10,7 @@
         {% endif %}
         <p>
             <!-- adds the csv file timestamp  as parameter to the url -->
-            <a href="{{ url_for('archiver.file_search', timestamp=timestamp) }}">Download CSV</a>
+            <a href="{{ url_for('archiver.file_search', timestamp=timestamp) }}">Download results as spreadsheet.</a>
         </p>
         <div>
             <!-- If there is result table, display it here. -->

@@ -91,7 +91,8 @@ class ServerEdit:
                 return enqueueing_results
 
             # if the deleted asset is a dir we need to add up all the files and their sizes before removing
-            self.get_quantity_effected(self.old_path)
+            self.get_quantity_effected(dir_path=self.old_path,
+                                       db=flask.current_app.extensions['sqlalchemy'])
 
             # make sure change is not in excess of limits set
             check_against_limits()
@@ -120,7 +121,8 @@ class ServerEdit:
                 new_path_list[-1] = utils.FilesUtils.cleanse_filename(new_path_list[-1])
 
             else:
-                self.get_quantity_effected(self.old_path)
+                self.get_quantity_effected(dir_path=self.old_path,
+                                           db=flask.current_app.extensions['sqlalchemy'])
 
             # make sure change is not in excess of limits set
             check_against_limits()
@@ -151,7 +153,8 @@ class ServerEdit:
                 
                 else:
                     # make sure change is not in excess of limits set
-                    self.get_quantity_effected(self.old_path)
+                    self.get_quantity_effected(dir_path=self.old_path,
+                                               db=flask.current_app.extensions['sqlalchemy'])
                     check_against_limits()
 
                     # cannot move a directory within itself
@@ -186,7 +189,13 @@ class ServerEdit:
         results = {'change_executed': self.change_executed}
         return results
 
-    def get_quantity_effected(self, dir_path, db=flask.current_app.extensions['sqlalchemy']):
+    def get_quantity_effected(self, dir_path, db):
+        """
+        Sends a query to the database to get the number of files and the amount of data that will be effected in
+        a given directory.
+        :param dir_path: path to the directory
+        :param db: SQLAlchemy database object (flask.current_app.extensions['sqlalchemy'])
+        """
         dir_query_str = dir_path.replace(self.server_location, '')[1:]
         file_location_entries = db.session.query(FileLocationModel) \
             .filter(FileLocationModel.file_server_directories.like(func.concat(dir_query_str, '%'))) \
