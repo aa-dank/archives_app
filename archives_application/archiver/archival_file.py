@@ -340,10 +340,14 @@ class ArchivalFile:
         if not self.project_number:
             self.project_number = utils.project_number_from_path(self.get_destination_path())
 
-        attribute_dict = {"date_archived": date_stamp, "project_number": self.project_number,
-                          "destination_path": self.get_destination_path(), "document_date": doc_date,
-                          "destination_directory": self.destination_dir, "file_code": self.file_code,
-                          "file_size": self.size, "notes": self.notes}
+        attribute_dict = {"date_archived": date_stamp,
+                          "project_number": self.project_number,
+                          "destination_path": self.get_destination_path(),
+                          "document_date": doc_date,
+                          "destination_directory": self.destination_dir,
+                          "file_code": self.file_code,
+                          "file_size": self.size,
+                          "notes": self.notes}
         return defaultdict(lambda: None, attribute_dict)
 
 

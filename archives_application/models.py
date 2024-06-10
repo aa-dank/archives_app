@@ -34,7 +34,7 @@ class ArchivedFileModel(db.Model):
     destination_directory = db.Column(db.String)
     file_code = db.Column(db.String)
     file_size = db.Column(db.Float, nullable=False)
-    date_archived = db.Column(db.DateTime, nullable=False, default=datetime.now) #TODO remove these and fill the datetime columns during api call
+    date_archived = db.Column(db.DateTime, nullable=False)
     archivist_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     notes = db.Column(db.String)
     filename = db.Column(db.String)
@@ -51,7 +51,7 @@ class ServerChangeModel(db.Model):
     change_type = db.Column(db.String, nullable=False)
     files_effected = db.Column(db.Integer)
     data_effected = db.Column(db.Numeric)
-    date = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    date = db.Column(db.DateTime, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 
     def __repr__(self):
@@ -99,6 +99,11 @@ class FileLocationModel(db.Model):
     def filepath_search_query(cls, query_str, full_path=True):
         """
         Search the file locations for a query string.
+        
+        Resources:
+        https://amitosh.medium.com/full-text-search-fts-with-postgresql-and-sqlalchemy-edc436330a0c
+        https://stackoverflow.com/questions/42388956/create-a-full-text-search-index-with-sqlalchemy-on-postgresql
+
         :param query_str: str: The query string to search for.
         :param full_path: bool: If true, search the full path and filename, otherwise just search the filename.
         """
