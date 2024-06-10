@@ -430,6 +430,9 @@ def all_timesheets():
 @login_required
 @utils.FlaskAppUtils.roles_required(['ADMIN'])
 def choose_employee():
+    """
+    Endpoint to display a form for selecting an employee to view their timesheet.
+    """
     try:
         form = TimeSheetAdminForm()
 

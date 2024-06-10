@@ -252,6 +252,7 @@ def server_change():
                                              change_type=server_edit.change_type,
                                              files_effected=server_edit.files_effected,
                                              data_effected=server_edit.data_effected,
+                                             date=datetime.datetime.now(),
                                              user_id=editor.id)
             db.session.add(change_model)
             db.session.commit()
@@ -307,8 +308,10 @@ def upload_file():
             if project_num:
                 project_num = utils.sanitize_unicode(project_num.strip())
             
-            arch_file = ArchivalFile(current_path=temp_path, project=project_num,
-                                     new_filename=archival_filename, notes=form.notes.data,
+            arch_file = ArchivalFile(current_path=temp_path,
+                                     project=project_num,
+                                     new_filename=archival_filename,
+                                     notes=form.notes.data,
                                      destination_dir=form.destination_directory.data,
                                      directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
                                      archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'))
@@ -331,14 +334,20 @@ def upload_file():
 
             # If the file was successfully moved to its destination, we will save the data to the database
             if archiving_successful:
+                
+                # if a location path was provided we do not record the filing code
+                recorded_filing_code = arch_file.file_code if not form.destination_path.data else None
+                
                 # add the archiving event to the database
                 archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
                                                   project_number=arch_file.project_number,
                                                   date_archived=datetime.now(),
                                                   document_date=form.document_date.data,
                                                   destination_directory=arch_file.destination_dir,
-                                                  file_code=arch_file.file_code, archivist_id=current_user.id,
-                                                  file_size=upload_size, notes=arch_file.notes,
+                                                  file_code=recorded_filing_code,
+                                                  archivist_id=current_user.id,
+                                                  file_size=upload_size,
+                                                  notes=arch_file.notes,
                                                   filename=destination_filename)
                 db.session.add(archived_file)
                 db.session.commit()
@@ -646,13 +655,17 @@ def inbox_item():
             # if the file was successfully archived, add the archiving event and the file to the application database
             if archiving_successful:
                 try:
+                    # if a location path was provided we do not record the filing code
+                    recorded_filing_code = arch_file.file_code if not form.destination_path.data else None
+
                     # add the archiving event to the database
                     archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
+                                                      archivist_id=current_user.id,
                                                       project_number=arch_file.project_number,
                                                       date_archived=datetime.now(),
                                                       document_date=form.document_date.data,
                                                       destination_directory=arch_file.destination_dir,
-                                                      file_code=arch_file.file_code, archivist_id=current_user.id,
+                                                      file_code=recorded_filing_code,
                                                       file_size=upload_size, notes=arch_file.notes,
                                                       filename=destination_filename)
                     db.session.add(archived_file)
@@ -1035,7 +1048,7 @@ def test_confirm_files():
 @archiver.route("/file_search", methods=['GET', 'POST'])
 def file_search():
     """
-    Endpoint for searching the database for files.
+    Endpoint for searching the file locations in the database for files that match the search term.
     """
 
     form = FileSearchForm()
