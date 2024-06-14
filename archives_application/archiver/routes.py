@@ -252,7 +252,7 @@ def server_change():
                                              change_type=server_edit.change_type,
                                              files_effected=server_edit.files_effected,
                                              data_effected=server_edit.data_effected,
-                                             date=datetime.datetime.now(),
+                                             date=datetime.now(),
                                              user_id=editor.id)
             db.session.add(change_model)
             db.session.commit()

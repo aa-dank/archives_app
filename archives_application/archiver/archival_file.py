@@ -272,7 +272,6 @@ class ArchivalFile:
                             f"{len(dirs_matching_proj_num)} matching directories in {new_path} for project number {self.project_number}; expected 0 or 1.\nThis is likely due to a duplicate project number in the archives.",
                             exc_info=True)
                         return ''
-                        # TODO what if dirs_matching_proj_num is 1 or 0?
 
                 # if no dirs are equivalent to the project number
                 if len(dirs_matching_proj_num) == 0:

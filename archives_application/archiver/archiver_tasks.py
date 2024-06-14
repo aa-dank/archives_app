@@ -41,7 +41,8 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
                     new_file = FileModel(hash=file_hash, size=file_size, extension=file_ext)
                     db.session.add(new_file)
                     db.session.commit()
-                    file_id = new_file.id #TODO does this value exist after the commit?
+                    file_id = new_file.id
+                
                 else:
                     file_id = db_file_entry.id
             
