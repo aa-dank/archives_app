@@ -28,6 +28,7 @@ class ArchivalFile:
         self.size = 0
         if self.current_path and os.path.exists(self.current_path):
             self.size = str(os.path.getsize(current_path))
+        
         self.archives_location = archives_location
         self.directory_choices = directory_choices
         self.project_number = project
@@ -320,6 +321,9 @@ class ArchivalFile:
 
 
     def attribute_defaultdict(self):
+        """
+        This method is used to create a dictionary of attributes for the archival file object.
+        """
         date_stamp = ''
         doc_date = ''
         if self.datetime_archived:
