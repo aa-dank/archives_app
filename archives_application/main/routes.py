@@ -241,11 +241,36 @@ def test_logging():
 
 
 @main.route("/test/database_info")
+@FlaskAppUtils.roles_required(['ADMIN'])
 def get_db_uri():
     status = db.engine.pool.status()
     info = {
         "database_url": flask.current_app.config.get("SQLALCHEMY_DATABASE_URI"),
         "status": status
+    }
+    return info
+
+@main.route("/test/see_config")
+@FlaskAppUtils.roles_required(['ADMIN'])
+def get_app_config():
+    """
+    Endpoint function to see the current configuration of the runnning application.
+    Useful for debugging and checking the current state of the application.
+    """
+    info = {
+        "database_url": flask.current_app.config.get("SQLALCHEMY_DATABASE_URI"),
+        "archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
+        "database_backup_location": flask.current_app.config.get("DATABASE_BACKUP_LOCATION"),
+        "archivist_inbox_location": flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION"),
+        "directory_choices": flask.current_app.config.get("DIRECTORY_CHOICES"),
+        "server_change_files_limit": flask.current_app.config.get("SERVER_CHANGE_FILES_LIMIT"),
+        "server_change_data_limit": flask.current_app.config.get("SERVER_CHANGE_DATA_LIMIT"),
+        "redis_url": flask.current_app.config.get("REDIS_URL"),
+        "user_archives_location": flask.current_app.config.get("USER_ARCHIVES_LOCATION"),
+        "filemaker_host_location": flask.current_app.config.get("FILEMAKER_HOST_LOCATION"),
+        "filemaker_user": flask.current_app.config.get("FILEMAKER_USER"),
+        "filemaker_password": flask.current_app.config.get("FILEMAKER_PASSWORD"),
+        "filemaker_database": flask.current_app.config.get("FILEMAKER_DATABASE_NAME")
     }
     return info
 
