@@ -540,10 +540,17 @@ def inbox_item():
         arch_file_preview_image_path = None
         arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
         if arch_file_filename.split(".")[-1].lower() in ['pdf']:
-            arch_file_preview_image_path = utils.FilesUtils.pdf_preview_image(pdf_path=arch_file_path,
+            try:
+                arch_file_preview_image_path = utils.FilesUtils.pdf_preview_image(pdf_path=arch_file_path,
                                                                               image_destination=utils.FlaskAppUtils.create_temp_filepath(''))
-            preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.FileServerUtils.split_path(arch_file_preview_image_path)[-1])
-            preview_generated = True
+                preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.FileServerUtils.split_path(arch_file_preview_image_path)[-1])
+                preview_generated = True
+            
+            except Exception as e:
+                m = f"Issue creating preview image for th pdf file, {arch_file_filename}: (hint: Use 'Upload File' and/or check if the pdf is corrupted.)"
+                return web_exception_subroutine(flash_message=m,
+                                                thrown_exception=e,
+                                                app_obj=flask.current_app)
 
         # if the file is a tiff, create a preview image that can be rendered in html
         tiff_file_extensions = ['tif', 'tiff']

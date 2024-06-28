@@ -645,25 +645,34 @@ class FilesUtils:
         :param image_destination:
         :return:
         """
+        
         # Turn the pdf filename into equivalent png filename and create destination path
         pdf_filename = FileServerUtils.split_path(pdf_path)[-1]
         preview_filename = ".".join(pdf_filename.split(".")[:-1])
         preview_filename += ".png"
-        output_path = os.path.join(image_destination, preview_filename) #TODO avoid filename of existing file
+        output_path = os.path.join(image_destination, preview_filename)
+        try:
+            # use pymupdf to get pdf data for pillow Image object
+            fitz_doc = fitz.open(pdf_path)
+            if fitz_doc.page_count == 0:
+                raise ValueError("No pages in pdf")
+            
+            page_pix_map = fitz_doc.load_page(0).get_pixmap()
+            page_img = Image.frombytes("RGB", [page_pix_map.width, page_pix_map.height], page_pix_map.samples)
 
-        # use pymupdf to get pdf data for pillow Image object
-        fitz_doc = fitz.open(pdf_path)
-        page_pix_map = fitz_doc.load_page(0).get_pixmap()
-        page_img = Image.frombytes("RGB", [page_pix_map.width, page_pix_map.height], page_pix_map.samples)
+            # if the preview image is beyond our max_width we resize it to that max_width
+            if page_img.width > max_width:
+                max_width_percent = (max_width / float(page_img.size[0]))
+                hsize = int((float(page_img.size[1]) * float(max_width_percent)))
+                page_img = page_img.resize((max_width, hsize), Image.ANTIALIAS)
 
-        # if the preview image is beyond our max_width we resize it to that max_width
-        if page_img.width > max_width:
-            max_width_percent = (max_width / float(page_img.size[0]))
-            hsize = int((float(page_img.size[1]) * float(max_width_percent)))
-            page_img = page_img.resize((max_width, hsize), Image.ANTIALIAS)
+            page_img.save(output_path)
+        
+        except Exception as e:
+            raise e 
 
-        page_img.save(output_path)
-        fitz_doc.close()
+        finally:
+            fitz_doc.close()
         return output_path
 
     @staticmethod
