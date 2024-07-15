@@ -1,4 +1,5 @@
 import datetime
+import errno
 import flask
 import os
 import random
@@ -15,7 +16,19 @@ app = create_app()
 
 
 class ServerEdit:
+    """
+    This class is used to create a server edit object, which represents a change to the file server.
+    The change can be of the following types: DELETE, RENAME, MOVE, CREATE.
+    """
+    
     def __init__(self, server_location, change_type, user, exclusion_functions: List[Callable[[str], bool]] = [], new_path: str=None, old_path: str=None):
+        """
+        Initializes a ServerEdit object with the specified server location, change type, user, exclusion functions, new path, and old path.
+        :param server_location: The root directory of the file server.
+        :param change_type: The type of change to be executed (DELETE, RENAME, MOVE, CREATE).
+        :param user: The user who initiated the change.
+        :param exclusion_functions: A list of functions that take a file path as input and return True if the file should be excluded from the change, False otherwise.
+        """
         self.server_location = server_location
         self.change_type = change_type
         self.exclusion_functions = exclusion_functions
@@ -66,6 +79,10 @@ class ServerEdit:
         """
 
         def check_against_limits():
+            """
+            Checks if the number of files and the amount of data affected by the change is within the limits set by the files_limit and effected_data_limit parameters.
+            If either of these limits is breached, an exception is raised.
+            """
             if effected_data_limit and self.data_effected and self.data_effected > effected_data_limit:
                 raise Exception(
                     f"ServerEdit data limit breached. Too much data effected by change type '{self.change_type}'.\nOld path: {self.old_path}\nNew path: {self.new_path}")
@@ -74,6 +91,24 @@ class ServerEdit:
                 raise Exception(
                     f"ServerEdit file limit breached. Too many files effected by change type '{self.change_type}.'\nOld path: {self.old_path}\nNew path: {self.new_path}")
 
+
+        def on_rm_error(func, path, exc_info):
+            """
+            This function is called by the shutil.rmtree function if it encounters an error while removing a directory.
+            Attempts to change the permissions of the file or directory and try again. If the error persists, an exception is raised, 
+            but more informative error message is given.
+            :param func: The function that raised the exception.
+            :param path: The path to the file or directory that caused the exception.
+            :param exc_info: The exception information.
+            """
+            # If the exception is a permission error, change the permissions of the file or directory and try again.
+            if not os.access(path, os.W_OK):
+                os.chmod(path, 0o700)
+                func(path)
+            
+            else:
+                raise Exception(f"Error removing path: {path} - {exc_info[1]}")
+
         enqueue_change_task = lambda task_func: utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
                                                                                    enqueued_function=task_func,
                                                                                    timeout=timeout)
@@ -81,6 +116,8 @@ class ServerEdit:
         # If the change type is 'DELETE'
         if self.change_type.upper() == 'DELETE':
             enqueueing_results = {}
+            
+            # if the deleted asset is a file, we need to get the size of the file before removing
             if self.is_file:
                 self.data_effected = os.path.getsize(self.old_path)
                 os.remove(self.old_path)
@@ -98,7 +135,7 @@ class ServerEdit:
             check_against_limits()
 
             # remove directory and contents
-            shutil.rmtree(self.old_path)
+            shutil.rmtree(self.old_path, onerror=on_rm_error)
             self.change_executed = True
             enqueueing_results = enqueue_change_task(self.add_deletion_to_db_task)
             enqueueing_results['change_executed'] = self.change_executed
@@ -249,6 +286,10 @@ class ServerEdit:
             
 
     def add_deletion_to_db_task(self, queue_id):
+        """
+        This function is used to reconcile the database with a file deletion operation.
+        It is a task function that is enqueued for a seperate thread to execute.
+        """
         
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy']
@@ -314,6 +355,10 @@ class ServerEdit:
     
 
     def add_renaming_to_db_task(self, queue_id):
+        """
+        This function is used to reconcile the database with a file rename operation.
+        It is a task function that is enqueued for a seperate thread to execute.
+        """
 
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy']
@@ -393,7 +438,7 @@ class ServerEdit:
         """
         Reconciles the database with a file move operation. Basically, it changes the file_server_directories
         for each file_location entry that is effected by the move. If the move is a file move, it also changes.
-
+        This is a task function that is enqueued for a seperate thread to execute.
         """
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy']
