@@ -251,6 +251,7 @@ def user_timesheet(employee_id):
             query_start_date = datetime(year=user_start_date.year, month=user_start_date.month, day=user_start_date.day)
             query_end_date = datetime(year=user_end_date.year, month=user_end_date.month, day=user_end_date.day)
 
+        # query to get all timekeeper events for the user between the start and end dates
         query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == employee_id,
                                                   TimekeeperEventModel.datetime >= query_start_date,
                                                   TimekeeperEventModel.datetime <= query_end_date)

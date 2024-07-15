@@ -1,5 +1,3 @@
-# 
-
 import datetime
 import flask
 import flask_sqlalchemy
