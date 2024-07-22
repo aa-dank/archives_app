@@ -76,14 +76,18 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
 
                 missing_from_db = fm_caan_df
                 if not db_caans_df.empty:
+                    # missing_from_db is the set of caans in FileMaker that are not in the db
                     missing_from_db = fm_caan_df[~fm_caan_df['CAAN'].isin(db_caans_df['caan'])]
+                
+                # Add caans that are in FileMaker but not in the db
                 for _, row in missing_from_db.iterrows():
                     caan = CAANModel(caan=row['CAAN'],
-                                    name=row['Name'],
-                                    description=row['Description'])
+                                     name=row['Name'],
+                                     description=row['Description'])
                     db.session.add(caan)
                     recon_log['CAAN']['added'].append(row['CAAN'])
                 
+                # remove caans that are in the db but not in FileMaker
                 if not db_caans_df.empty:
                     missing_from_fm = db_caans_df[~db_caans_df['caan'].isin(fm_caan_df['CAAN'])]
                     for _, row in missing_from_fm.iterrows():
@@ -126,6 +130,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                         project_location, _ = utils.FileServerUtils.path_to_project_dir(project_number=row['ProjectNumber'],
                                                                                         archives_location=archives_location)
                         if project_location:
+                            # remove the archives location from the path
                             project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")) + 1:]
 
                     except Exception as e:
@@ -135,7 +140,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                                 continue
 
                     
-                    # Map the FileMaker 'Drawings' field to a boolean value. Note thaat it has other values esides yes and no.
+                    # Map the FileMaker 'Drawings' field to a boolean value. Note thaat it has other values besides yes and no.
                     drawing_value_map = {"Yes": True, "yes": True, "YES": True, "NO": False, "No": False, "no": False}
                     has_drawings = drawing_value_map.get(row['Drawings'], None)
                     
