@@ -118,12 +118,13 @@ class ServerChangeForm(FlaskForm):
             if os.path.exists(os.path.join(network_directory)):
                 raise ValidationError(f"Directory already exists:\n{new_directory.data}")
             
-            #check that the parent directory for new directory exists
+            # check that the parent directory for new directory exists
             path_list = utils.FileServerUtils.split_path(network_directory)
             parent_directory = os.path.join(*path_list[:-1])
             if not os.path.exists(parent_directory):
                 raise ValidationError(f"Parent directory doesn't exist:\n{parent_directory}")
 
+            # ensure that the new directory name doesn't contain unicode characters
             if utils.contains_unicode(path_list[-1]):
                 raise ValidationError(f"Directory name contains unicode characters:\n{path_list[-1]}")
 

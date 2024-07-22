@@ -108,8 +108,7 @@ def hours_worked_in_day(day: datetime.date, user_id: int):
 
             # calculate the differences between this clock in and the subsequent clock out.
             delta = time_out_events_df.iloc[0].loc["datetime"] - time_in
-            hours_worked += delta.days * 24
-            hours_worked += delta.seconds // 3600
+            hours_worked += delta.total_seconds() / 3600
 
     return hours_worked, clock_ins_have_clock_outs
 
@@ -273,20 +272,22 @@ def user_timesheet(employee_id):
         # Create a list of dictionaries, where each dictionary is the aggregated data for that day
         all_days_data = []
         for range_date in daterange(start_date=query_start_date.date(), end_date=query_end_date.date()):
-            day_data = {"Date":range_date.strftime('%Y-%m-%d')}
+            day_data = {"Date":range_date.strftime('%Y-%m-%d %A')}
 
             # calculate hours and/or determine if entering them is incomplete
             hours, timesheet_complete = hours_worked_in_day(range_date, employee_id)
             if not timesheet_complete:
                 day_data["Hours Worked"] = "TIME ENTRY INCOMPLETE"
             else:
-                day_data["Hours Worked"] = str(hours)
+                # round hours and convert to string
+                day_data["Hours Worked"] = str(round(hours, 2))
 
             # get the daily archiving metrics if applicable
             if 'ARCHIVIST' in current_user.roles or 'ADMIN' in current_user.roles:
                 archived_files_query = ArchivedFileModel.query.filter(ArchivedFileModel.archivist_id == employee_id,
                                                                       ArchivedFileModel.date_archived >= range_date,
                                                                       ArchivedFileModel.date_archived <= range_date + timedelta(days=1))
+                
                 arched_files_df = utils.FlaskAppUtils.db_query_to_df(query=archived_files_query)
                 day_data["Archived Files"] = arched_files_df.shape[0]
                 day_data["Archived Megabytes"] = 0
