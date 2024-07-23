@@ -417,88 +417,9 @@ def all_timesheets():
 
     timesheet_df = pd.DataFrame()
     try:
-        # Create datetime objects for start and end dates. Includes end and start dates.
-        query_start_date = datetime.now() - timedelta(days = 14)
-        query_start_date = query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        query_end_date = datetime.now()
-        query_end_date = query_end_date.replace(hour=23, minute=0, second=0, microsecond=0)
-        original_start_date = datetime.now() # query date will change, this keeps track of the original start date
-        if form.validate_on_submit():
-            user_start_date = form.timesheet_begin.data
-            user_end_date = form.timesheet_end.data
-            query_start_date = datetime(year=user_start_date.year, month=user_start_date.month, day=user_start_date.day)
-            query_end_date = datetime(year=user_end_date.year, month=user_end_date.month, day=user_end_date.day)
-            original_start_date = query_start_date
-
-
-        # change query start date to the most recent sunday before the original start date
-        query_start_date = get_previous_sunday(original_start_date)
-        query = db.session.query(TimekeeperEventModel)\
-            .join(UserModel, TimekeeperEventModel.user_id == UserModel.id)\
-            .filter(and_(UserModel.active == True, UserModel.roles.like("%ARCHIVIST%"),
-                         TimekeeperEventModel.datetime.between(query_start_date, query_end_date)))
-
-        timesheet_df = utils.FlaskAppUtils.db_query_to_df(query=query)
-
-    except Exception as e:
-        web_exception_subroutine(flash_message="Error creating dataframe for all archivists: ",
-                                   thrown_exception=e, app_obj=flask.current_app)
-
-    try:
-        users_timesheet_dict = dict(list(timesheet_df.groupby('user_id')))
         for archivist_dict in archivists:
-            user_timesheet_df = users_timesheet_dict.get(archivist_dict['id'])
-            if type(user_timesheet_df) == type(pd.DataFrame()):
-                archivist_dict["raw_df"] = user_timesheet_df
-
-                # Create a list of dictionaries, where each dictionary is the aggregated data for that day
-                all_days_data = []
-                for range_date in daterange(start_date=query_start_date.date(), end_date=query_end_date.date()):
-                    day_data = {"Date": range_date}
-
-                    # calculate hours and/or determine if entering them is incomplete
-                    hours, timesheet_complete = hours_worked_in_day(day=range_date, user_id=archivist_dict['id'])
-                    if not timesheet_complete:
-                        day_data["Hours Worked"] = np.nan
-                    else:
-                        day_data["Hours Worked"] = hours
-                    
-                    # get the daily archiving metrics if applicable
-                    if 'ARCHIVIST' in current_user.roles or 'ADMIN' in current_user.roles:
-                        archived_files_query = ArchivedFileModel.query.filter(ArchivedFileModel.archivist_id == archivist_dict['id'],
-                                                                ArchivedFileModel.date_archived >= range_date,
-                                                                ArchivedFileModel.date_archived <= range_date + timedelta(days=1))
-                        arched_files_df = utils.FlaskAppUtils.db_query_to_df(query=archived_files_query)
-                        day_data["Archived Files"] = arched_files_df.shape[0]
-                        day_data["Archived Megabytes"] = 0
-                        if not arched_files_df.empty:
-                            day_data["Archived Megabytes"] = (arched_files_df["file_size"].sum()/1000000).round(2)
-
-                    # Mush all journal entries together into a single journal entry
-                    compiled_journal = compile_journal(date=range_date,
-                                                       timecard_df=user_timesheet_df,
-                                                       delimiter_str=" \ ")
-                    day_data["Journal"] = compiled_journal
-                    all_days_data.append(day_data)
-
-                # daily data converted to dataframe    
-                all_days_df = pd.DataFrame.from_dict(all_days_data)
-                all_days_df['Date'] = pd.to_datetime(all_days_df['Date'])
-                all_days_df.set_index('Date', drop=True, inplace=True)
-
-                # create weekly dataframe from daily data
-                weekly_summary = all_days_df.resample('W').sum(numeric_only=True).reset_index()
-                
-                # reduce daily data to only include days in the original date range
-                all_days_df = all_days_df[all_days_df["Date"] >= original_start_date]
-                # replace 'hours worked' np.nan with 'TIME ENTRY INCOMPLETE'
-                all_days_df["Hours Worked"] = all_days_df["Hours Worked"].apply(lambda x: "TIME ENTRY INCOMPLETE" if np.isnan(x) else x)
-                
-                # convert date to string for display
-                all_days_df["Date"] = all_days_df["Date"].dt.strftime('%Y-%m-%d %A')
-                archivist_dict["timesheet_df"] = all_days_df
-                archivist_dict["html_table"] = archivist_dict["timesheet_df"].to_html(index=False, classes="table-hover table-dark")
-
+            archivist_dict["timesheet_df"], archivist_dict["weekly_summary_df"] = generate_user_timesheet_dataframes(archivist_dict["id"])
+            archivist_dict["html_table"] = archivist_dict["timesheet_df"].to_html(index=False, classes="table-hover table-dark")
 
     except Exception as e:
         web_exception_subroutine(flash_message="Error creating individualized timesheet tables: ",
