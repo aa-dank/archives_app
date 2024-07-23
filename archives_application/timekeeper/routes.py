@@ -1,10 +1,11 @@
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 
 import flask
 import flask_sqlalchemy
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
 from typing import List
@@ -50,6 +51,19 @@ def daterange(start_date: datetime, end_date: datetime):
     """
     for n in range(int((end_date - start_date).days)):
         yield start_date + timedelta(n)
+
+def get_previous_sunday(start_date: datetime):
+    """
+    This function returns the previous Sunday from the given date. Returns the same date if the given date is a Sunday.
+    """
+    # Check if start_date is a Sunday
+    if start_date.weekday() == 6:
+        return start_date
+    else:
+        # Calculate the difference to the previous Sunday
+        days_to_sunday = start_date.weekday() + 1  # Monday is 0, Sunday is 6
+        previous_sunday = start_date - timedelta(days=days_to_sunday)
+        return previous_sunday
 
 def hours_worked_in_day(day: datetime.date, user_id: int):
 
@@ -113,7 +127,7 @@ def hours_worked_in_day(day: datetime.date, user_id: int):
     return hours_worked, clock_ins_have_clock_outs
 
 
-def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str: str):
+def compile_journal(date: datetime.date, timecard_df: pd.DataFrame, delimiter_str: str):
     """
     Combines journalcolumn into a single str
     @param date:
@@ -122,9 +136,16 @@ def compile_journal(date: datetime, timecard_df: pd.DataFrame, delimiter_str: st
     @param delimiter_str:
     @return:
     """
-    strftime_dt = lambda dt: dt.strftime("%Y-%m-%d")
-    timecard_df = timecard_df[timecard_df["datetime"].map(strftime_dt) == date.strftime("%Y-%m-%d")]
-    compiled_journal = delimiter_str.join([journal for journal in timecard_df["journal"].tolist() if journal])
+    # Convert the date to a datetime object representing the start of the day
+    date_start = datetime.combine(date, time.min)
+    date_end = datetime.combine(date, time.max)
+    
+    # Filter the DataFrame for the specific date
+    filtered_df = timecard_df[(timecard_df["datetime"] >= date_start) & (timecard_df["datetime"] <= date_end)]
+    
+    # Join the 'journal' entries with the delimiter
+    compiled_journal = delimiter_str.join([journal for journal in filtered_df["journal"].tolist() if journal])
+    
     return compiled_journal
 
 
@@ -221,6 +242,90 @@ def timekeeper_event():
                                  id=current_user_id)
 
 
+def generate_user_timesheet_dataframes(user_id, start_date=None, end_date=None, include_weekly = True):
+
+    def process_hours_worked_vals(hrs):
+        """
+        Converts hours worked to string and rounds to 2 decimal places. If hours are np.nan, returns 'TIME ENTRY INCOMPLETE'
+        """
+        return str(round(hrs, 2)) if hrs != "TIME ENTRY INCOMPLETE" else hrs
+ 
+    query_start_date = (datetime.now() - timedelta(days = 14)) if start_date is None else start_date
+    query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    query_end_date = datetime.now() if end_date is None else end_date
+    
+    # save original start date before manipulation
+    original_start_date = query_start_date
+    query_start_date = get_previous_sunday(original_start_date)
+
+    # query to get all timekeeper events for the user between the start and end dates
+    query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == user_id,
+                                                TimekeeperEventModel.datetime >= query_start_date,
+                                                TimekeeperEventModel.datetime <= query_end_date)
+    timesheet_df = utils.FlaskAppUtils.db_query_to_df(query=query)
+
+    # issues with sending commands to DB can result in pd.read_sql returning None instead of Dataframe
+    assert type(timesheet_df) == type(pd.DataFrame()), "pd.read_sql did not return a Dataframe."
+
+    if timesheet_df.shape[0] == 0:
+        return None
+
+    # Create a list of dictionaries, where each dictionary is the aggregated data for that day
+    all_days_data = []
+    for range_date in daterange(start_date=query_start_date.date(), end_date=query_end_date.date()):
+        day_data = {"Date":range_date.strftime('%Y-%m-%d %A')}
+
+        # calculate hours and/or determine if entering them is incomplete
+        hours, timesheet_complete = hours_worked_in_day(range_date, user_id)
+        if not timesheet_complete:
+            day_data["Hours Worked"] = np.nan
+        else:
+            # round hours and convert to string
+            day_data["Hours Worked"] = hours
+
+        # get the daily archiving metrics if applicable
+        if 'ARCHIVIST' in current_user.roles or 'ADMIN' in current_user.roles:
+            archived_files_query = ArchivedFileModel.query.filter(ArchivedFileModel.archivist_id == user_id,
+                                                                    ArchivedFileModel.date_archived >= range_date,
+                                                                    ArchivedFileModel.date_archived <= range_date + timedelta(days=1))
+            
+            arched_files_df = utils.FlaskAppUtils.db_query_to_df(query=archived_files_query)
+            day_data["Archived Files"] = arched_files_df.shape[0]
+            day_data["Archived Megabytes"] = 0
+            if not arched_files_df.empty:
+                day_data["Archived Megabytes"] = (arched_files_df["file_size"].sum()/1000000).round(2)
+
+        # Mush all journal entries together into a single journal entry
+        compiled_journal = compile_journal(range_date, timesheet_df, " \ ")
+        day_data["Journal"] = compiled_journal
+        all_days_data.append(day_data)
+    
+    # daily data converted to dataframe    
+    all_days_df = pd.DataFrame.from_dict(all_days_data)
+    all_days_df['Date'] = pd.to_datetime(all_days_df['Date'])
+    all_days_df.set_index('Date', drop=True, inplace=True)
+
+    # create weekly dataframe from daily data
+    weekly_summary = pd.DataFrame()
+    if include_weekly:
+        weekly_summary = all_days_df.resample('W')\
+            .sum(numeric_only=True)\
+            .reset_index()
+        weekly_summary["Hours Worked"] = weekly_summary["Hours Worked"].map(process_hours_worked_vals)
+
+    # reduce daily data to only include days in the original date range
+    all_days_df = all_days_df[all_days_df["Date"] >= original_start_date]
+    # replace 'hours worked' np.nan with 'TIME ENTRY INCOMPLETE'
+    all_days_df["Hours Worked"] = all_days_df["Hours Worked"]\
+        .apply(lambda x: "TIME ENTRY INCOMPLETE" if np.isnan(x) else x)
+    all_days_df["Hours Worked"] = all_days_df["Hours Worked"].map(process_hours_worked_vals)
+
+    # convert date to string for display
+    all_days_df["Date"] = all_days_df["Date"].dt.strftime('%Y-%m-%d %A')
+
+    return all_days_df, weekly_summary
+
+
 @timekeeper.route("/timekeeper/<employee_id>", methods=['GET', 'POST'])
 @login_required
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
@@ -241,70 +346,22 @@ def user_timesheet(employee_id):
 
     try:
  
-        query_start_date = datetime.now() - timedelta(days = 14)
-        query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        query_end_date = datetime.now()
         if form.validate_on_submit():
             user_start_date = form.timesheet_begin.data
             user_end_date = form.timesheet_end.data
-            query_start_date = datetime(year=user_start_date.year, month=user_start_date.month, day=user_start_date.day)
-            query_end_date = datetime(year=user_end_date.year, month=user_end_date.month, day=user_end_date.day)
+            timesheet_df, weekly_summary_df = generate_user_timesheet_dataframes(employee_id, user_start_date, user_end_date)
 
-        # query to get all timekeeper events for the user between the start and end dates
-        query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == employee_id,
-                                                  TimekeeperEventModel.datetime >= query_start_date,
-                                                  TimekeeperEventModel.datetime <= query_end_date)
-        timesheet_df = utils.FlaskAppUtils.db_query_to_df(query=query)
-
-
-        # issues with sending commands to DB can result in pd.read_sql returning None instead of Dataframe
-        assert type(timesheet_df) == type(pd.DataFrame()), "pd.read_sql did not return a Dataframe."
-
-    except Exception as e:
-        web_exception_subroutine(flash_message="Error getting user timekeeper events from database: ",
-                                   thrown_exception=e, app_obj=flask.current_app)
-
-    if timesheet_df.shape[0] == 0:
-        flask.flash(f"No clocked time recorded for request period for the id of {employee.first_name} {employee.last_name}.", category='info')
-        return flask.redirect(flask.url_for('main.home'))
-
-    try:
-        # Create a list of dictionaries, where each dictionary is the aggregated data for that day
-        all_days_data = []
-        for range_date in daterange(start_date=query_start_date.date(), end_date=query_end_date.date()):
-            day_data = {"Date":range_date.strftime('%Y-%m-%d %A')}
-
-            # calculate hours and/or determine if entering them is incomplete
-            hours, timesheet_complete = hours_worked_in_day(range_date, employee_id)
-            if not timesheet_complete:
-                day_data["Hours Worked"] = "TIME ENTRY INCOMPLETE"
-            else:
-                # round hours and convert to string
-                day_data["Hours Worked"] = str(round(hours, 2))
-
-            # get the daily archiving metrics if applicable
-            if 'ARCHIVIST' in current_user.roles or 'ADMIN' in current_user.roles:
-                archived_files_query = ArchivedFileModel.query.filter(ArchivedFileModel.archivist_id == employee_id,
-                                                                      ArchivedFileModel.date_archived >= range_date,
-                                                                      ArchivedFileModel.date_archived <= range_date + timedelta(days=1))
-                
-                arched_files_df = utils.FlaskAppUtils.db_query_to_df(query=archived_files_query)
-                day_data["Archived Files"] = arched_files_df.shape[0]
-                day_data["Archived Megabytes"] = 0
-                if not arched_files_df.empty:
-                    day_data["Archived Megabytes"] = (arched_files_df["file_size"].sum()/1000000).round(2)
-
-            # Mush all journal entries together into a single journal entry
-            compiled_journal = compile_journal(range_date, timesheet_df, " \ ")
-            day_data["Journal"] = compiled_journal
-            all_days_data.append(day_data)
+        else:
+            timesheet_df, weekly_summary_df = generate_user_timesheet_dataframes(employee_id)    
+        
+        if timesheet_df is None:
+                flask.flash("No timekeeper events found for the selected date range.", 'info')
 
     except Exception as e:
         web_exception_subroutine(flash_message="Error creating table of hours worked: ",
                                    thrown_exception=e, app_obj=flask.current_app)
 
-    aggregate_hours_df = pd.DataFrame.from_dict(all_days_data)
-    archivist_dict["html_table"] = aggregate_hours_df.to_html(index=False, classes="table-hover table-dark")
+    archivist_dict["html_table"] = timesheet_df.to_html(index=False, classes="table-hover table-dark")
 
     return flask.render_template('timesheet_tables.html', title="Timesheet", form=form, archivist_info_list=[archivist_dict])
 
@@ -345,10 +402,11 @@ def all_timesheets():
     - timesheet_df: a dataframe with the timesheet data
     - html_table: the timesheet data in HTML format
     """
+    
 
     form = TimeSheetForm()
     try:
-        # Get 'active' employee emails to use in dropdown choices
+        # Get 'active' employee emails
         archivists = [{'email': employee.email, 'id': employee.id} for employee in
                       UserModel.query.filter(UserModel.roles.contains('ARCHIVIST'), UserModel.active.is_(True))]
 
@@ -364,12 +422,17 @@ def all_timesheets():
         query_start_date = query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
         query_end_date = datetime.now()
         query_end_date = query_end_date.replace(hour=23, minute=0, second=0, microsecond=0)
+        original_start_date = datetime.now() # query date will change, this keeps track of the original start date
         if form.validate_on_submit():
             user_start_date = form.timesheet_begin.data
             user_end_date = form.timesheet_end.data
             query_start_date = datetime(year=user_start_date.year, month=user_start_date.month, day=user_start_date.day)
             query_end_date = datetime(year=user_end_date.year, month=user_end_date.month, day=user_end_date.day)
+            original_start_date = query_start_date
 
+
+        # change query start date to the most recent sunday before the original start date
+        query_start_date = get_previous_sunday(original_start_date)
         query = db.session.query(TimekeeperEventModel)\
             .join(UserModel, TimekeeperEventModel.user_id == UserModel.id)\
             .filter(and_(UserModel.active == True, UserModel.roles.like("%ARCHIVIST%"),
@@ -391,14 +454,14 @@ def all_timesheets():
                 # Create a list of dictionaries, where each dictionary is the aggregated data for that day
                 all_days_data = []
                 for range_date in daterange(start_date=query_start_date.date(), end_date=query_end_date.date()):
-                    day_data = {"Date": range_date.strftime('%Y-%m-%d')}
+                    day_data = {"Date": range_date}
 
                     # calculate hours and/or determine if entering them is incomplete
                     hours, timesheet_complete = hours_worked_in_day(day=range_date, user_id=archivist_dict['id'])
                     if not timesheet_complete:
-                        day_data["Hours Worked"] = "TIME ENTRY INCOMPLETE"
+                        day_data["Hours Worked"] = np.nan
                     else:
-                        day_data["Hours Worked"] = str(hours)
+                        day_data["Hours Worked"] = hours
                     
                     # get the daily archiving metrics if applicable
                     if 'ARCHIVIST' in current_user.roles or 'ADMIN' in current_user.roles:
@@ -417,9 +480,25 @@ def all_timesheets():
                                                        delimiter_str=" \ ")
                     day_data["Journal"] = compiled_journal
                     all_days_data.append(day_data)
-                    
-                archivist_dict["timesheet_df"] = pd.DataFrame.from_dict(all_days_data)
+
+                # daily data converted to dataframe    
+                all_days_df = pd.DataFrame.from_dict(all_days_data)
+                all_days_df['Date'] = pd.to_datetime(all_days_df['Date'])
+                all_days_df.set_index('Date', drop=True, inplace=True)
+
+                # create weekly dataframe from daily data
+                weekly_summary = all_days_df.resample('W').sum(numeric_only=True).reset_index()
+                
+                # reduce daily data to only include days in the original date range
+                all_days_df = all_days_df[all_days_df["Date"] >= original_start_date]
+                # replace 'hours worked' np.nan with 'TIME ENTRY INCOMPLETE'
+                all_days_df["Hours Worked"] = all_days_df["Hours Worked"].apply(lambda x: "TIME ENTRY INCOMPLETE" if np.isnan(x) else x)
+                
+                # convert date to string for display
+                all_days_df["Date"] = all_days_df["Date"].dt.strftime('%Y-%m-%d %A')
+                archivist_dict["timesheet_df"] = all_days_df
                 archivist_dict["html_table"] = archivist_dict["timesheet_df"].to_html(index=False, classes="table-hover table-dark")
+
 
     except Exception as e:
         web_exception_subroutine(flash_message="Error creating individualized timesheet tables: ",
