@@ -6,11 +6,18 @@
             Days that say "TIME ENTRY INCOMPLETE" are days where a clock-in or clock-out event are missing.
         </p>
         {% for archivist_dict in archivist_info_list %}
-        <div>
-        <h2>{{ archivist_dict["email"] }}</h2>
-        {{ archivist_dict["html_table"] | safe }}
-        <hr width="75%" />
-        </div>
+            <div>
+            <h2>{{ archivist_dict["email"] }}</h2>
+            {% if archivist_dict["daily_html_table"] %}
+                <h4>Daily Stats</h4>
+                {{ archivist_dict["daily_html_table"] | safe }}
+            {% endif %}
+            {% if archivist_dict["weekly_html_table"] %}
+                <h4>Weekly Stats</h4>
+                {{ archivist_dict["weekly_html_table"] | safe }}
+            {% endif %}
+            <hr width="75%" />
+            </div>
         {% endfor %}
         <form method="POST" action="" enctype="multipart/form-data">
             {{ form.hidden_tag() }}

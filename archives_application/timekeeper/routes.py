@@ -243,16 +243,26 @@ def timekeeper_event():
 
 
 def generate_user_timesheet_dataframes(user_id, start_date=None, end_date=None, include_weekly = True):
-
+    """
+    Creates Dataframes aggregating timekeeper and archiving data for a user between the start and end dates.
+    :param user_id: The user id of the user to generate the timesheet for
+    :param start_date: The start date of the timesheet range. If None, defaults to 14 days before the current date.
+    :param end_date: The end date of the timesheet range. If None, defaults to the current date.
+    """
+    
     def process_hours_worked_vals(hrs):
         """
         Converts hours worked to string and rounds to 2 decimal places. If hours are np.nan, returns 'TIME ENTRY INCOMPLETE'
         """
         return str(round(hrs, 2)) if hrs != "TIME ENTRY INCOMPLETE" else hrs
- 
-    query_start_date = (datetime.now() - timedelta(days = 14)) if start_date is None else start_date
-    query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    query_end_date = datetime.now() if end_date is None else end_date
+    
+    query_start_date = start_date
+    if not query_start_date:
+        query_start_date = (datetime.now() - timedelta(days = 14)) if start_date is None else start_date
+        query_start_date = query_start_date.date()
+    
+    query_end_date = datetime.now().date() if end_date is None else end_date
+    
     
     # save original start date before manipulation
     original_start_date = query_start_date
@@ -268,11 +278,11 @@ def generate_user_timesheet_dataframes(user_id, start_date=None, end_date=None, 
     assert type(timesheet_df) == type(pd.DataFrame()), "pd.read_sql did not return a Dataframe."
 
     if timesheet_df.shape[0] == 0:
-        return None
+        return pd.DataFrame(), pd.DataFrame()
 
     # Create a list of dictionaries, where each dictionary is the aggregated data for that day
     all_days_data = []
-    for range_date in daterange(start_date=query_start_date.date(), end_date=query_end_date.date()):
+    for range_date in daterange(start_date=query_start_date, end_date=query_end_date):
         day_data = {"Date":range_date.strftime('%Y-%m-%d %A')}
 
         # calculate hours and/or determine if entering them is incomplete
@@ -285,9 +295,12 @@ def generate_user_timesheet_dataframes(user_id, start_date=None, end_date=None, 
 
         # get the daily archiving metrics if applicable
         if 'ARCHIVIST' in current_user.roles or 'ADMIN' in current_user.roles:
-            archived_files_query = ArchivedFileModel.query.filter(ArchivedFileModel.archivist_id == user_id,
-                                                                    ArchivedFileModel.date_archived >= range_date,
-                                                                    ArchivedFileModel.date_archived <= range_date + timedelta(days=1))
+            
+            # This query gets all archived files for the user on the given day
+            archived_files_query = ArchivedFileModel.query\
+                .filter(ArchivedFileModel.archivist_id == user_id,
+                        ArchivedFileModel.date_archived >= range_date,
+                        ArchivedFileModel.date_archived <= range_date + timedelta(days=1))
             
             arched_files_df = utils.FlaskAppUtils.db_query_to_df(query=archived_files_query)
             day_data["Archived Files"] = arched_files_df.shape[0]
@@ -312,16 +325,29 @@ def generate_user_timesheet_dataframes(user_id, start_date=None, end_date=None, 
             .sum(numeric_only=True)\
             .reset_index()
         weekly_summary["Hours Worked"] = weekly_summary["Hours Worked"].map(process_hours_worked_vals)
+        
+        # date column adjusted to begining of the week
+        weekly_summary['Date'] = weekly_summary['Date'].apply(lambda x: x - timedelta(days=7))
+
+        #remove weeks not in the original date range
+        weekly_summary = weekly_summary[weekly_summary['Date'] >= pd.to_datetime(query_start_date)]
+        weekly_summary = weekly_summary[weekly_summary['Date'] <= pd.to_datetime(query_end_date)]
+        
+        # Rename 'Date' Column to 'Week'
+        weekly_summary.rename(columns={'Date': 'Week'}, inplace=True)
 
     # reduce daily data to only include days in the original date range
-    all_days_df = all_days_df[all_days_df["Date"] >= original_start_date]
+    all_days_df = all_days_df[all_days_df.index >= pd.to_datetime(original_start_date)]
     # replace 'hours worked' np.nan with 'TIME ENTRY INCOMPLETE'
     all_days_df["Hours Worked"] = all_days_df["Hours Worked"]\
         .apply(lambda x: "TIME ENTRY INCOMPLETE" if np.isnan(x) else x)
     all_days_df["Hours Worked"] = all_days_df["Hours Worked"].map(process_hours_worked_vals)
 
-    # convert date to string for display
-    all_days_df["Date"] = all_days_df["Date"].dt.strftime('%Y-%m-%d %A')
+    # Move index back to 'Date' column
+    all_days_df.reset_index(inplace=True)
+
+    # Create strings from dates
+    all_days_df['Date'] = all_days_df['Date'].dt.strftime('%Y-%m-%d %A')
 
     return all_days_df, weekly_summary
 
@@ -345,7 +371,7 @@ def user_timesheet(employee_id):
                                  app_obj=flask.current_app)
 
     try:
- 
+        # if user has submitted the form, get the start and end dates from the form
         if form.validate_on_submit():
             user_start_date = form.timesheet_begin.data
             user_end_date = form.timesheet_end.data
@@ -354,14 +380,16 @@ def user_timesheet(employee_id):
         else:
             timesheet_df, weekly_summary_df = generate_user_timesheet_dataframes(employee_id)    
         
-        if timesheet_df is None:
+        # if there are no timekeeper events, flash a message
+        if timesheet_df is None or timesheet_df.shape[0] == 0:
                 flask.flash("No timekeeper events found for the selected date range.", 'info')
 
     except Exception as e:
         web_exception_subroutine(flash_message="Error creating table of hours worked: ",
                                    thrown_exception=e, app_obj=flask.current_app)
 
-    archivist_dict["html_table"] = timesheet_df.to_html(index=False, classes="table-hover table-dark")
+    archivist_dict["daily_html_table"] = timesheet_df.to_html(index=False, classes="table-hover table-dark")
+    archivist_dict["weekly_html_table"] = weekly_summary_df.to_html(index=False, classes="table-hover table-dark")
 
     return flask.render_template('timesheet_tables.html', title="Timesheet", form=form, archivist_info_list=[archivist_dict])
 
@@ -414,12 +442,22 @@ def all_timesheets():
         return web_exception_subroutine(
             flash_message="Error retrieving active archivists from database:",
             thrown_exception=e, app_obj=flask.current_app)
-
-    timesheet_df = pd.DataFrame()
+    
     try:
+        timesheet_df = pd.DataFrame()
+        start_date = None
+        end_date = None
+        if form.validate_on_submit():
+            start_date = form.timesheet_begin.data
+            end_date = form.timesheet_end.data
+            start_date = datetime(year=start_date.year, month=start_date.month, day=start_date.day)
+            end_date = datetime(year=end_date.year, month=end_date.month, day=end_date.day)
+        
+        # iterate over archivists to create individualized timesheet tables
         for archivist_dict in archivists:
-            archivist_dict["timesheet_df"], archivist_dict["weekly_summary_df"] = generate_user_timesheet_dataframes(archivist_dict["id"])
-            archivist_dict["html_table"] = archivist_dict["timesheet_df"].to_html(index=False, classes="table-hover table-dark")
+            archivist_dict["timesheet_df"], archivist_dict["weekly_summary_df"] = generate_user_timesheet_dataframes(archivist_dict["id"], start_date, end_date)
+            archivist_dict["daily_html_table"] = archivist_dict["timesheet_df"].to_html(index=False, classes="table-hover table-dark")
+            archivist_dict["weekly_html_table"] = archivist_dict["weekly_summary_df"].to_html(index=False, classes="table-hover table-dark")
 
     except Exception as e:
         web_exception_subroutine(flash_message="Error creating individualized timesheet tables: ",
