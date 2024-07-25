@@ -2,7 +2,7 @@
 {% block content %}
     <div class="content-section">
         <h2>Timekeeper Administration</h2>
-        <form method="POST" action="" enctype="multipart/form-data">
+        <form method="POST" action="" enctype="multipart/form-data", id="timesheet-form-main">
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Choose Employee</legend>
@@ -21,8 +21,32 @@
                 </div>
             </fieldset>
             <div class="form-group">
-                {{ form.submit(class="btn btn-outline-info") }}
+                {{ form.submit(class="btn btn-outline-info", id="submit-bttn") }}
             </div>
         </form>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var timesheet_form = document.getElementById('timesheet-form-main');
+            if (timesheet_form) {
+                timesheet_form.addEventListener('submit', function(event) {
+                    var button = document.getElementById('submit-bttn');
+                    if (button) {
+                        console.log("Button found");
+                        button.value = 'Retrieving Data...';  // Change button text
+                        // Disable button to prevent double submission
+                        setTimeout(() => button.disabled = true, 10);
+                    } else {
+                        console.log("Button not found");
+                    }
+                    // Delay form submission to allow button text change
+                    event.preventDefault();
+                    setTimeout(() => HTMLFormElement.prototype.submit.call(timesheet_form), 500);
+                });
+            } else {
+                console.log("Form not found");
+            }
+        });
+    </script>
 {% endblock content %}
