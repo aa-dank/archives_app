@@ -71,9 +71,15 @@ def filemaker_reconciliation():
         return api_exception_subroutine(m, e)    
 
     if request_is_authenticated:
+        # extract fmp_caan_project_reconciliation_task params from request
         to_confirm = flask.request.args.get('confirm_locations')
         to_confirm = True if to_confirm.lower() == "true" else False
-        task_kwargs = {"confirm_locations": to_confirm}
+        to_update = flask.request.args.get('update_projects')
+        to_update = True if to_update.lower() == "true" else False
+
+
+        task_kwargs = {"confirm_locations": to_confirm,
+                       "update_projects": to_update}
         nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                         enqueued_function=fmp_caan_project_reconciliation_task,
                                                         task_kwargs=task_kwargs)
@@ -96,7 +102,7 @@ def test_fmp_reconciliation():
     db.session.commit()
     
     to_confirm = flask.request.args.get('confirm_locations')
-    to_confirm = True if to_confirm.lower() == "true" else False
+    to_confirm = True if (to_confirm and to_confirm.lower() == "true") else False
     task_results = fmp_caan_project_reconciliation_task(queue_id=recon_job_id,
                                                         confirm_locations=to_confirm)
     

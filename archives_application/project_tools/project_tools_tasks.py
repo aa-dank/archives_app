@@ -19,7 +19,7 @@ app = create_app()
 PROJECT_NUMBER_RE_PATTERN = r'\b\d{4,5}(?:[A-Z])?(?:-\d{3})?(?:[A-Z])?\b'
 
 
-def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool = False):
+def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool = False, update_existing: bool = True):
     with app.app_context():
         os.environ['no_proxy'] = '*'
         db = flask.current_app.extensions['sqlalchemy']
@@ -52,6 +52,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                      "project": {"added": [], "removed": []},
                      "project-caans": {"added": [], "removed": []},
                      "locations confirmed": 0,
+                     "projects updated": {"name": [], "drawings": []},
                      "errors": []}
         
         # Increase the timeout for the fmrest server
@@ -111,6 +112,8 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
             if not fm_projects_df.empty:
                 project_query = db.session.query(ProjectModel)
                 db_project_df = utils.FlaskAppUtils.db_query_to_df(project_query)
+                update_name_data_df = pd.DataFrame()  # for projects that need to be updated
+                update_drawings_data_df = pd.DataFrame()  # for projects that need to be updated
                 is_proj_number = lambda input_string: bool(re.match(PROJECT_NUMBER_RE_PATTERN, input_string))
                 fm_projects_df = fm_projects_df[fm_projects_df['ProjectNumber'].apply(is_proj_number)]
                 # strip whitespace from project numbers
@@ -118,8 +121,19 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
 
                 missing_from_db = fm_projects_df.copy()
                 if not db_project_df.empty:
+                    # get entries in FileMaker that are not in the db
                     missing_from_db = fm_projects_df[~fm_projects_df['ProjectNumber'].isin(db_project_df['number'])]
-                
+                    
+                    if update_existing:
+                        # Get entries in Filemaker that exist but have different data 
+                        # in the db for the 'name' and 'drawings' features. We will update these values.
+                        merged_df = pd.merge(fm_projects_df, db_project_df,
+                                            left_on='ProjectNumber',
+                                            right_on='number',
+                                            suffixes=('_fm', '_db'))
+                        update_name_data_df = merged_df[merged_df['ProjectName_fm'] != merged_df['name_db']]
+                        update_drawings_data_df = merged_df[merged_df['Drawings_fm'] != merged_df['drawings_db']]
+
                 # Add projects that are in FileMaker but not in the db
                 for _, row in missing_from_db.iterrows():
                     
@@ -189,6 +203,19 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                                                         "exception": str(e)})
                     recon_log['locations confirmed'] = locations_confirmed
                     db.session.commit()
+                
+                # Update projects that have different names or drawings values in FileMaker
+                for _, row in update_name_data_df.iterrows():
+                    project = ProjectModel.query.filter_by(number=row['ProjectNumber']).first()
+                    project.name = row['ProjectName']
+                    recon_log['projects updated']['name'].append(row['ProjectNumber'])
+                db.session.commit()
+                
+                for _, row in update_drawings_data_df.iterrows():
+                    project = ProjectModel.query.filter_by(number=row['ProjectNumber']).first()
+                    project.drawings = drawing_value_map.get(row['Drawings'], None)
+                    recon_log['projects updated']['drawings'].append(row['ProjectNumber'])
+                db.session.commit()
 
         except Exception as e:
             utils.FlaskAppUtils.attempt_db_rollback(db)
