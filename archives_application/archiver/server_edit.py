@@ -74,8 +74,8 @@ class ServerEdit:
         :param effected_data_limit: Maximum amount of data that can be affected by the change (default is 50,000,000).
         :type effected_data_limit: int
         :param timeout: Maximum time in seconds that the function can run before it is terminated (default is 600).
-        :return: True if the change is successfully executed, False otherwise.
-        :rtype: bool
+        :return: Dictionary containing the results of the enqueuing task.
+        :rtype: dict
         """
 
         def check_against_limits():
@@ -109,9 +109,17 @@ class ServerEdit:
             else:
                 raise Exception(f"Error removing path: {path} - {exc_info[1]}")
 
-        enqueue_change_task = lambda task_func: utils.RQTaskUtils.enqueue_new_task(db= flask.current_app.extensions['sqlalchemy'],
-                                                                                   enqueued_function=task_func,
-                                                                                   timeout=timeout)
+        def enqueue_change_task(task_func):
+            """
+            Enqueues a new task to execute the specified task function.
+            :param task_func: The task function to be executed.
+            :return: Dictionary containing the results of the enqueuing task.
+            :rtype: dict
+            """
+            return utils.RQTaskUtils.enqueue_new_task(db=flask.current_app.extensions['sqlalchemy'],
+                                                      enqueued_function=task_func,
+                                                      timeout=timeout)
+        
 
         # If the change type is 'DELETE'
         if self.change_type.upper() == 'DELETE':
@@ -128,8 +136,8 @@ class ServerEdit:
                 return enqueueing_results
 
             # if the deleted asset is a dir we need to add up all the files and their sizes before removing
-            self.get_quantity_effected(dir_path=self.old_path,
-                                       db=flask.current_app.extensions['sqlalchemy'])
+            self._get_quantity_effected(dir_path=self.old_path,
+                                        db=flask.current_app.extensions['sqlalchemy'])
 
             # make sure change is not in excess of limits set
             check_against_limits()
@@ -158,13 +166,16 @@ class ServerEdit:
                 new_path_list[-1] = utils.FilesUtils.cleanse_filename(new_path_list[-1])
 
             else:
-                self.get_quantity_effected(dir_path=self.old_path,
-                                           db=flask.current_app.extensions['sqlalchemy'])
+                self._get_quantity_effected(dir_path=self.old_path,
+                                            db=flask.current_app.extensions['sqlalchemy'])
 
             # make sure change is not in excess of limits set
             check_against_limits()
-            if old_path == self.new_path:
-                return self.change_executed
+            if old_path == self.new_path:            
+                self.change_executed = True
+                self.files_effected = 0
+                self.data_effected = 0
+                return [{'change_executed': self.change_executed}]
                 
             try:
                 os.rename(self.old_path, self.new_path)
@@ -190,8 +201,8 @@ class ServerEdit:
                 
                 else:
                     # make sure change is not in excess of limits set
-                    self.get_quantity_effected(dir_path=self.old_path,
-                                               db=flask.current_app.extensions['sqlalchemy'])
+                    self._get_quantity_effected(dir_path=self.old_path,
+                                                db=flask.current_app.extensions['sqlalchemy'])
                     check_against_limits()
 
                     # cannot move a directory within itself
@@ -211,22 +222,21 @@ class ServerEdit:
                 if type(e) == shutil.Error:
                     e_str = f"Exception trying to move the directory. Is there a collision with an existing file/directory? If it is permissions issue, consider that it might be someone using a directory that would be changed \n{e}"
                     raise Exception(e_str)
+                raise Exception(f"Exception trying to move the directory:\n{e}")
 
-        # if the change_type is 'MAKE'
+        # if the change_type is 'CREATE'
         if self.change_type.upper() == 'CREATE':
-            if os.path.exists(self.new_path):
-                raise Warning(f"Trying to make a directory that already exists: {self.new_path}")
-            os.makedirs(self.new_path)
+            if not os.path.exists(self.new_path):
+                os.makedirs(self.new_path)
             self.change_executed = True
             self.files_effected = 0
             self.data_effected = 0
-            results = {'change_executed': self.change_executed}
-            return results
+            return {'change_executed': self.change_executed}
 
         results = {'change_executed': self.change_executed}
         return results
 
-    def get_quantity_effected(self, dir_path, db):
+    def _get_quantity_effected(self, dir_path, db):
         """
         Sends a query to the database to get the number of files and the amount of data that will be effected in
         a given directory.
