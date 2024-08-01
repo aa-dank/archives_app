@@ -747,7 +747,7 @@ class RQTaskUtils:
         :param function: function to be executed
         :param function_kwargs: keyword arguments for the function
         :param timeout: timeout for the function. Measured in minutes.
-        :return: None
+        :return: Dictionary containing information about the task, including the task id.
         """
         def random_string(length=5):
             chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
