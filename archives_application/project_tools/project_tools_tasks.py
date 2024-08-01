@@ -1,4 +1,5 @@
 import flask
+import flask_sqlalchemy
 import fmrest
 import logging
 import os
@@ -22,7 +23,7 @@ PROJECT_NUMBER_RE_PATTERN = r'\b\d{4,5}(?:[A-Z])?(?:-\d{3})?(?:[A-Z])?\b'
 def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool = False, update_existing: bool = True):
     with app.app_context():
         os.environ['no_proxy'] = '*'
-        db = flask.current_app.extensions['sqlalchemy']
+        db: flask_sqlalchemy.SQLAlchemy = flask.current_app.extensions['sqlalchemy']
         utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
         
         def fmrest_server(layout):
@@ -124,6 +125,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                     # get entries in FileMaker that are not in the db
                     missing_from_db = fm_projects_df[~fm_projects_df['ProjectNumber'].isin(db_project_df['number'])]
                     
+                    # if update_existing is true, then we are going to update the data for entries that are both in filemaker and the db
                     if update_existing:
                         # Get entries in Filemaker that exist but have different data 
                         # in the db for the 'name' and 'drawings' features. We will update these values.
@@ -131,8 +133,12 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                                             left_on='ProjectNumber',
                                             right_on='number',
                                             suffixes=('_fm', '_db'))
-                        update_name_data_df = merged_df[merged_df['ProjectName_fm'] != merged_df['name_db']]
-                        update_drawings_data_df = merged_df[merged_df['Drawings_fm'] != merged_df['drawings_db']]
+                        update_name_data_df = merged_df[merged_df['ProjectName'] != merged_df['name']]
+                        drawing_value_map = {"Yes": True, "yes": True, "YES": True, "NO": False, "No": False, "no": False}
+                        map_fmp_drawing_vals = lambda x: drawing_value_map.get(x, None)
+                        merged_df["fmp_drawings"] = merged_df["Drawings"].map(map_fmp_drawing_vals)
+                        update_drawings_data_df = merged_df[merged_df['fmp_drawings'] != merged_df['drawings']]
+                        update_drawings_data_df.dropna(subset=['fmp_drawings', 'drawings'], how='all', inplace=True)
 
                 # Add projects that are in FileMaker but not in the db
                 for _, row in missing_from_db.iterrows():
@@ -213,7 +219,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 
                 for _, row in update_drawings_data_df.iterrows():
                     project = ProjectModel.query.filter_by(number=row['ProjectNumber']).first()
-                    project.drawings = drawing_value_map.get(row['Drawings'], None)
+                    project.drawings = row.get('fmp_drawings', None)
                     recon_log['projects updated']['drawings'].append(row['ProjectNumber'])
                 db.session.commit()
 
