@@ -1,6 +1,7 @@
 import datetime
 import errno
 import flask
+import flask_sqlalchemy
 import os
 import random
 import shutil
@@ -13,6 +14,26 @@ from archives_application.models import  FileLocationModel, FileModel, ArchivedF
 # Create the app context so that tasks can access app extensions even though
 # they are not running in the main thread.
 app = create_app()
+
+
+def directory_contents_quantities(dir_path: str, server_location: str, db: flask_sqlalchemy.SQLAlchemy):
+    """
+    Sends a query to the database to get the number of files and the amount of data that will be effected in
+    a given directory.
+    :param dir_path: path to the directory
+    :param server_location: root directory of the file server
+    :param db: SQLAlchemy database object (flask.current_app.extensions['sqlalchemy'])
+    """
+    dir_query_str = dir_path.replace(server_location, '')[1:]
+    file_location_entries = db.session.query(FileLocationModel) \
+        .filter(FileLocationModel.file_server_directories.like(func.concat(dir_query_str, '%'))) \
+        .join(FileModel, FileLocationModel.file_id == FileModel.id) \
+        .with_entities(func.count(FileLocationModel.id).label('count'), func.sum(FileModel.size).label('total_size')) \
+        .one()
+
+    files_effected = file_location_entries.count
+    data_effected = int(file_location_entries.total_size) if file_location_entries.total_size else 0
+    return files_effected, data_effected
 
 
 class ServerEdit:
@@ -175,7 +196,7 @@ class ServerEdit:
                 self.change_executed = True
                 self.files_effected = 0
                 self.data_effected = 0
-                return [{'change_executed': self.change_executed}]
+                return {'change_executed': self.change_executed}
                 
             try:
                 os.rename(self.old_path, self.new_path)
@@ -243,15 +264,9 @@ class ServerEdit:
         :param dir_path: path to the directory
         :param db: SQLAlchemy database object (flask.current_app.extensions['sqlalchemy'])
         """
-        dir_query_str = dir_path.replace(self.server_location, '')[1:]
-        file_location_entries = db.session.query(FileLocationModel) \
-            .filter(FileLocationModel.file_server_directories.like(func.concat(dir_query_str, '%'))) \
-            .join(FileModel, FileLocationModel.file_id == FileModel.id) \
-            .with_entities(func.count(FileLocationModel.id).label('count'), func.sum(FileModel.size).label('total_size')) \
-            .one()
-
-        self.files_effected = file_location_entries.count
-        self.data_effected = int(file_location_entries.total_size) if file_location_entries.total_size else 0
+        self.files_effected, self.data_effected = directory_contents_quantities(dir_path=dir_path,
+                                                                               server_location=self.server_location,
+                                                                               db=db)
         return self.files_effected, self.data_effected
 
     @staticmethod
