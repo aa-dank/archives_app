@@ -13,9 +13,9 @@ from urllib import parse
 
 
 # imports from this application
+import archives_application.archiver.forms as archiver_forms
 from archives_application.archiver.archival_file import ArchivalFile
 from archives_application import utils
-from archives_application.archiver.forms import *
 from archives_application.models import *
 from archives_application import db, bcrypt
 
@@ -202,7 +202,7 @@ def server_change():
     if form_request:
         # TODO raise error if multiple edits are submitted on single form
 
-        form = ServerChangeForm()
+        form = archiver_forms.ServerChangeForm()
         if form.validate_on_submit():
 
             user_email = current_user.email
@@ -275,6 +275,15 @@ def server_change():
     return flask.render_template('server_change.html', title='Make change to file server', form=form)
 
 
+@archiver.route("/batch_edit", methods=['GET', 'POST'])
+def batch_server_edit():
+    
+    # imported here to avoid circular import
+    from archives_application.archiver.server_edit import ServerEdit
+    form = archiver_forms.BatchServerEditForm()
+    pass
+
+
 @archiver.route("/upload_file", methods=['GET', 'POST'])
 @login_required
 def upload_file():
@@ -284,7 +293,7 @@ def upload_file():
     # import task function here to avoid circular import
     from archives_application.archiver.archiver_tasks import add_file_to_db_task
 
-    form = UploadFileForm()
+    form = archiver_forms.UploadFileForm()
     # set filing code choices from app config
     form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
     if form.validate_on_submit():
@@ -572,7 +581,7 @@ def inbox_item():
                 flask.session[current_user.email]['temporary files'] = []
             flask.session[current_user.email]['temporary files'].append(preview_image_url)
 
-        form = InboxItemForm()
+        form = archiver_forms.InboxItemForm()
         form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
 
         # If the flask.session has data previously entered in this form, then re-enter it into the form before rendering
@@ -803,7 +812,7 @@ def archived_or_not():
                     querying the database, or if the file is found in the database but
                     no locations are associated with it.
     """
-    form = ArchivedOrNotForm()
+    form = archiver_forms.ArchivedOrNotForm()
     if form.validate_on_submit():
         try:
             # Save file to temporary directory
@@ -1056,7 +1065,7 @@ def file_search():
     Endpoint for searching the file locations in the database for files that match the search term.
     """
 
-    form = FileSearchForm()
+    form = archiver_forms.FileSearchForm()
     csv_filename_prefix = "search_results_"
     timestamp_format = r'%Y%m%d%H%M%S'
     html_table_row_limit = 1000
@@ -1140,7 +1149,7 @@ def scrape_location():
     # import task here to avoid circular import
     from archives_application.archiver.archiver_tasks import scrape_location_files_task
 
-    form = ScrapeLocationForm()
+    form = archiver_forms.ScrapeLocationForm()
     if form.validate_on_submit():
         search_location = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=form.scrape_location.data,
                                                                     location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))

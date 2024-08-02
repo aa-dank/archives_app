@@ -7,6 +7,40 @@ from flask_wtf.file import FileField, FileRequired
 from .. import utils
 
 
+def path_validation_subroutine(path_form_field: StringField, path_type: str = None):
+    """
+    Ensures that the path exists and matches the type requirment
+    :param path_form_field: The form field that contains the path string
+    :param path_type: The type of path that is required. Either "file" or "dir"
+    """
+    if path_type not in ["file", "dir", None]:
+        raise ValueError("path_type must be either 'file' or 'dir'")
+    
+    if path_form_field.data:
+        path_validation_error = lambda mssg: ValidationError(f"{mssg}: \n{path_form_field.data}")
+        try:
+            network_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=path_form_field.data,
+                                                                     location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
+        except Exception as e:
+            raise ValidationError(f"Error converting user path to network path: \n{path_form_field.data}\n{e}")
+        
+        if not os.path.exists(network_path):
+            raise path_validation_error("Path doesn't exist")
+        
+        if path_type == "file" and not os.path.isfile(network_path):
+            raise path_validation_error("path is not a file")
+
+        if path_type == "dir" and not os.path.isdir(network_path):
+            raise path_validation_error("path is not a directory")
+
+
+def validate_str_path(form: FlaskForm, field: StringField):
+    """
+    Universal simple file and directory path validation function
+    """
+    path_validation_subroutine(field)
+
+
 class UploadFileForm(FlaskForm):
     project_number = StringField('Project Number')
     new_filename = StringField('New Filename')
@@ -46,15 +80,7 @@ class FileSearchForm(FlaskForm):
         """
         Ensures that the search location exists
         """
-        if search_location.data:
-            try:
-                network_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=search_location.data,
-                                                                         location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
-            except Exception as e:
-                raise ValidationError(f"Error converting user path to network path: \n{search_location.data}\n{e}")
-            
-            if not os.path.exists(network_path):
-                raise ValidationError(f"Search location doesn't exist: \n{search_location.data}")
+        path_validation_subroutine(search_location, path_type="dir")
 
 
 class ScrapeLocationForm(FlaskForm):
@@ -66,47 +92,24 @@ class ScrapeLocationForm(FlaskForm):
         """
         Ensures that the scraping location exists
         """
-        if scrape_location.data:
-            try:
-                network_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=scrape_location.data,
-                                                                         location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
-            except Exception as e:
-                raise ValidationError(f"Error converting user path to network path: \n{scrape_location.data}\n{e}")
-            
-            if not os.path.exists(network_path):
-                raise ValidationError(f"Search location doesn't exist: \n{scrape_location.data}")
+        path_validation_subroutine(scrape_location, path_type="dir")
 
 
 class ServerChangeForm(FlaskForm):
     # Place to enter path to asset to be deleted
-    path_delete = StringField('Path to asset to delete')
+    path_delete = StringField('Path to asset to delete', validators=[validate_str_path])
 
     # Enter a path to be changed, current_path, and then the path that it should be changed to
-    current_path = StringField('Path to Change')
+    current_path = StringField('Path to Change', validators=[validate_str_path])
     new_path = StringField('New Path')
 
     # Fields for moving a file
-    asset_path = StringField('Path to Asset')
+    asset_path = StringField('Path to Asset', validators=[validate_str_path])
     destination_path = StringField('Destination Directory Path')
 
     # Form field for adding a new directory
     new_directory = StringField('New Directory Path')
     submit = SubmitField('Execute Change')
-
-
-    def validate_path_delete(self, path_delete):
-        """
-        Ensures that the path to delete exists
-        """
-        if path_delete.data:
-            try:
-                network_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=path_delete.data,
-                                                                         location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
-            except Exception as e:
-                raise ValidationError(f"Error converting user path to network path: \n{path_delete.data}\n{e}")
-            
-            if not os.path.exists(network_path):
-                raise ValidationError(f"Destination location doesn't exist: \n{path_delete.data}")
 
     def validate_new_directory(self, new_directory):
         """
@@ -128,47 +131,28 @@ class ServerChangeForm(FlaskForm):
             if utils.contains_unicode(path_list[-1]):
                 raise ValidationError(f"Directory name contains unicode characters:\n{path_list[-1]}")
 
-    def validate_current_path(self, current_path):
+    def validate_destination_path(self, destination_path):
         """
-        Ensures that the current path exists
+        Ensures that the destination path exists and is a directory
         """
-        if current_path.data:
-            try:
-                network_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=current_path.data,
-                                                                         location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
-            except Exception as e:
-                raise ValidationError(f"Error converting user path to network path: \n{current_path.data}\n{e}")
-            
-            if not os.path.exists(network_path):
-                raise ValidationError(f"Destination location doesn't exist: \n{current_path.data}")
+        path_validation_subroutine(destination_path, path_type="dir")
+
+
+class BatchServerEditForm(FlaskForm):
+    asset_path = StringField('Path to Asset')
+    destination_path = StringField('Destination Directory Path')
+    remove_asset = BooleanField('Remove Asset', default=True)
+    submit = SubmitField('Execute Change')
 
     def validate_destination_path(self, destination_path):
         """
         Ensures that the destination path exists and is a directory
         """
-        if destination_path.data:
-            try:
-                network_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=destination_path.data,
-                                                                         location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
-            except Exception as e:
-                raise ValidationError(f"Error converting user path to network path: \n{destination_path.data}\n{e}")
-            
-            if not os.path.exists(network_path):
-                raise ValidationError(f"Destination location doesn't exist: \n{destination_path.data}")
+        path_validation_subroutine(destination_path, path_type="dir")
 
-            elif not os.path.isdir(network_path):
-                raise ValidationError(f"Destination location is not a directory: \n{destination_path.data}")
 
     def validate_asset_path(self, asset_path):
         """
         Ensures that the asset path exists
         """
-        if asset_path.data:
-            try:
-                network_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=asset_path.data,
-                                                                         location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
-            except Exception as e:
-                raise ValidationError(f"Error converting user path to network path: \n{asset_path.data}\n{e}")
-
-            if not os.path.exists(network_path):
-                raise ValidationError(f"Asset doesn't exist to move: \n{asset_path.data}")
+        path_validation_subroutine(asset_path, path_type="dir")
