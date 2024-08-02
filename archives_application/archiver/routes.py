@@ -208,7 +208,7 @@ def server_change():
             user_email = current_user.email
             
             # if the user has admin credentials, there are no limits
-            if 'ADMIN' in current_user.roles:
+            if has_admin_role(current_user):
                 files_limit, data_limit = 0, 0
 
             # If the user entered a path to delete
@@ -279,10 +279,106 @@ def server_change():
 def batch_server_edit():
     
     # imported here to avoid circular import
-    from archives_application.archiver.server_edit import ServerEdit
+    from archives_application.archiver.server_edit import ServerEdit, directory_contents_quantities
     form = archiver_forms.BatchServerEditForm()
-    pass
+    testing = False
 
+    # determine if the request is for testing the associated worker task
+    # if the testing worker task, the task will be executed on this process and
+    # not enqueued to be executed by the worker
+    if flask.request.args.get('test') and flask.request.args.get('test') == 'true' and has_admin_role(current_user):
+        testing = True
+    
+    # retrieve limits to how much can be changed on the server, but if the user has admin credentials,
+    # there are no limits and they are set to zero
+    files_limit = flask.current_app.config.get('SERVER_CHANGE_FILES_LIMIT')
+    data_limit = flask.current_app.config.get('SERVER_CHANGE_DATA_LIMIT')
+    archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+    
+    if form.validate_on_submit():
+        try:
+            user_email = current_user.email
+            
+            # if the user has admin credentials, there are no limits
+            if has_admin_role(current_user):
+                files_limit, data_limit = 0, 0
+            
+            user_asset_path = form.asset_path.data
+            app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_asset_path,
+                                                                       location_path_prefix=archives_location)
+            user_destination_path = form.destination_path.data
+            app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_asset_path,
+                                                                       location_path_prefix=archives_location)
+            remove_asset = form.remove_asset.data
+
+            files_num_effected, data_effected = directory_contents_quantities(dir_path=app_asset_path,
+                                                                              server_location=archives_location,
+                                                                              db = db)
+            if (files_limit and files_num_effected > files_limit) or (data_limit and data_effected > data_limit):
+                e_mssg = f"""
+                The content of the change requested.
+                Try splitting the change into smaller parts:
+                {app_asset_path}
+                Files effected: {files_num_effected}
+                Data effected: {data_effected}
+                """
+                raise Exception(e_mssg)
+            
+            for dir_item in os.listdir(app_asset_path):
+                user_item_path = os.path.join(user_asset_path, dir_item)
+                item_move_edit = ServerEdit(server_location=archives_location,
+                                            change_type='MOVE',
+                                            user=user_email,
+                                            new_path=user_destination_path,
+                                            old_path=user_item_path)
+                nq_results = item_move_edit.execute(files_limit=files_limit,
+                                                    effected_data_limit=data_limit,
+                                                    timeout=1200)
+                
+                # record the change in the database
+                dir_item_change_model = ServerChangeModel(old_path=item_move_edit.old_path,
+                                                          new_path=item_move_edit.new_path,
+                                                          change_type=item_move_edit.change_type,
+                                                          files_effected=item_move_edit.files_effected,
+                                                          data_effected=item_move_edit.data_effected,
+                                                          date=datetime.now(),
+                                                          user_id=current_user.id)
+                db.session.add(dir_item_change_model)
+            db.session.commit()
+
+            # if user requested for the now empty directory to be removed, we will remove it.
+            # But first we will check if the directory is empty.
+            if remove_asset:
+                if os.listdir(app_asset_path):
+                    e_mssg = f"After moving directory contents, the directory is not empty and cannot removed with this function:\n{app_asset_path}"
+                    raise Exception(e_mssg)
+
+                remove_asset_edit = ServerEdit(server_location=archives_location,
+                                              change_type='DELETE',
+                                              user=user_email,
+                                              old_path=user_asset_path)
+                remove_asset_edit.execute(timeout=1200)
+                remove_asset_change_model = ServerChangeModel(old_path=remove_asset_edit.old_path,
+                                                              new_path=remove_asset_edit.new_path,
+                                                              change_type=remove_asset_edit.change_type,
+                                                              files_effected=remove_asset_edit.files_effected,
+                                                              data_effected=remove_asset_edit.data_effected,
+                                                              date=datetime.now(),
+                                                              user_id=current_user.id)
+                db.session.add(remove_asset_change_model)
+                db.session.commit()
+
+            flask.flash(f"Requested batch change executed and recorded.", 'success')
+            return flask.redirect(flask.url_for('archiver.batch_server_edit'))
+
+        except Exception as e:
+            m = "Error processing or executing batch change"
+            return web_exception_subroutine(flash_message=m,
+                                            thrown_exception=e,
+                                            app_obj=flask.current_app)
+
+    return flask.render_template('batch_change.html', title='Batch Edit', form=form)
+            
 
 @archiver.route("/upload_file", methods=['GET', 'POST'])
 @login_required
@@ -362,7 +458,7 @@ def upload_file():
                 
                 # enqueue the task of adding the file to the database
                 add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': False} #TODO add archiving functionality for if the file is being uploaded by archivist
-                nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                                 enqueued_function=add_file_to_db_task,
                                                                 task_kwargs=add_file_kwargs,
                                                                 timeout=None)
@@ -455,12 +551,12 @@ def upload_file_api():
         if archiving_successful:
             # enqueue the task of adding the file to the database
             add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': False} #TODO add archiving functionality for if the file is being uploaded by archivist
-            nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+            nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                             enqueued_function=add_file_to_db_task,
                                                             task_kwargs=add_file_kwargs,
                                                             timeout=None)
-            nk_results = utils.serializable_dict(nk_results)
-            return flask.Response(json.dumps(nk_results), status=200)
+            nq_results = utils.serializable_dict(nq_results)
+            return flask.Response(json.dumps(nq_results), status=200)
         
         else:
             raise Exception(
@@ -546,7 +642,8 @@ def inbox_item():
         # Create the file preview image if it is a pdf
         arch_file_preview_image_path = None
         arch_file_path = os.path.join(user_inbox_path, arch_file_filename)
-        if arch_file_filename.split(".")[-1].lower() in ['pdf']:
+        str_filepath_extension = lambda pth: pth.split(".")[-1].lower() # function to get the file extension from a path string
+        if str_filepath_extension(arch_file_filename) in ['pdf']:
             try:
                 arch_file_preview_image_path = utils.FilesUtils.pdf_preview_image(pdf_path=arch_file_path,
                                                                               image_destination=utils.FlaskAppUtils.create_temp_filepath(''))
@@ -561,7 +658,7 @@ def inbox_item():
 
         # if the file is a tiff, create a preview image that can be rendered in html
         tiff_file_extensions = ['tif', 'tiff']
-        if arch_file_filename.split(".")[-1].lower() in tiff_file_extensions:
+        if str_filepath_extension(arch_file_filename) in tiff_file_extensions:
             arch_file_preview_image_path = utils.FilesUtils.convert_tiff(tiff_path=arch_file_path,
                                                                          destination_directory=utils.FlaskAppUtils.create_temp_filepath(''),
                                                                          output_file_type='png')
@@ -569,7 +666,7 @@ def inbox_item():
 
         # If the filetype can be rendered natively in html, copy file as preview of itself if the file is an image
         image_file_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp']
-        if arch_file_filename.split(".")[-1].lower() in image_file_extensions:
+        if str_filepath_extension(arch_file_filename) in image_file_extensions:
             preview_path = utils.FlaskAppUtils.create_temp_filepath(arch_file_filename)
             shutil.copy2(arch_file_path, preview_path)
             preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.FileServerUtils.split_path(preview_path)[-1])
@@ -616,7 +713,7 @@ def inbox_item():
             # and rerender the page.
             if form.download_item.data:
                 # boolean for whether to attempt opening the file in the browser
-                file_can_be_opened_in_browser = arch_file_filename.split(".")[-1].lower() in ['pdf', 'html']
+                file_can_be_opened_in_browser = str_filepath_extension(arch_file_filename) in ['pdf', 'html']
                 flask.session[current_user.email]['inbox_form_data'] = form.data
                 return flask.send_file(arch_file_path, as_attachment=not file_can_be_opened_in_browser)
 
@@ -687,7 +784,7 @@ def inbox_item():
 
                     # add the file to the database
                     add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': True}
-                    nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                    nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                                     enqueued_function=add_file_to_db_task,
                                                                     task_kwargs=add_file_kwargs,
                                                                     timeout=None)
@@ -916,16 +1013,16 @@ def scrape_files():
                             "exclusion_functions": [exclude_extensions, exclude_filenames],
                             "scrape_time": scrape_time,
                             "queue_id": scrape_job_id}
-            nk_call_kwargs = {'result_ttl': 43200}
-            nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+            nq_call_kwargs = {'result_ttl': 43200}
+            nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                             enqueued_function=scrape_file_data_task,
                                                             task_kwargs=scrape_params,
-                                                            enqueue_call_kwargs=nk_call_kwargs,
+                                                            enqueue_call_kwargs=nq_call_kwargs,
                                                             timeout=scrape_time.seconds + 60)
             
-            nk_results = {"enqueueing_results": utils.serializable_dict(nk_results),
+            nq_results = {"enqueueing_results": utils.serializable_dict(nq_results),
                           "scrape_task_params": utils.serializable_dict(scrape_params)}
-            return flask.Response(json.dumps(nk_results), status=200)
+            return flask.Response(json.dumps(nq_results), status=200)
 
         except Exception as e:
             mssg = "Error enqueuing task"
@@ -1008,15 +1105,15 @@ def confirm_db_file_locations():
             confirming_time = timedelta(minutes=confirming_time)
             confirm_params = {"archive_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
                               "confirming_time": confirming_time}
-            nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+            nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                             enqueued_function=confirm_file_locations_task,
                                                             task_kwargs=confirm_params,
                                                             timeout=confirming_time.seconds + 600)
             
             # prepare task enqueueing info for JSON serialization
-            nk_results = utils.serializable_dict(nk_results)
+            nq_results = utils.serializable_dict(nq_results)
             confirm_params['confirming_time'] = str(confirm_params['confirming_time'])
-            confirm_dict = {"enqueueing_results": nk_results, "confirmation_task_params": confirm_params}
+            confirm_dict = {"enqueueing_results": nq_results, "confirmation_task_params": confirm_params}
             return flask.Response(json.dumps(confirm_dict), status=200)
 
         except Exception as e:
@@ -1157,12 +1254,12 @@ def scrape_location():
         scrape_params = {'scrape_location': search_location,
                          'recursively': form.recursive.data,
                          'confirm_data': True}
-        nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+        nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                         enqueued_function=scrape_location_files_task,
                                                         task_kwargs=scrape_params,
                                                         timeout=3600)
-        id = nk_results.get("_id")
-        function_call = nk_results.get("description")
+        id = nq_results.get("_id")
+        function_call = nq_results.get("description")
         m = f"Scraping task has been successfully enqueued. Function Enqueued: {function_call}"
         flask.flash(m, 'success')
         return flask.redirect(flask.url_for('archiver.scrape_location'))

@@ -1,0 +1,65 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <form method="POST" action="" id="batch-server-edit-form">
+            {{ form.hidden_tag() }}
+            <fieldset class="form-group">
+                <legend class="border-bottom mb-4">Batch Server Edit</legend>
+                <div class="form-group">
+                    {{ form.asset_path.label(class="form-control-label") }}
+                    {% if form.asset_path.errors %}
+                        {{ form.asset_path(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.asset_path.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.asset_path(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    {{ form.destination_path.label(class="form-control-label") }}
+                    {% if form.destination_path.errors %}
+                        {{ form.destination_path(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.destination_path.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.destination_path(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    <div class="custom-control custom-checkbox">
+                        {{ form.remove_asset(class="custom-control-input") }}
+                        {{ form.remove_asset.label(class="custom-control-label") }}
+                    </div>
+                </div>
+            </fieldset>
+            <div class="form-group">
+                {{ form.submit(class="btn btn-outline-info", id="execute-button") }}
+            </div>
+        </form>
+    </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var form = document.getElementById('batch-server-edit-form');
+        if (form) {
+            form.addEventListener('submit', function(event) {
+                var button = document.getElementById('execute-button');
+                if (button) {
+                    button.value = 'Executing...';  // Change button text
+                    // Disable button to prevent double submission
+                    setTimeout(() => button.disabled = true, 10);
+                }
+                // Delay form submission to allow button text change
+                event.preventDefault();
+                setTimeout(() => HTMLFormElement.prototype.submit.call(form), 500);
+            });
+        }
+    });
+</script>
+{% endblock content %}
