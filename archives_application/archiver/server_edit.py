@@ -42,12 +42,11 @@ class ServerEdit:
     The change can be of the following types: DELETE, RENAME, MOVE, CREATE.
     """
     
-    def __init__(self, server_location, change_type, user, exclusion_functions: List[Callable[[str], bool]] = [], new_path: str=None, old_path: str=None):
+    def __init__(self, server_location, change_type, exclusion_functions: List[Callable[[str], bool]] = [], new_path: str=None, old_path: str=None):
         """
-        Initializes a ServerEdit object with the specified server location, change type, user, exclusion functions, new path, and old path.
+        Initializes a ServerEdit object with the specified server location, change type, exclusion functions, new path, and old path.
         :param server_location: The root directory of the file server.
         :param change_type: The type of change to be executed (DELETE, RENAME, MOVE, CREATE).
-        :param user: The user who initiated the change.
         :param exclusion_functions: A list of functions that take a file path as input and return True if the file should be excluded from the change, False otherwise.
         """
         self.server_location = server_location
@@ -68,7 +67,6 @@ class ServerEdit:
 
             if self.old_path == server_location:
                 raise Exception("Server root directory chosen")
-        self.user = user
         self.change_executed = False
         self.data_effected = 0
         self.files_effected = 0
@@ -592,4 +590,5 @@ class ServerEdit:
 
             utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=move_log)
             return move_log
+
 
