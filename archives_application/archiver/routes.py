@@ -238,7 +238,6 @@ def server_change():
         try:   
             server_edit = ServerEdit(server_location=archives_location,
                                      change_type=edit_type,
-                                     user=user_email,
                                      new_path=new_path,
                                      old_path=old_path)
             server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit, timeout=1200)
@@ -279,7 +278,8 @@ def server_change():
 def batch_server_edit():
     
     # imported here to avoid circular import
-    from archives_application.archiver.server_edit import ServerEdit, directory_contents_quantities
+    from archives_application.archiver.server_edit import directory_contents_quantities
+    from archives_application.archiver.archiver_tasks import batch_server_move_edits_task
     form = archiver_forms.BatchServerEditForm()
     testing = False
 
@@ -307,68 +307,47 @@ def batch_server_edit():
             app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_asset_path,
                                                                        location_path_prefix=archives_location)
             user_destination_path = form.destination_path.data
-            app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_asset_path,
-                                                                       location_path_prefix=archives_location)
             remove_asset = form.remove_asset.data
-
-            files_num_effected, data_effected = directory_contents_quantities(dir_path=app_asset_path,
-                                                                              server_location=archives_location,
-                                                                              db = db)
-            if (files_limit and files_num_effected > files_limit) or (data_limit and data_effected > data_limit):
-                e_mssg = f"""
-                The content of the change requested.
-                Try splitting the change into smaller parts:
-                {app_asset_path}
-                Files effected: {files_num_effected}
-                Data effected: {data_effected}
-                """
-                raise Exception(e_mssg)
-            
-            for dir_item in os.listdir(app_asset_path):
-                user_item_path = os.path.join(user_asset_path, dir_item)
-                item_move_edit = ServerEdit(server_location=archives_location,
-                                            change_type='MOVE',
-                                            user=user_email,
-                                            new_path=user_destination_path,
-                                            old_path=user_item_path)
-                nq_results = item_move_edit.execute(files_limit=files_limit,
-                                                    effected_data_limit=data_limit,
-                                                    timeout=1200)
-                
-                # record the change in the database
-                dir_item_change_model = ServerChangeModel(old_path=item_move_edit.old_path,
-                                                          new_path=item_move_edit.new_path,
-                                                          change_type=item_move_edit.change_type,
-                                                          files_effected=item_move_edit.files_effected,
-                                                          data_effected=item_move_edit.data_effected,
-                                                          date=datetime.now(),
-                                                          user_id=current_user.id)
-                db.session.add(dir_item_change_model)
-            db.session.commit()
-
-            # if user requested for the now empty directory to be removed, we will remove it.
-            # But first we will check if the directory is empty.
-            if remove_asset:
-                if os.listdir(app_asset_path):
-                    e_mssg = f"After moving directory contents, the directory is not empty and cannot removed with this function:\n{app_asset_path}"
+            if files_limit or data_limit:
+                files_num_effected, data_effected = directory_contents_quantities(dir_path=app_asset_path,
+                                                                                server_location=archives_location,
+                                                                                db = db)
+                if files_num_effected > files_limit or data_effected > data_limit:
+                    e_mssg = f"""
+                    The content of the change requested surpasses the limits set.
+                    Try splitting the change into smaller parts:
+                    {user_asset_path}
+                    Files effected: {files_num_effected}
+                    Data effected: {data_effected}
+                    """
                     raise Exception(e_mssg)
-
-                remove_asset_edit = ServerEdit(server_location=archives_location,
-                                              change_type='DELETE',
-                                              user=user_email,
-                                              old_path=user_asset_path)
-                remove_asset_edit.execute(timeout=1200)
-                remove_asset_change_model = ServerChangeModel(old_path=remove_asset_edit.old_path,
-                                                              new_path=remove_asset_edit.new_path,
-                                                              change_type=remove_asset_edit.change_type,
-                                                              files_effected=remove_asset_edit.files_effected,
-                                                              data_effected=remove_asset_edit.data_effected,
-                                                              date=datetime.now(),
-                                                              user_id=current_user.id)
-                db.session.add(remove_asset_change_model)
+            
+            batch_move_params = {"user_target_path": user_destination_path,
+                                 "user_destination_path": user_destination_path,
+                                 "user_id": current_user.id,
+                                 "remove_target": remove_asset}
+            
+            # if test call, execute the batch task on this process and return the results.
+            # Allows for simpler debugging of the task function.
+            if testing:
+                test_job_id = f"{batch_server_move_edits_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
+                new_task_record = WorkerTaskModel(task_id=test_job_id,
+                                                  time_enqueued=str(datetime.now()),
+                                                  origin='test',
+                                                  function_name=batch_server_move_edits_task.__name__,
+                                                  status= "queued")
+                db.session.add(new_task_record)
                 db.session.commit()
-
-            flask.flash(f"Requested batch change executed and recorded.", 'success')
+                batch_move_params['queue_id'] = test_job_id
+                batch_move_results = batch_server_move_edits_task(**batch_move_params)
+                return flask.jsonify(batch_move_results)
+            
+            # if not a test call, enqueue the task to be executed by the worker
+            nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                            enqueued_function=batch_server_move_edits_task,
+                                                            task_kwargs=batch_move_params,
+                                                            timeout=None)
+            
             return flask.redirect(flask.url_for('archiver.batch_server_edit'))
 
         except Exception as e:
@@ -1236,8 +1215,7 @@ def file_search():
     
     return flask.render_template('file_search.html', form=form)
             
-
-        
+      
 @archiver.route("/scrape_location", methods=['GET', 'POST'])
 def scrape_location():
     """
