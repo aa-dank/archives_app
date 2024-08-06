@@ -243,7 +243,7 @@ def server_change():
             server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit, timeout=1200)
 
             # record the change in the database
-            editor = UserModel.query.filter_by(email=server_edit.user).first()
+            editor = UserModel.query.filter_by(email=user_email).first()
             change_model = ServerChangeModel(old_path=server_edit.old_path,
                                              new_path=server_edit.new_path,
                                              change_type=server_edit.change_type,
@@ -322,10 +322,11 @@ def batch_server_edit():
                     """
                     raise Exception(e_mssg)
             
-            batch_move_params = {"user_target_path": user_destination_path,
+            batch_move_params = {"user_target_path": user_asset_path,
                                  "user_destination_path": user_destination_path,
                                  "user_id": current_user.id,
-                                 "remove_target": remove_asset}
+                                 "remove_target": remove_asset,
+                                 "removal_timeout": 1200}
             
             # if test call, execute the batch task on this process and return the results.
             # Allows for simpler debugging of the task function.
@@ -340,6 +341,7 @@ def batch_server_edit():
                 db.session.commit()
                 batch_move_params['queue_id'] = test_job_id
                 batch_move_results = batch_server_move_edits_task(**batch_move_params)
+                batch_move_results = utils.serializable_dict(batch_move_results)
                 return flask.jsonify(batch_move_results)
             
             # if not a test call, enqueue the task to be executed by the worker
@@ -347,7 +349,9 @@ def batch_server_edit():
                                                             enqueued_function=batch_server_move_edits_task,
                                                             task_kwargs=batch_move_params,
                                                             timeout=None)
-            
+            function_call = nq_results.get("description")
+            success_message = f"Batch move task enqueued (job id: {nq_results['_id']})\n{function_call}"
+            flask.flash(success_message, 'success')
             return flask.redirect(flask.url_for('archiver.batch_server_edit'))
 
         except Exception as e:
