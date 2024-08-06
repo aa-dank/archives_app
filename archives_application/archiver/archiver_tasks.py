@@ -443,16 +443,24 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
         return location_scrape_log
     
 
-def batch_server_move_edits_task(user_target_path, user_destination_path, user_id, queue_id, remove_target = True):
+def batch_server_move_edits_task(user_target_path, user_destination_path, user_id, queue_id, removal_timeout = 1200, remove_target = True):
     """
     Task function to be enqueued for enqueueing subsequent server move edits for moving contents of one directory to another directory.
+    Also removes the target directory if remove_target is True.
+    :param user_target_path: str: The path of the directory to be moved. Should be the path on the user's computer.
+    :param user_destination_path: str: The path of the directory to which the contents are to be moved. Should be the path on the user's computer.
+    :param user_id: int: The id of the user who initiated the move.
+    :param queue_id: str: The id of the task in the worker queue.
+    :param removal_timeout: int: While removing the target directory, the time to wait for the dependent tasks to complete.
+    :param remove_target: bool: If True, the target directory is removed after the contents are moved.
     """
     from archives_application.archiver.server_edit import ServerEdit
     with app.app_context():
-        log = {"task_id": queue_id, 'items_moved':[], 'errors':[]}
+        log = {"task_id": queue_id, 'items_moved':[], 'errors':[], 'removal':{}}
         db = flask.current_app.extensions['sqlalchemy']
         utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
         try:
+            nqed_move_tasks = []
             archive_location = flask.current_app.config.get('ARCHIVES_LOCATION')
             target_app_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_target_path,
                                                                         location_path_prefix=archive_location)
@@ -464,8 +472,10 @@ def batch_server_move_edits_task(user_target_path, user_destination_path, user_i
                                            old_path=user_item_path,
                                            new_path=user_destination_path,
                                            change_type='MOVE')
-                    item_edit.execute()
-                    
+                    edit_nq_result = item_edit.execute()
+                    nqed_move_tasks.append(edit_nq_result.get('task_id')) if edit_nq_result else None
+
+                    # record the move in the database
                     item_edit_model = ServerChangeModel(old_path = item_edit.old_path,
                                                         new_path = item_edit.new_path,
                                                         change_type = item_edit.change_type,
@@ -480,26 +490,68 @@ def batch_server_move_edits_task(user_target_path, user_destination_path, user_i
                     e_dict = {"Item": os.path.join(user_target_path, some_item),
                             "Exception": str(e)}
                     log["errors"].append(e_dict)
-        
             db.session.commit()
 
-            # if the target directory is to be removed, we remove it.
+            # if the target directory is to be removed, wait until the contents are moved to remove the target directory.
             if remove_target:
-
-                # if the target is not empty, raise an error
-                if os.listdir(user_target_path) != []:
-                    raise Exception(f'Target directory {user_target_path} is not empty after attempting to move contents to {user_destination_path}.')
-
-                # if the target is empty, we remove it.
-                os.rmdir(user_target_path)            
+                
+                # enque a task to remove the target directory after the contents have been moved.
+                removal_params = {"dependent_tasks": nqed_move_tasks,
+                                  "target_path": target_app_path,
+                                  "removal_timeout": removal_timeout}
+                nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                                enqueued_function=batch_move_target_removal_task,
+                                                                task_kwargs=removal_params)
+                log['removal'] = utils.serializable_dict(nq_results)
 
         except Exception as e:
             utils.FlaskAppUtils.attempt_db_rollback(db)
-            e_dict = {"Item": None,
-                      "Exception": str(e)}
-            log["errors"].append(e_dict)
+            log["errors"].append(e)
         
+        log = utils.serializable_dict(log)
         utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
         return log
 
+def batch_move_target_removal_task(dependent_tasks: list, target_path: str, queue_id, removal_timeout: int = 1200):
+    """
+    Sister task to batch_server_move_edits_task. Removes the target directory after the contents have been moved.
+    :param dependent_tasks: list: The list of task ids of the tasks that need to be completed before the target is removed.
+    :param target_path: str: The path of the directory to be removed.
+    :param queue_id: str: The id of this task in the worker queue.
+    :param removal_timeout: int: The time to wait for the dependent tasks to complete before removing the target directory.
+    """
+    def all_listed_tasks_completed(task_ids, db):
+        """
+        Checks if all the tasks in the list of task_ids are finished.
+        """
+        tasks_db_entries = db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id.in_(task_ids)).all()
+        return all([task.status in ['finished', 'failed'] for task in tasks_db_entries])
 
+
+    with app.app_context():
+        log = {"task_id": queue_id, 'errors': []}
+        db = flask.current_app.extensions['sqlalchemy']
+        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+        try:
+            # Sit in a loop until all the tasks in the list of dependent_tasks are finished.
+            start_time = time.time()
+            while not all_listed_tasks_completed(dependent_tasks, db):
+                if time.time() - start_time > 900:
+                    e_mssg = f'Timeout of 900 seconds reached before all dependent tasks could be completed.\nThe target was not removed.'
+                    raise Exception(e_mssg)
+                # pause for 5 seconds before checking again
+                time.sleep(5)
+
+            # if the target is not empty, raise an error
+            if os.listdir(target_path) != []:
+                raise Exception(f'Target directory {target_path} is not empty after attempting to move contents to {user_destination_path}.')
+
+            # if the target is empty, we remove it.
+            os.rmdir(target_path)            
+
+        except Exception as e:
+            log["errors"].append(e)
+        
+        log = utils.serializable_dict(log)
+        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+        return log
