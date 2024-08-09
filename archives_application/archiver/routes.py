@@ -349,8 +349,7 @@ def batch_server_edit():
                                                             enqueued_function=batch_server_move_edits_task,
                                                             task_kwargs=batch_move_params,
                                                             timeout=None)
-            function_call = nq_results.get("description")
-            success_message = f"Batch move task enqueued (job id: {nq_results['_id']})\n{function_call}"
+            success_message = f"Batch move task enqueued (job id: {nq_results['_id']})\nIt may take some time for the batch operation to complete."
             flask.flash(success_message, 'success')
             return flask.redirect(flask.url_for('archiver.batch_server_edit'))
 
@@ -634,7 +633,7 @@ def inbox_item():
                 preview_generated = True
             
             except Exception as e:
-                m = f"Issue creating preview image for th pdf file, {arch_file_filename}: (hint: Use 'Upload File' and/or check if the pdf is corrupted.)"
+                m = f"Issue creating preview image for the pdf file, {arch_file_filename}\n(hint: Use 'Upload File' and/or check if the pdf is corrupted.)"
                 return web_exception_subroutine(flash_message=m,
                                                 thrown_exception=e,
                                                 app_obj=flask.current_app)
