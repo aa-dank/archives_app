@@ -454,6 +454,7 @@ def batch_server_move_edits_task(user_target_path, user_destination_path, user_i
     :param removal_timeout: int: While removing the target directory, the time to wait for the dependent tasks to complete.
     :param remove_target: bool: If True, the target directory is removed after the contents are moved.
     """
+
     from archives_application.archiver.server_edit import ServerEdit
     with app.app_context():
         log = {"task_id": queue_id, 'items_moved':[], 'errors':[], 'removal':{}}
@@ -467,6 +468,7 @@ def batch_server_move_edits_task(user_target_path, user_destination_path, user_i
             target_contents = os.listdir(target_app_path)
             for some_item in target_contents:
                 try:
+
                     user_item_path = os.path.join(user_target_path, some_item)
                     item_edit = ServerEdit(server_location=archive_location,
                                            old_path=user_item_path,
@@ -525,7 +527,7 @@ def batch_move_target_removal_task(dependent_tasks: list, target_path: str, queu
         Checks if all the tasks in the list of task_ids are finished.
         """
         tasks_db_entries = db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id.in_(task_ids)).all()
-        return all([task.status in ['finished', 'failed'] for task in tasks_db_entries])
+        return all([task.status == 'finished' for task in tasks_db_entries])
 
 
     with app.app_context():

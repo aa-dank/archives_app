@@ -69,12 +69,12 @@ class ServerEdit:
                 raise Exception("Server root directory chosen")
         self.change_executed = False
         self.data_effected = 0
-        self.files_effected = 0
         
         # if the serveredit is a move, change, or edit, determine if the change is to a file or directory
         self.is_file = False
         if self.old_path:
             self.is_file = os.path.isfile(self.old_path)
+        self.files_effected = 1 if self.is_file else 0
 
     def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=15):
         """
@@ -139,7 +139,19 @@ class ServerEdit:
                                                       enqueued_function=task_func,
                                                       timeout=timeout)
         
-
+        def add_int_to_filename(filename: str, int_to_add: int):
+            """
+            Adds an integer to the filename before the file extension.
+            :param filename: str: The filename to which the integer is to be added.
+            :param int_to_add: int: The integer to add to the filename.
+            """
+            unique_suffix = f"_({int_to_add})"
+            filename_parts = filename.split('.')
+            if len(filename_parts) == 1:
+                return filename + unique_suffix
+            
+            return '.'.join(filename_parts[:-1]) + unique_suffix + '.' + filename
+        
         # If the change type is 'DELETE'
         if self.change_type.upper() == 'DELETE':
             enqueueing_results = {}
@@ -209,11 +221,20 @@ class ServerEdit:
         # if the change_type is 'MOVE'
         if self.change_type.upper() == 'MOVE':
             try:
-                if os.path.isfile(self.old_path):
+                if self.is_file:
                     filename = utils.FileServerUtils.split_path(self.old_path)[-1]
                     destination_path = os.path.join(self.new_path, filename)
-                    self.files_effected = 1
+                    
+                    # if the file already exists in the destination directory, add a unique suffix to the filename
+                    unique_filename_suffix_int = 0
+                    while os.path.exists(destination_path):
+                        unique_filename_suffix_int += 1
+                        new_filename = add_int_to_filename(filename, unique_filename_suffix_int)
+                        destination_path = os.path.join(self.new_path, new_filename)
+                    
+                    self.new_path = destination_path
                     self.data_effected = os.path.getsize(self.old_path)
+                    check_against_limits()
                     shutil.copyfile(src=self.old_path, dst=destination_path)
                     os.remove(self.old_path)
                     self.change_executed = True
@@ -227,10 +248,19 @@ class ServerEdit:
                     # cannot move a directory within itself
                     if self.new_path.startswith(self.old_path):
                         raise Exception(
-                            f"Cannot move a directory within itself. \nOld path: {self.old_path}\nNew path: {self.new_path}")
+                            f"Cannot move a directory within itself.\nOld path: {self.old_path}\nNew path: {self.new_path}")
+
+                    # if the directory already exists in the destination directory, add a unique suffix to the directory name
+                    base_dir_name = os.path.basename(self.old_path)
+                    unique_new_path = os.path.join(self.new_path, base_dir_name)
+                    unique_suffix_int = 0
+                    while os.path.exists(unique_new_path):
+                        unique_suffix_int += 1
+                        unique_new_path = os.path.join(self.new_path, base_dir_name + f"_({unique_suffix_int})")
+                        self.new_path = unique_new_path
 
                     # move directory and contents
-                    shutil.move(self.old_path, self.new_path, copy_function=shutil.copytree)
+                    shutil.move(self.old_path, unique_new_path, copy_function=shutil.copytree)
                     self.change_executed = True
               
                 enqueueing_results = enqueue_change_task(self.add_move_to_db_task)
