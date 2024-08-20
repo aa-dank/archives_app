@@ -130,9 +130,9 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                         # Get entries in Filemaker that exist but have different data 
                         # in the db for the 'name' and 'drawings' features. We will update these values.
                         merged_df = pd.merge(fm_projects_df, db_project_df,
-                                            left_on='ProjectNumber',
-                                            right_on='number',
-                                            suffixes=('_fm', '_db'))
+                                             left_on='ProjectNumber',
+                                             right_on='number',
+                                             suffixes=('_fm', '_db'))
                         update_name_data_df = merged_df[merged_df['ProjectName'] != merged_df['name']]
                         drawing_value_map = {"Yes": True, "yes": True, "YES": True, "NO": False, "No": False, "no": False}
                         map_fmp_drawing_vals = lambda x: drawing_value_map.get(x, None)

@@ -64,27 +64,6 @@ def google_creds_from_creds_json(creds_path):
 
     return client_id, client_secret
 
-
-def assemble_location(location):
-    """
-    This takes paths and modifies them to work on either windows or linux systems
-    @param location:
-    @return:
-    """
-    # TODO: need to test functionality more thoroughly
-    is_network_path = lambda some_path: (os.path.exists(r"\\" + some_path), os.path.exists(r"//" + some_path))
-    bck_slsh, frwd_slsh = is_network_path(location)
-
-    # if network location, process as such, including
-    if frwd_slsh:
-        location = r"//" + location
-        return location
-
-    if bck_slsh:
-        location = r"\\" + location
-        return location
-
-
 def assemble_postgresql_url(host, db_name, username, password="", port="", dialect="", ssl=""):
     '''
     Assembles a postgresql url from the component parameters.
@@ -145,9 +124,6 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
                                                                         password=config_dict["POSTGRESQL_PASSWORD"],
                                                                         port=config_dict["POSTGRESQL_PORT"],
                                                                         ssl=config_dict["POSTGRESQL_SSL"])
-
-    config_dict['ARCHIVES_LOCATION'] = assemble_location(location=config_dict['ARCHIVES_LOCATION'])
-    config_dict["ARCHIVIST_INBOX_LOCATION"] = assemble_location(location=config_dict["ARCHIVIST_INBOX_LOCATION"])
     config_dict['CONFIG_JSON_PATH'] = config_json_path
 
     # Assemble Redis url
