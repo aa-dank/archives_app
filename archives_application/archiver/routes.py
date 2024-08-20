@@ -200,11 +200,9 @@ def server_change():
     # if this is a user using the form to elicit a server change, we will validate the form
     # and retrieve ServerEdit object params
     if form_request:
-        # TODO raise error if multiple edits are submitted on single form
-
         form = archiver_forms.ServerChangeForm()
         if form.validate_on_submit():
-
+            # TODO raise error if multiple edits are submitted on single form
             user_email = current_user.email
             
             # if the user has admin credentials, there are no limits
@@ -589,7 +587,14 @@ def inbox_item():
 
     try:
         # Setup User inbox
+        # First test for existence of inbox
         inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
+        if not os.path.exists(inbox_path):
+            m = "The archivist inbox directory does not exist."
+            return web_exception_subroutine(flash_message=m,
+                                            thrown_exception=FileNotFoundError(f"Missing path: {inbox_path}"),
+                                            app_obj=flask.current_app)
+        
         user_inbox_path = os.path.join(inbox_path, get_user_handle())
         user_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
                                     os.path.isfile(os.path.join(user_inbox_path, thing)) and not ignore_file(thing)]

@@ -31,7 +31,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
 
     # logging format
     # example usage: https://github.com/tenable/flask-logging-demo
-    default_formatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
+    default_formatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s in %(pathname)s: %(message)s')
     
     # start app
     app = flask.Flask(__name__)
