@@ -159,6 +159,36 @@ def server_change():
     # imported here to avoid circular import
     from archives_application.archiver.server_edit import ServerEdit
 
+    def validate_single_change(form):
+        """
+        Checks if too many changes are requested in the form.
+        
+        Only one of the following pairs of form fields should have data:
+        - path_delete
+        - (current_path and new_path)
+        - (asset_path and destination_path)
+        - new_directory
+        
+        Returns:
+        - True if more than one pair has data.
+        - False otherwise.
+        """
+        changes_count = 0
+
+        if form.path_delete.data:
+            changes_count += 1
+
+        if form.current_path.data and form.new_path.data:
+            changes_count += 1
+
+        if form.asset_path.data and form.destination_path.data:
+            changes_count += 1
+
+        if form.new_directory.data:
+            changes_count += 1
+
+        return changes_count > 1
+
     roles_allowed = ['ADMIN', 'ARCHIVIST']
     has_correct_permissions = lambda user: any([role in user.roles.split(",") for role in roles_allowed])
     new_path = None
@@ -202,7 +232,11 @@ def server_change():
     if form_request:
         form = archiver_forms.ServerChangeForm()
         if form.validate_on_submit():
-            # TODO raise error if multiple edits are submitted on single form
+            # raise error if multiple edits are submitted on single form
+            if validate_single_change(form):
+                flask.flash("Too many changes requested. Please submit a single change at a time.", 'error')
+                return flask.redirect(flask.url_for('archiver.server_change'))
+
             user_email = current_user.email
             
             # if the user has admin credentials, there are no limits
