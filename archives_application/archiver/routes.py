@@ -272,7 +272,8 @@ def server_change():
                                      change_type=edit_type,
                                      new_path=new_path,
                                      old_path=old_path)
-            server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit, timeout=1200)
+            nq_results = server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit, timeout=1200)
+
 
             # record the change in the database
             editor = UserModel.query.filter_by(email=user_email).first()
@@ -286,13 +287,17 @@ def server_change():
             db.session.add(change_model)
             db.session.commit()
 
+            # retrieve change_model id and add it to the nq_results
+            nq_results['server change index'] = change_model.id
+
             # if this is a form request, we will flash a message and redirect to the server change form
             if form_request:
                 flask.flash(f"Requested '{edit_type}' change executed and recorded.", 'success')
                 return flask.redirect(flask.url_for('archiver.server_change'))
             
-            # if this is an API request, we will return a success message
-            return flask.Response("Success", status=200)
+            # if this is an API request, we will return 200 and enqueing results
+            nq_results = utils.serializable_dict(nq_results)
+            return flask.Response(json.dumps(nq_results), status=200)
 
         except Exception as e:
             m = "Error processing or executing change: "

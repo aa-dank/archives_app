@@ -105,8 +105,26 @@
                 </div>
             </fieldset>
             <div class="form-group">
-                {{ form.submit(class="btn btn-outline-info") }}
+                {{ form.submit(class="btn btn-outline-info", id="submit-button") }}
             </div>
         </form>
     </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var server_form = document.querySelector('form');
+            if (server_form) {
+                server_form.addEventListener('submit', function(event) {
+                    var button = document.getElementById('submit-button');
+                    if (button) {
+                        button.value = 'Processing...';  // Change button text
+                        // Disable the button to prevent double submission
+                        setTimeout(() => button.disabled = true, 10);
+                    }
+                    // Delay form submission to allow button text change
+                    event.preventDefault();
+                    setTimeout(() => HTMLFormElement.prototype.submit.call(server_form), 500);
+                });
+            }
+        });
+    </script>    
 {% endblock content %}
