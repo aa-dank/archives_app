@@ -306,6 +306,10 @@ def server_change():
                                                 thrown_exception=e,
                                                 app_obj=flask.current_app)
             
+            # for AttributeError("'NoneType' object has no attribute 'replace'")
+            if str(e) == "'NoneType' object has no attribute 'replace'":
+                m = "No old_path parameter provided: "
+
             return api_exception_subroutine(response_message=m, thrown_exception=e)
     
     return flask.render_template('server_change.html', title='Make change to file server', form=form)
