@@ -740,7 +740,7 @@ class RQTaskUtils:
     """
 
     @staticmethod
-    def enqueue_new_task(db, enqueued_function: callable, task_kwargs: dict = {}, enqueue_call_kwargs: dict = {}, timeout: Union[int, None] = None):
+    def enqueue_new_task(db, enqueued_function: callable, task_kwargs: dict = {}, enqueue_call_kwargs: dict = {}, task_info={}, timeout: Union[int, None] = None):
         """
         Adds a function to the rq task queue to be executed asynchronously. The function must have a paramater called 'queue_id' which will
         give the function access to the task id of the rq task. This can be used for updating the status of the task in the database.
@@ -749,7 +749,12 @@ class RQTaskUtils:
         :param timeout: timeout for the function. Measured in minutes.
         :return: Dictionary containing information about the task, including the task id.
         """
+        
         def random_string(length=5):
+            """
+            sub-function to generate a random string of a given length.
+            Used for creating unique task ids here.
+            """
             chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
             return ''.join(random.choice(chars) for _ in range(length))
 
@@ -772,7 +777,8 @@ class RQTaskUtils:
                                           time_enqueued=str(datetime.now()),
                                           origin=task.origin,
                                           function_name=enqueued_function.__name__,
-                                          status="queued")
+                                          status="queued",
+                                          task_results=task_info)
         db.session.add(new_task_record)
         db.session.commit()
         results = task.__dict__

@@ -76,6 +76,19 @@ class ServerEdit:
             self.is_file = os.path.isfile(self.old_path)
         self.files_effected = 1 if self.is_file else 0
 
+    def to_dict(self):
+        """
+        Returns a dictionary representation of the ServerEdit object.
+        """
+        return {'server_location': self.server_location,
+                'change_type': self.change_type,
+                'new_path': self.new_path,
+                'old_path': self.old_path,
+                'change_executed': self.change_executed,
+                'is_file': self.is_file,
+                'data_effected': self.data_effected,
+                'files_effected': self.files_effected}
+
     def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=15):
         """
         This function executes the server change that was specified during the creation of the ServerEdit object. The change can be of the following types:
@@ -111,7 +124,7 @@ class ServerEdit:
                     f"ServerEdit file limit breached. Too many files effected by change type '{self.change_type}.'\nOld path: {self.old_path}\nNew path: {self.new_path}")
 
 
-        def on_rm_error(func, path, exc_info):
+        def on_rmtree_error(func, path, exc_info):
             """
             This function is called by the shutil.rmtree function if it encounters an error while removing a directory.
             Attempts to change the permissions of the file or directory and try again. If the error persists, an exception is raised, 
@@ -135,9 +148,11 @@ class ServerEdit:
             :return: Dictionary containing the results of the enqueuing task.
             :rtype: dict
             """
+            task_info = utils.serializable_dict(self.to_dict())
             return utils.RQTaskUtils.enqueue_new_task(db=flask.current_app.extensions['sqlalchemy'],
                                                       enqueued_function=task_func,
-                                                      timeout=timeout)
+                                                      timeout=timeout,
+                                                      task_info=task_info)
         
         def add_int_to_filename(filename: str, int_to_add: int):
             """
@@ -174,7 +189,7 @@ class ServerEdit:
             check_against_limits()
 
             # remove directory and contents
-            shutil.rmtree(self.old_path, onerror=on_rm_error)
+            shutil.rmtree(self.old_path, onerror=on_rmtree_error)
             self.change_executed = True
             enqueueing_results = enqueue_change_task(self.add_deletion_to_db_task)
             enqueueing_results['change_executed'] = self.change_executed
