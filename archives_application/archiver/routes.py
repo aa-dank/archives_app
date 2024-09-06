@@ -385,10 +385,17 @@ def batch_server_edit():
                 batch_move_results = utils.serializable_dict(batch_move_results)
                 return flask.jsonify(batch_move_results)
             
-            # if not a test call, enqueue the task to be executed by the worker
+            # create batch_move info json dictionary
+            batch_move_info = {"parameters": batch_move_params,
+                               "files_limit": files_limit,
+                               "data_limit": data_limit,
+                               "data_effected": data_effected,
+                               "files_effected": files_num_effected}
+            # enqueue the task to be executed by the worker
             nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                             enqueued_function=batch_server_move_edits_task,
                                                             task_kwargs=batch_move_params,
+                                                            task_info=batch_move_info,
                                                             timeout=None)
             success_message = f"Batch move task enqueued (job id: {nq_results['_id']})\nIt may take some time for the batch operation to complete."
             flask.flash(success_message, 'success')
@@ -1283,9 +1290,11 @@ def scrape_location():
         scrape_params = {'scrape_location': search_location,
                          'recursively': form.recursive.data,
                          'confirm_data': True}
+        scrape_info = {'paprameters': scrape_params}
         nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                         enqueued_function=scrape_location_files_task,
                                                         task_kwargs=scrape_params,
+                                                        task_info=scrape_info,
                                                         timeout=3600)
         id = nq_results.get("_id")
         function_call = nq_results.get("description")
