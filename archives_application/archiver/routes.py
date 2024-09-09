@@ -346,7 +346,7 @@ def batch_server_edit():
             
             user_asset_path = form.asset_path.data
             app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_asset_path,
-                                                                       location_path_prefix=archives_location)
+                                                                       app=flask.current_app)
             user_destination_path = form.destination_path.data
             remove_asset = form.remove_asset.data
             if files_limit or data_limit:
@@ -1235,7 +1235,7 @@ def file_search():
             search_query = FileLocationModel.filepath_search_query(query_str=search_term, full_path=search_full_filepath)
             if form.search_location.data:
                 search_location = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=form.search_location.data,
-                                                                            location_path_prefix=archives_location)
+                                                                            app=flask.current_app)
                 search_location_list = utils.FileServerUtils.split_path(search_location)
                 mount_path_index = len(utils.FileServerUtils.split_path(archives_location))
                 search_location_search_term = os.path.join(*search_location_list[mount_path_index:])
@@ -1285,7 +1285,7 @@ def scrape_location():
     form = archiver_forms.ScrapeLocationForm()
     if form.validate_on_submit():
         search_location = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=form.scrape_location.data,
-                                                                    location_path_prefix=flask.current_app.config.get('ARCHIVES_LOCATION'))
+                                                                    app=flask.current_app)
         
         scrape_params = {'scrape_location': search_location,
                          'recursively': form.recursive.data,

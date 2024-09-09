@@ -20,7 +20,7 @@ def path_validation_subroutine(path_form_field: StringField, path_type: str = No
         path_validation_error = lambda mssg: ValidationError(f"{mssg}: \n{path_form_field.data}")
         try:
             network_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=path_form_field.data,
-                                                                     location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
+                                                                     app=flask.current_app)
         except Exception as e:
             raise ValidationError(f"Error converting user path to network path: \n{path_form_field.data}\n{e}")
         
@@ -117,7 +117,7 @@ class ServerChangeForm(FlaskForm):
         """
         if new_directory.data:
             network_directory = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=new_directory.data,
-                                                                          location_path_prefix=flask.current_app.config["ARCHIVES_LOCATION"])
+                                                                          app=flask.current_app)
             if os.path.exists(os.path.join(network_directory)):
                 raise ValidationError(f"Directory already exists:\n{new_directory.data}")
             

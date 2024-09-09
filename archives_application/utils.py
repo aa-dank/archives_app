@@ -429,15 +429,13 @@ class FlaskAppUtils:
     
 
     @staticmethod
-    def user_path_to_app_path(path_from_user, location_path_prefix):
-        '''
-        Converts the location entered by the user to a local_path that can be used by the application server.
-        Attempts to handle network paths and mounted windows paths from user.
-        Attempts to handle server location_path_prefix that are either network paths or linux mount paths.
-        @param path_from_user: path of asset from the user
-        @param location_path_prefix: Base location where the path_from_user can be found.
-        @return:
-        '''
+    def user_path_to_app_path(path_from_user, app: flask.app.Flask):
+        """
+        Uses setting from app config to convert a user entered path to a path that can be used by the application.
+        Also checks if the path is a network url and if it is, maps it to the mounted location on the server.
+        :param path_from_user: path or url string
+        :param app: the flask app
+        """
 
         def matches_network_url(some_path: str):
             """
@@ -486,7 +484,7 @@ class FlaskAppUtils:
 
         # If we are not using a network url then the location prefix is the mount location on either a windows or
         # linux machine.
-        if not matches_network_url(location_path_prefix):
+        if not matches_network_url(app.config.get('ARCHIVES_LOCATION')):
 
             if matches_network_url(path_from_user):
                 # mapping a network url entered by the user to the linux mount location equivalent is a difficult problem.
@@ -496,8 +494,11 @@ class FlaskAppUtils:
             path_from_user = PureWindowsPath(path_from_user)
             user_path_list = list(path_from_user.parts)
 
-            server_mount_path_list = FileServerUtils.split_path(location_path_prefix)
-            local_path_list = server_mount_path_list + user_path_list[1:]
+            server_mount_path_list = FileServerUtils.split_path(app.config.get('ARCHIVES_LOCATION'))
+            user_server_location_list = FileServerUtils.split_path(app.config.get('USER_ARCHIVES_LOCATION'))
+            
+            # combine the paths to get thepath from the app to the user location
+            local_path_list = server_mount_path_list + user_path_list[len(user_server_location_list):]
             app_path = os.path.join(*local_path_list)
             return app_path
 

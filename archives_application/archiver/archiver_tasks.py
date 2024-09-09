@@ -464,7 +464,7 @@ def batch_server_move_edits_task(user_target_path, user_destination_path, user_i
             nqed_move_tasks = []
             archive_location = flask.current_app.config.get('ARCHIVES_LOCATION')
             target_app_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_target_path,
-                                                                        location_path_prefix=archive_location)
+                                                                        app=flask.current_app)
             target_contents = os.listdir(target_app_path)
             for some_item in target_contents:
                 try:
