@@ -55,12 +55,12 @@ class ServerEdit:
         self.new_path = None
         if new_path:
             self.new_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=new_path,
-                                                                      location_path_prefix=server_location)
+                                                                      app=flask.current_app)
 
         self.old_path = None
         if old_path:
             self.old_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=old_path,
-                                                                      location_path_prefix=server_location)
+                                                                      app=flask.current_app)
             if not os.path.exists(self.old_path):
                 e_message = f"Path to asset does not exists: {self.new_path}\nEntered path: {old_path}"
                 raise Exception(e_message)
