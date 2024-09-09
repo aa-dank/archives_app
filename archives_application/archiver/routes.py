@@ -349,10 +349,10 @@ def batch_server_edit():
                                                                        app=flask.current_app)
             user_destination_path = form.destination_path.data
             remove_asset = form.remove_asset.data
+            files_num_effected, data_effected = directory_contents_quantities(dir_path=app_asset_path,
+                                                                              server_location=archives_location,
+                                                                              db = db)
             if files_limit or data_limit:
-                files_num_effected, data_effected = directory_contents_quantities(dir_path=app_asset_path,
-                                                                                server_location=archives_location,
-                                                                                db = db)
                 if files_num_effected > files_limit or data_effected > data_limit:
                     e_mssg = f"""
                     The content of the change requested surpasses the limits set.
