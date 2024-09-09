@@ -3,21 +3,23 @@ import fitz
 import flask
 import flask_sqlalchemy
 import hashlib
-import subprocess
-import random
-import re
 import os
 import pandas as pd
 import psutil
+import random
+import re
+import redis
+import subprocess
 import sys
 from datetime import datetime
 from flask_login import current_user
 from functools import wraps
-from PIL import Image, ImageFilter
 from pathlib import Path, PureWindowsPath
+from PIL import Image, ImageFilter
 from sqlalchemy import select
 from sqlalchemy.sql.expression import func
 from typing import Union, List, Dict
+
 from archives_application.models import WorkerTaskModel
 
 def contains_unicode(text):
@@ -771,8 +773,12 @@ class RQTaskUtils:
         enqueue_call_kwargs['timeout'] = timeout
         enqueue_call_kwargs['func'] = enqueued_function
         enqueue_call_kwargs['kwargs'] = task_kwargs
+        try:
+            task = flask.current_app.q.enqueue_call(**enqueue_call_kwargs)
 
-        task = flask.current_app.q.enqueue_call(**enqueue_call_kwargs)
+        except redis.exceptions.ConnectionError:
+            raise ConnectionError("Failed to connect to the Redis instance. Please ensure that the Redis server is running and accessible.")
+
         new_task_record = WorkerTaskModel(task_id=job_id,
                                           time_enqueued=str(datetime.now()),
                                           origin=task.origin,
