@@ -160,6 +160,11 @@ def restart_app_task(queue_id: str, delay: int = 0):
         return log
 
 
+def restart_app_workers_task(queue_id: str, delay: int = 0):
+    #TODO: Implement this function and incorporate it into the app config change endpoint
+    pass
+
+
 def db_backup_task(queue_id: str):
     """
     Worker task for sending pg_dump command to shell and saving a compressed backup to the server.
