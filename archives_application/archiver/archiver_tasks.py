@@ -197,7 +197,8 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
                             scrape_log["Files Added"] += 1
 
                         path_list = utils.FileServerUtils.split_path(file)
-                        # This is for if there is a file in the root directory of the share (eg R:\some_file.pdf) )
+                        # This is for if there is a file in the root directory of the share
+                        # (eg R:\some_file.pdf or N:\PPDORecords\some_file.pdf)
                         file_server_dirs = ""
                         if path_list[file_server_root_index:-1] != []:
                             file_server_dirs = os.path.join(*path_list[file_server_root_index:-1])
