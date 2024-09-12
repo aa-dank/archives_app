@@ -45,6 +45,13 @@ def filemaker_reconciliation():
     The purpose of this endpoint is to ensure that any changes made to the FileMaker database are reflected in the
     application database. This is done by comparing the FileMaker database to the application database and making
     changes to the application database as needed.
+    Request parameters:
+        user: email of the user making the request (Required)
+        password: password of the user making the request (Required)
+        confirm_locations: whether to confirm the locations of projects in the application database
+        update_projects: whether to update the projects in the application database
+
+    :return: JSON response with the results of the reconciliation
     """
     
     from archives_application.project_tools.project_tools_tasks import fmp_caan_project_reconciliation_task
@@ -73,9 +80,9 @@ def filemaker_reconciliation():
     if request_is_authenticated:
         # extract fmp_caan_project_reconciliation_task params from request
         to_confirm = flask.request.args.get('confirm_locations')
-        to_confirm = True if to_confirm.lower() == "true" else False
+        to_confirm = True if (to_confirm and to_confirm.lower() == "true") else False
         to_update = flask.request.args.get('update_projects')
-        to_update = True if to_update.lower() == "true" else False
+        to_update = True if (to_update and to_update.lower() == "true") else False
 
 
         task_kwargs = {"confirm_locations": to_confirm,
