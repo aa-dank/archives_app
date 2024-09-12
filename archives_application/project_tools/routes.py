@@ -60,6 +60,8 @@ def filemaker_reconciliation():
     # User needs to have ADMIN role.
     request_is_authenticated = False
     try:
+        user_param = None
+        password_param = None
         if flask.request.args.get('user'):
             user_param = flask.request.args.get('user')
             password_param = flask.request.args.get('password')
@@ -85,10 +87,14 @@ def filemaker_reconciliation():
         to_update = True if (to_update and to_update.lower() == "true") else False
 
 
-        task_kwargs = {"confirm_locations": to_confirm,
-                       "update_projects": to_update}
+        task_info = {"confirm_locations": to_confirm,
+                     "update_projects": to_update,
+                     "user": user_param if user_param else current_user.email,
+                     "password": password_param if password_param else "logged_in_user"}  
+        task_kwargs = {"confirm_locations": to_confirm, "update_existing": to_update}
         nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                         enqueued_function=fmp_caan_project_reconciliation_task,
+                                                        task_info=task_info,
                                                         task_kwargs=task_kwargs)
         return flask.Response(json.dumps(utils.serializable_dict(nk_results)), status=200)
     else:
@@ -110,8 +116,11 @@ def test_fmp_reconciliation():
     
     to_confirm = flask.request.args.get('confirm_locations')
     to_confirm = True if (to_confirm and to_confirm.lower() == "true") else False
+    update_existing = flask.request.args.get('update_projects')
+    update_existing = True if (update_existing and update_existing.lower() == "true") else False
     task_results = fmp_caan_project_reconciliation_task(queue_id=recon_job_id,
-                                                        confirm_locations=to_confirm)
+                                                        confirm_locations=to_confirm,
+                                                        update_existing=update_existing)
     
     # prepare scrape results for JSON serialization
     return flask.Response(json.dumps(task_results), status=200)
