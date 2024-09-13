@@ -175,9 +175,12 @@ def app_maintenance():
 @main.route("/admin/config", methods=['GET', 'POST'])
 @FlaskAppUtils.roles_required(['ADMIN'])
 def change_config_settings():
-
+    """
+    Endpoint for changing the configuration settings of the application.
+    After editing the configuration json file, the application will restart.
+    """
     # import task here to avoid circular import
-    from archives_application.main.main_tasks import restart_app_task
+    from archives_application.main.main_tasks import restart_app_task, restart_app_workers_task
 
 
     config_dict = {}
@@ -210,9 +213,13 @@ def change_config_settings():
                 json.dump(config_dict, config_file)
 
             restart_params = {'delay': 15}
-            nk_result = RQTaskUtils.enqueue_new_task(db=db,
-                                                     enqueued_function=restart_app_task,
-                                                     task_kwargs=restart_params)
+            app_restart_nq_result = RQTaskUtils.enqueue_new_task(db=db,
+                                                                 enqueued_function=restart_app_task,
+                                                                 task_kwargs=restart_params)
+            
+            workers_resart_nq_results = RQTaskUtils.enqueue_new_task(db=db,
+                                                                     enqueued_function=restart_app_workers_task,
+                                                                     task_kwargs=restart_params)
             
             flask.flash("Values entered were stored in the config file. Application restart is immenent.", 'success')
             return flask.redirect(flask.url_for('main.home'))
@@ -243,6 +250,9 @@ def test_logging():
 @main.route("/test/database_info")
 @FlaskAppUtils.roles_required(['ADMIN'])
 def get_db_uri():
+    """
+    Display the current database uri and the status of the database connection pool.
+    """
     status = db.engine.pool.status()
     info = {
         "database_url": flask.current_app.config.get("SQLALCHEMY_DATABASE_URI"),

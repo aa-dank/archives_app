@@ -121,7 +121,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 fm_projects_df['ProjectNumber'] = fm_projects_df['ProjectNumber'].str.strip()
 
                 missing_from_db = fm_projects_df.copy()
-                if not db_project_df.empty:
+                if not db_project_df.empty: # if there are projects in the db
                     # get entries in FileMaker that are not in the db
                     missing_from_db = fm_projects_df[~fm_projects_df['ProjectNumber'].isin(db_project_df['number'])]
                     
