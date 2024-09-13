@@ -104,6 +104,9 @@ def filemaker_reconciliation():
 @project_tools.route("/test/fmp_reconciliation", methods=['GET', 'POST'])
 @utils.FlaskAppUtils.roles_required(['ADMIN'])
 def test_fmp_reconciliation():
+    """
+    Endpoint for testing the task that reconciles the application database with the FileMaker database, fmp_caan_project_reconciliation_task.
+    """
     from archives_application.project_tools.project_tools_tasks import fmp_caan_project_reconciliation_task
     recon_job_id = f"{fmp_caan_project_reconciliation_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
     new_task_record = WorkerTaskModel(task_id=recon_job_id,
@@ -128,6 +131,9 @@ def test_fmp_reconciliation():
 
 @project_tools.route("/caan_drawings/<caan>", methods=['GET', 'POST'])
 def caan_drawings(caan):
+    """
+    Endpoint for displaying drawings for a given CAAN.
+    """
 
     def project_drawing_location(project_location, archives_location, network_location, drawing_folder_prefix = "f5"):
         """
