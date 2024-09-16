@@ -180,7 +180,22 @@ def change_config_settings():
     After editing the configuration json file, the application will restart.
     """
     # import task here to avoid circular import
-    from archives_application.main.main_tasks import restart_app_task, restart_app_workers_task
+    from archives_application.main.main_tasks import restart_app_task
+
+    def restart_app_workers():
+        """
+        Function to restart the application workers.
+        """
+        cmd = flask.current_app.config.get("APP_WORKERS_RESTART_COMMAND")
+        if not cmd:
+            raise ValueError("APP_WORKERS_RESTART_COMMAND not found in app config.")
+        cmd_result = subprocess.run(cmd,
+                                    shell=True,
+                                    stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE, # This is necessary to capture the output of the command
+                                    stderr=subprocess.PIPE,
+                                    text=True)
+        return cmd_result
 
 
     config_dict = {}
@@ -211,15 +226,19 @@ def change_config_settings():
 
             with open(config_filepath, 'w') as config_file:
                 json.dump(config_dict, config_file)
+            
+            # restart the application workers
+            worker_restart_results = restart_app_workers()
+            # if the worker restart command failed, raise an error
+            print(worker_restart_results) # TODO remove this line
+            if worker_restart_results.returncode != 0:
+                raise ValueError(f"Error restarting application workers: {worker_restart_results.stderr}")
 
+            # restart the application
             restart_params = {'delay': 15}
             app_restart_nq_result = RQTaskUtils.enqueue_new_task(db=db,
                                                                  enqueued_function=restart_app_task,
                                                                  task_kwargs=restart_params)
-            
-            workers_resart_nq_results = RQTaskUtils.enqueue_new_task(db=db,
-                                                                     enqueued_function=restart_app_workers_task,
-                                                                     task_kwargs=restart_params)
             
             flask.flash("Values entered were stored in the config file. Application restart is immenent.", 'success')
             return flask.redirect(flask.url_for('main.home'))
@@ -260,6 +279,7 @@ def get_db_uri():
     }
     return info
 
+
 @main.route("/test/see_config")
 @FlaskAppUtils.roles_required(['ADMIN'])
 def get_app_config():
@@ -280,7 +300,10 @@ def get_app_config():
         "filemaker_host_location": flask.current_app.config.get("FILEMAKER_HOST_LOCATION"),
         "filemaker_user": flask.current_app.config.get("FILEMAKER_USER"),
         "filemaker_password": flask.current_app.config.get("FILEMAKER_PASSWORD"),
-        "filemaker_database": flask.current_app.config.get("FILEMAKER_DATABASE_NAME")
+        "filemaker_database": flask.current_app.config.get("FILEMAKER_DATABASE_NAME"),
+        "app_workers_restart_command": flask.current_app.config.get("APP_WORKERS_RESTART_COMMAND"),
+        "app_restart_command": flask.current_app.config.get("APP_RESTART_COMMAND"),
+
     }
     return info
 
