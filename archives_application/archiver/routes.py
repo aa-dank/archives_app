@@ -414,7 +414,7 @@ def batch_server_edit():
 @login_required
 def upload_file():
     """
-    This function handles the upload of a single file to the server.
+    This function handles the upload of a single file to the file server.
     """
     # import task function here to avoid circular import
     from archives_application.archiver.archiver_tasks import add_file_to_db_task

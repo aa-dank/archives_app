@@ -141,39 +141,15 @@ def restart_app_task(queue_id: str, delay: int = 0):
     :param delay: the number of seconds to wait before restarting the app
     """
     with app.app_context():
-        db = flask.current_app.extensions['sqlalchemy']
-        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-        log = {"task_id": queue_id, "errors": []}
-        cmd = "sudo supervisorctl restart archives_app"
-        time.sleep(delay)
         try:
-            cmd_result = subprocess.run(cmd,
-                                        shell=True,
-                                        stdin=subprocess.PIPE,
-                                        stdout=subprocess.PIPE, # This is necessary to capture the output of the command
-                                        stderr=subprocess.PIPE,
-                                        text=True)
-            log["cmd_result"] = cmd_result
-        except Exception as e:
-            log["errors"].append({"error": e, "stack_trace": str(e.__traceback__)})
-        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
-        return log
-
-
-def restart_app_workers_task(queue_id: str, delay: int = 0):
-    """
-    This task will restart the app workers using the supervisorctl command.
-    :param queue_id: the id of the task in the RQ queue
-    :param delay: the number of seconds to wait before restarting the app workers
-    """
-
-    with app.app_context():
-        db = flask.current_app.extensions['sqlalchemy']
-        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-        log = {"task_id": queue_id, "errors": []}
-        cmd = "sudo supervisorctl restart rq_worker:rq_worker-0"
-        time.sleep(delay)
-        try:
+            db = flask.current_app.extensions['sqlalchemy']
+            utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            log = {"task_id": queue_id, "errors": []}
+            cmd = app.config.get("APP_RESTART_COMMAND")
+            if not cmd:
+                raise ValueError("APP_RESTART_COMMAND not found in app config.")
+            
+            time.sleep(delay)
             cmd_result = subprocess.run(cmd,
                                         shell=True,
                                         stdin=subprocess.PIPE,
