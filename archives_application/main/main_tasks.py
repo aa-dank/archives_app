@@ -159,6 +159,8 @@ def restart_app_task(queue_id: str, delay: int = 0):
             log["cmd_result"] = cmd_result
         except Exception as e:
             log["errors"].append({"error": e, "stack_trace": str(e.__traceback__)})
+        
+        log = utils.serializable_dict(log)
         utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
         return log
 

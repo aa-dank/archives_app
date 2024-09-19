@@ -791,6 +791,23 @@ class RQTaskUtils:
         results = task.__dict__
         results["task_id"] = job_id
         return results
+    
+    @staticmethod
+    def update_task_subroutine(sql_db, q_id, new_status=None, task_results=None):
+        """
+        Updates the status of a task in the database.
+        :param task_id: the id of the task to be updated
+        :param new_status: the new status of the task
+        """
+        task_db_updates = {}
+        if task_results:
+            task_db_updates["task_results"] = task_results
+        
+        if new_status:
+            task_db_updates["status"] = new_status
+
+        sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(task_db_updates)
+        sql_db.session.commit()
 
     @staticmethod
     def initiate_task_subroutine(q_id, sql_db):

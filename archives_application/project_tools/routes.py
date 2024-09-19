@@ -50,6 +50,7 @@ def filemaker_reconciliation():
         password: password of the user making the request (Required)
         confirm_locations: whether to confirm the locations of projects in the application database
         update_projects: whether to update the projects in the application database
+        timeout: the maximum time in seconds that the task is allowed to run
 
     :return: JSON response with the results of the reconciliation
     """
@@ -59,6 +60,7 @@ def filemaker_reconciliation():
     # Check if the request includes user credentials or is from a logged in user. 
     # User needs to have ADMIN role.
     request_is_authenticated = False
+    default_timeout = 18000 # 5 hours
     try:
         user_param = None
         password_param = None
@@ -85,18 +87,19 @@ def filemaker_reconciliation():
         to_confirm = True if (to_confirm and to_confirm.lower() == "true") else False
         to_update = flask.request.args.get('update_projects')
         to_update = True if (to_update and to_update.lower() == "true") else False
-
+        timeout = flask.request.args.get('timeout') if flask.request.args.get('timeout') else default_timeout
 
         task_info = {"confirm_locations": to_confirm,
                      "update_projects": to_update,
                      "user": user_param if user_param else current_user.email,
                      "password": password_param if password_param else "logged_in_user"}  
         task_kwargs = {"confirm_locations": to_confirm, "update_existing": to_update}
-        nk_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+        nq_kwargs = {"job_timeout": timeout}
+        nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                         enqueued_function=fmp_caan_project_reconciliation_task,
                                                         task_info=task_info,
                                                         task_kwargs=task_kwargs)
-        return flask.Response(json.dumps(utils.serializable_dict(nk_results)), status=200)
+        return flask.Response(json.dumps(utils.serializable_dict(nq_results)), status=200)
     else:
         return flask.Response("Unauthorized", status=401)
         

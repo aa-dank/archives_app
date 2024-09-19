@@ -994,7 +994,7 @@ def scrape_files():
     begin at the scrape
     Use the 'user' argument to specify the user to use for the scrape.
     Use the 'password' argument to specify the password for the user.
-    Use the 'scrape_time' to specify how long the scrape should run for.
+    Use the 'scrape_time' to specify how long the scrape should run for. 
     """
     # import task here to avoid circular import
     from archives_application.archiver.archiver_tasks import scrape_file_data_task
@@ -1034,6 +1034,8 @@ def scrape_files():
                             "exclusion_functions": [exclude_extensions, exclude_filenames],
                             "scrape_time": scrape_time,
                             "queue_id": scrape_job_id}
+            
+            # set the result_ttl to 12 hours (43200 seconds) so that the results are not deleted from Redis
             nq_call_kwargs = {'result_ttl': 43200}
             nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                             enqueued_function=scrape_file_data_task,

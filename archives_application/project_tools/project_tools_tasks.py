@@ -49,11 +49,11 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
             except Exception as e:
                 return pd.DataFrame(), e
 
-        recon_log = {"CAAN": {"added": [], "removed": []},
-                     "project": {"added": [], "removed": []},
-                     "project-caans": {"added": [], "removed": []},
-                     "locations confirmed": 0,
-                     "projects updated": {"name": [], "drawings": []},
+        recon_log = {"CAAN": {"added": [], "removed": [], 'completed': False},
+                     "project": {"added": [], "removed": [], 'completed': False},
+                     "project-caans": {"added": [], "removed": [], 'completed': False},
+                     "locations confirmed": {"completed": False, "count": 0},
+                     "projects updated": {"name": [], "drawings": [], 'completed': False},
                      "errors": []}
         
         # Increase the timeout for the fmrest server
@@ -101,8 +101,11 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                         
                         db.session.delete(caan)
                         recon_log['CAAN']['removed'].append(row['caan'])
-                
+                recon_log['CAAN']['completed'] = True
                 db.session.commit()
+
+                #update database task entry
+                utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, task_result=recon_log)
             
         except Exception as e:
             utils.FlaskAppUtils.attempt_db_rollback(db)
@@ -186,6 +189,10 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                         recon_log['project']['removed'].append(row['number'])
                     db.session.commit()
                 
+                # update database task entry
+                recon_log['project']['completed'] = True
+                utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, task_result=recon_log)
+                
                 # if confirm_locations is true, confirm the file server locations for projects that are in the db 
                 # (but not the ones that were just added)
                 if confirm_locations and not db_project_df.empty:
@@ -207,9 +214,13 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                                 continue
                             recon_log['errors'].append({"message": f"Error confirming location for {row['number']}:",
                                                         "exception": str(e)})
-                    recon_log['locations confirmed'] = locations_confirmed
+                    recon_log['locations confirmed']['count'] = locations_confirmed
                     db.session.commit()
-                
+
+                    # update database task entry
+                    recon_log['locations confirmed']['completed'] = True
+                    utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, task_result=recon_log)
+
                 # Update projects that have different names or drawings values in FileMaker
                 for _, row in update_name_data_df.iterrows():
                     project = ProjectModel.query.filter_by(number=row['ProjectNumber']).first()
@@ -222,6 +233,10 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                     project.drawings = row.get('fmp_drawings', None)
                     recon_log['projects updated']['drawings'].append(row['ProjectNumber'])
                 db.session.commit()
+
+                # update database task entry
+                recon_log['projects updated']['completed'] = True
+                utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, task_result=recon_log)
 
         except Exception as e:
             utils.FlaskAppUtils.attempt_db_rollback(db)
