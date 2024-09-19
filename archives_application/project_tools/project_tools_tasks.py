@@ -49,12 +49,16 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
             except Exception as e:
                 return pd.DataFrame(), e
 
-        recon_log = {"CAAN": {"added": [], "removed": [], 'completed': False},
-                     "project": {"added": [], "removed": [], 'completed': False},
-                     "project-caans": {"added": [], "removed": [], 'completed': False},
-                     "locations confirmed": {"completed": False, "count": 0},
-                     "projects updated": {"name": [], "drawings": [], 'completed': False},
-                     "errors": []}
+        recon_log = {
+            "Filemaker Projects": {"count": 0,'completed': False},
+            "Filemaker CAANs": {"count": 0, 'completed': False},
+            "CAAN": {"added": [], "removed": [], 'completed': False},
+            "project": {"added": [], "removed": [], 'completed': False},
+            "project-caans": {"added": [], "removed": [], 'completed': False},
+            "locations confirmed": {"completed": False, "count": 0},
+            "projects updated": {"name": [], "drawings": [], 'completed': False},
+            "errors": []
+            }
         
         # Increase the timeout for the fmrest server
         fmrest.utils.TIMEOUT = 300
@@ -64,12 +68,21 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
             fm_caan_df, fm_caan_error = all_fm_records(FILEMAKER_CAAN_LAYOUT)
             if fm_caan_error:
                 recon_log['errors'].append({"message": "Error retrieving FileMaker CAAN data:", "exception": str(fm_caan_error)})
+            else:
+                recon_log['Filemaker CAANs']['count'] = len(fm_caan_df)
+                recon_log['Filemaker CAANs']['completed'] = True
             fm_projects_df, fm_projects_error = all_fm_records(FILEMAKER_PROJECTS_LAYOUT)
             if fm_projects_error:
                 recon_log['errors'].append({"message": "Error retrieving FileMaker project data:", "exception": str(fm_projects_error)})
+            else:
+                recon_log['Filemaker Projects']['count'] = len(fm_projects_df)
+                recon_log['Filemaker Projects']['completed'] = True
             fm_project_caan_df, fm_project_caan_error = all_fm_records(FILEMAKER_PROJECT_CAANS_LAYOUT)
             if fm_project_caan_error:
                 recon_log['errors'].append({"message": "Error retrieving FileMaker project-caan join data:", "exception": str(fm_project_caan_error)})
+
+            # Aftter getting the data from FileMaker update task entry
+            utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, task_results=recon_log)
 
             # Reconcile CAAN data 
             if not fm_caan_df.empty:
