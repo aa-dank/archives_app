@@ -63,6 +63,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
         # Increase the timeout for the fmrest server
         fmrest.utils.TIMEOUT = 300
         archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+        progress_update = lambda log: utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, sql_db=db, task_results=log)
         
         try:
             fm_caan_df, fm_caan_error = all_fm_records(FILEMAKER_CAAN_LAYOUT)
@@ -82,7 +83,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 recon_log['errors'].append({"message": "Error retrieving FileMaker project-caan join data:", "exception": str(fm_project_caan_error)})
 
             # Aftter getting the data from FileMaker update task entry
-            utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, task_results=recon_log)
+            progress_update(log=recon_log)
 
             # Reconcile CAAN data 
             if not fm_caan_df.empty:
@@ -118,7 +119,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 db.session.commit()
 
                 #update database task entry
-                utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, task_results=recon_log)
+                progress_update(log=recon_log)
             
         except Exception as e:
             utils.FlaskAppUtils.attempt_db_rollback(db)
@@ -204,7 +205,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 
                 # update database task entry
                 recon_log['project']['completed'] = True
-                utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, task_results=recon_log)
+                progress_update(log=recon_log)
                 
                 # if confirm_locations is true, confirm the file server locations for projects that are in the db 
                 # (but not the ones that were just added)
@@ -232,7 +233,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
 
                     # update database task entry
                     recon_log['locations confirmed']['completed'] = True
-                    utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, task_results=recon_log)
+                    progress_update(log=recon_log)
 
                 # Update projects that have different names or drawings values in FileMaker
                 for _, row in update_name_data_df.iterrows():
@@ -249,7 +250,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
 
                 # update database task entry
                 recon_log['projects updated']['completed'] = True
-                utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, task_results=recon_log)
+                progress_update(log=recon_log)
 
         except Exception as e:
             utils.FlaskAppUtils.attempt_db_rollback(db)
