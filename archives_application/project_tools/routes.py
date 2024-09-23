@@ -94,11 +94,12 @@ def filemaker_reconciliation():
                      "user": user_param if user_param else current_user.email,
                      "password": password_param if password_param else "logged_in_user"}  
         task_kwargs = {"confirm_locations": to_confirm, "update_existing": to_update}
-        nq_kwargs = {"job_timeout": timeout}
+        nq_kwargs = {"timeout": timeout}
         nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                         enqueued_function=fmp_caan_project_reconciliation_task,
                                                         task_info=task_info,
-                                                        task_kwargs=task_kwargs)
+                                                        task_kwargs=task_kwargs,
+                                                        enqueue_call_kwargs=nq_kwargs)
         return flask.Response(json.dumps(utils.serializable_dict(nq_results)), status=200)
     else:
         return flask.Response("Unauthorized", status=401)
