@@ -139,9 +139,9 @@ class ServerChangeForm(FlaskForm):
 
 
 class BatchServerEditForm(FlaskForm):
-    asset_path = StringField('Path to Asset')
+    asset_path = StringField('Path to Target Directory')
     destination_path = StringField('Destination Directory Path')
-    remove_asset = BooleanField('Remove Asset', default=True)
+    remove_asset = BooleanField('Remove (empty) target directory', default=True)
     submit = SubmitField('Execute Change')
 
     def validate_destination_path(self, destination_path):

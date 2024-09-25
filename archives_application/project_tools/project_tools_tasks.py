@@ -7,7 +7,7 @@ import re
 import pandas as pd
 from archives_application import create_app, utils
 from archives_application.models import *
-from archives_application.project_tools.routes import FILEMAKER_API_VERSION, FILEMAKER_CAAN_LAYOUT, FILEMAKER_PROJECTS_LAYOUT, FILEMAKER_PROJECT_CAANS_LAYOUT, FILEMAKER_TABLE_INDEX_COLUMN_NAME, VERIFY_FILEMAKER_SSL
+from archives_application.project_tools.routes import FILEMAKER_API_VERSION, FILEMAKER_CAAN_LAYOUT, FILEMAKER_PROJECTS_LAYOUT, FILEMAKER_PROJECT_CAANS_LAYOUT, FILEMAKER_TABLE_INDEX_COLUMN_NAME, VERIFY_FILEMAKER_SSL, DEFAULT_TASK_TIMEOUT
 
 # Create the app context so that tasks can access app extensions even though
 # they are not running in the main thread.
@@ -55,7 +55,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
             "CAAN": {"added": [], "removed": [], 'completed': False},
             "project": {"added": [], "removed": [], 'completed': False},
             "project-caans": {"added": [], "removed": [], 'completed': False},
-            "locations confirmed": {"completed": False, "count": 0},
+            "enqueue location confirmation": {"completed": False, "projects": []},
             "projects updated": {"name": [], "drawings": [], 'completed': False},
             "errors": []
             }
@@ -210,29 +210,20 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 # if confirm_locations is true, confirm the file server locations for projects that are in the db 
                 # (but not the ones that were just added)
                 if confirm_locations and not db_project_df.empty:
+                    
                     to_confirm_db = db_project_df[~db_project_df['number'].isin(missing_from_fm['number'])]
                     locations_confirmed = 0
-                    for _, row in to_confirm_db.iterrows():
-                        project = ProjectModel.query.filter_by(number=row['number']).first()
-                        try:
-                            project_location, _ = utils.FileServerUtils.path_to_project_dir(project_number=row['number'],
-                                                                                            archives_location=archives_location)
-                            if project_location:
-                                project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")) + 1:]
-                            
-                            project.file_server_location = project_location
-                            locations_confirmed += 1
-                    
-                        except Exception as e:
-                            if type(e) == utils.ArchivesPathException:
-                                continue
-                            recon_log['errors'].append({"message": f"Error confirming location for {row['number']}:",
-                                                        "exception": str(e)})
-                    recon_log['locations confirmed']['count'] = locations_confirmed
-                    db.session.commit()
+                    projects_to_confirm = to_confirm_db['number'].tolist()
+                    confirmation_task_kwargs = {"projects_list": projects_to_confirm}
+                    nq_kwargs = {"timeout": DEFAULT_TASK_TIMEOUT}
+                    nq_results = utils.RQTaskUtils.enqueue_new_task(db = db,
+                                                                    enqueued_function=confirm_project_locations_task,
+                                                                    enqueue_call_kwargs=nq_kwargs,
+                                                                    task_kwargs=confirmation_task_kwargs)
 
                     # update database task entry
-                    recon_log['locations confirmed']['completed'] = True
+                    recon_log['enqueue location confirmation']['completed'] = True
+                    recon_log['enqueue location confirmation']['projects'] = projects_to_confirm
                     progress_update(log=recon_log)
 
                 # Update projects that have different names or drawings values in FileMaker
@@ -280,3 +271,54 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
 
         utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=recon_log)
         return recon_log
+
+
+def confirm_project_locations_task(queue_id: str, projects_list: list):
+    with app.app_context():
+        os.environ['no_proxy'] = '*'
+        db: flask_sqlalchemy.SQLAlchemy = flask.current_app.extensions['sqlalchemy']
+        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+        archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+        task_log = {
+            "projects confirmed": {"completed": False, "count": 0},
+            "errors": []
+        }
+        progress_update = lambda log: utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, sql_db=db, task_results=log)
+        try:
+            confirmed_projects = 0
+            for project_number in projects_list:
+                project = ProjectModel.query.filter_by(number=project_number).first()
+                if project:
+                    try:
+                        project_location, _ = utils.FileServerUtils.path_to_project_dir(project_number=project_number,
+                                                                                        archives_location=archives_location)
+                        if project_location:
+                            project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")) + 1:]
+                            project.file_server_location = project_location
+                            confirmed_projects += 1
+                        else:
+                            task_log['errors'].append({"message": f"Error confirming location for {project_number}:",
+                                                        "exception": "No location found"})
+                    except Exception as e:
+                        if type(e) == utils.ArchivesPathException:
+                            continue
+                        task_log['errors'].append({"message": f"Error confirming location for {project_number}:",
+                                                    "exception": str(e)})
+                else:
+                    task_log['errors'].append({"message": f"Error confirming location for {project_number}:",
+                                                "exception": "Project not found in database."})
+            task_log['projects confirmed']['count'] = confirmed_projects
+            db.session.commit()
+            task_log['projects confirmed']['completed'] = True
+            
+            # every 200 confirmed projects, update the task entry
+            if confirmed_projects % 200 == 0:
+                progress_update(log=task_log)
+
+        except Exception as e:
+            utils.FlaskAppUtils.attempt_db_rollback(db)
+            task_log['errors'].append({"message": "Error confirming project locations:", "exception": str(e)})
+            progress_update(log=task_log) # update the task entry with the error
+        
+        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_log)
+        return task_log

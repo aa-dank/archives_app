@@ -15,6 +15,7 @@ FILEMAKER_PROJECTS_LAYOUT = 'projects_table'
 FILEMAKER_PROJECT_CAANS_LAYOUT = 'caan_project_join'
 FILEMAKER_TABLE_INDEX_COLUMN_NAME = 'ID_Primary'
 VERIFY_FILEMAKER_SSL = False
+DEFAULT_TASK_TIMEOUT = 18000 # 5 hours
 
 project_tools = flask.Blueprint('project_tools', __name__)
 
@@ -49,7 +50,7 @@ def filemaker_reconciliation():
         user: email of the user making the request (Required)
         password: password of the user making the request (Required)
         confirm_locations: whether to confirm the locations of projects in the application database
-        update_projects: whether to update the projects in the application database
+        update_projects: whether to update the projects in the application database to match the FileMaker database
         timeout: the maximum time in seconds that the task is allowed to run
 
     :return: JSON response with the results of the reconciliation
@@ -60,7 +61,6 @@ def filemaker_reconciliation():
     # Check if the request includes user credentials or is from a logged in user. 
     # User needs to have ADMIN role.
     request_is_authenticated = False
-    default_timeout = 18000 # 5 hours
     try:
         user_param = None
         password_param = None
@@ -87,7 +87,7 @@ def filemaker_reconciliation():
         to_confirm = True if (to_confirm and to_confirm.lower() == "true") else False
         to_update = flask.request.args.get('update_projects')
         to_update = True if (to_update and to_update.lower() == "true") else False
-        timeout = flask.request.args.get('timeout') if flask.request.args.get('timeout') else default_timeout
+        timeout = flask.request.args.get('timeout') if flask.request.args.get('timeout') else DEFAULT_TASK_TIMEOUT
 
         task_info = {"confirm_locations": to_confirm,
                      "update_projects": to_update,
@@ -111,7 +111,9 @@ def test_fmp_reconciliation():
     """
     Endpoint for testing the task that reconciles the application database with the FileMaker database, fmp_caan_project_reconciliation_task.
     """
-    from archives_application.project_tools.project_tools_tasks import fmp_caan_project_reconciliation_task
+    from archives_application.project_tools.project_tools_tasks import fmp_caan_project_reconciliation_task, confirm_project_locations_task
+    results = {"confirm_results":{},
+               "reconciliation_results":{}}
     recon_job_id = f"{fmp_caan_project_reconciliation_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
     new_task_record = WorkerTaskModel(task_id=recon_job_id,
                                       time_enqueued=str(datetime.now()),
@@ -125,12 +127,28 @@ def test_fmp_reconciliation():
     to_confirm = True if (to_confirm and to_confirm.lower() == "true") else False
     update_existing = flask.request.args.get('update_projects')
     update_existing = True if (update_existing and update_existing.lower() == "true") else False
-    task_results = fmp_caan_project_reconciliation_task(queue_id=recon_job_id,
-                                                        confirm_locations=to_confirm,
-                                                        update_existing=update_existing)
+    reconciliation_results = fmp_caan_project_reconciliation_task(queue_id=recon_job_id,
+                                                                  confirm_locations=False, # call this seperately
+                                                                  update_existing=update_existing)
+    results["reconciliation_results"] = reconciliation_results
+    if to_confirm:
+        # get list of projects with existing locations to confirm
+        to_confirm_foundset = ProjectModel.query.filter(ProjectModel.file_server_location.isnot(None)).all()
+        project_nums_list = [proj.number for proj in to_confirm_foundset]
+        confirm_job_id = f"{confirm_project_locations_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
+        confirm_task_record = WorkerTaskModel(task_id=confirm_job_id,
+                                              time_enqueued=str(datetime.now()),
+                                              origin="test",
+                                              function_name=confirm_project_locations_task.__name__,
+                                              status="queued")
+        db.session.add(confirm_task_record)
+        db.session.commit()
+        confirm_results = confirm_project_locations_task(queue_id=confirm_job_id,
+                                                         project_numbers=project_nums_list)
+        results["confirm_results"] = confirm_results
     
-    # prepare scrape results for JSON serialization
-    return flask.Response(json.dumps(task_results), status=200)
+    results = utils.serializable_dict(results)
+    return flask.Response(json.dumps(results), status=200)
 
 
 @project_tools.route("/caan_drawings/<caan>", methods=['GET', 'POST'])
