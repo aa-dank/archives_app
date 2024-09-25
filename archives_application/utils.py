@@ -770,8 +770,12 @@ class RQTaskUtils:
             
         task_kwargs['queue_id'] = job_id
         timeout = timeout * 60 if timeout else None
+        
+        #TODO remove the timout param and just use the enqueue_call_kwargs
+        if not enqueue_call_kwargs.get('timeout'):
+            enqueue_call_kwargs['timeout'] = timeout
+
         enqueue_call_kwargs['job_id'] = job_id
-        enqueue_call_kwargs['timeout'] = timeout
         enqueue_call_kwargs['func'] = enqueued_function
         enqueue_call_kwargs['kwargs'] = task_kwargs
         try:
