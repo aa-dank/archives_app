@@ -4,15 +4,21 @@ import glob
 import logging
 import redis
 import rq
+import warnings
 import archives_application.app_config as app_config
 import pandas as pd
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
+from urllib3.exceptions import InsecureRequestWarning
 from oauthlib.oauth2 import WebApplicationClient
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 VERSION = '1.3.44'
+
+# Suppress only the InsecureRequestWarning.
+# https://urllib3.readthedocs.io/en/latest/advanced-usage.html#ssl-warnings
+warnings.simplefilter('ignore', InsecureRequestWarning)
 
 db = SQLAlchemy()
 bcrypt = Bcrypt()
