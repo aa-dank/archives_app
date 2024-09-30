@@ -144,7 +144,7 @@ def test_fmp_reconciliation():
         db.session.add(confirm_task_record)
         db.session.commit()
         confirm_results = confirm_project_locations_task(queue_id=confirm_job_id,
-                                                         project_numbers=project_nums_list)
+                                                         projects_list=project_nums_list)
         results["confirm_results"] = confirm_results
     
     results = utils.serializable_dict(results)
