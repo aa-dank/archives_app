@@ -296,6 +296,13 @@ def confirm_project_locations_task(queue_id: str, projects_list: list):
                             project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")) + 1:]
                             project.file_server_location = project_location
                             confirmed_projects += 1
+                            task_log['projects confirmed']['count'] = confirmed_projects
+                            db.session.commit()
+                            
+                            # every 200 confirmed projects, update the task entry
+                            if confirmed_projects % 200 == 0:
+                                progress_update(log=task_log)
+
                         else:
                             task_log['errors'].append({"message": f"Error confirming location for {project_number}:",
                                                         "exception": "No location found"})
@@ -307,13 +314,8 @@ def confirm_project_locations_task(queue_id: str, projects_list: list):
                 else:
                     task_log['errors'].append({"message": f"Error confirming location for {project_number}:",
                                                 "exception": "Project not found in database."})
-            task_log['projects confirmed']['count'] = confirmed_projects
-            db.session.commit()
             task_log['projects confirmed']['completed'] = True
-            
-            # every 200 confirmed projects, update the task entry
-            if confirmed_projects % 200 == 0:
-                progress_update(log=task_log)
+            progress_update(log=task_log)
 
         except Exception as e:
             utils.FlaskAppUtils.attempt_db_rollback(db)
