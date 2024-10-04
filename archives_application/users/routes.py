@@ -256,18 +256,24 @@ def login():
                 flask.flash(f'Account is inactive. Contact application admin.', 'danger')
                 return flask.redirect(flask.url_for('main.home'))
 
-            if user and bcrypt.check_password_hash(user.password, form.password.data):
-                user_login_flow(user=user)
-                next_page = flask.request.args.get('next')
+            if user: 
+                if not user.password:
+                    flask.flash(f'No password set for account. Contact application admin.', 'danger')
+                    return flask.redirect(flask.url_for('main.home'))
+                
+                if bcrypt.check_password_hash(user.password, form.password.data):
+                    user_login_flow(user=user)
+                    next_page = flask.request.args.get('next')
 
-                # after successful login it will attempt to send user to the previous page they were trying to access.
-                # If that is not available, it will flask.redirect to the home page
-                return flask.redirect(next_page) if next_page else flask.redirect(flask.url_for('main.home'))
+                    # after successful login it will attempt to send user to the previous page they were trying to access.
+                    # If that is not available, it will flask.redirect to the home page
+                    return flask.redirect(next_page) if next_page else flask.redirect(flask.url_for('main.home'))
             else:
                 flask.flash(f'Login Unsuccessful! Check credentials.', 'danger')
                 return flask.redirect(flask.url_for('main.home'))
 
         except Exception as e:
+            
             return web_exception_subroutine(flash_message="Error while processing user login: ",
                                               thrown_exception=e, app_obj=flask.current_app)
 
