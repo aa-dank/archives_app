@@ -24,7 +24,7 @@
                     <h5>{{ form.destination_path.label(class="form-control-label") }}</h5>
                     <p>The path to the destination directory where target directory contents will be moved.</p>
                     {% if form.destination_path.errors %}
-                        {{ form.destination_path(clas   s="form-control form-control-lg is-invalid") }}
+                        {{ form.destination_path(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
                             {% for error in form.destination_path.errors %}
                                 <span>{{ error }}</span>
