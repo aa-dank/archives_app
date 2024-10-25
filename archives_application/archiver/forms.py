@@ -1,7 +1,7 @@
 import os
 import flask
-from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField, SelectField, BooleanField
+from flask_wtf import FlaskForm, 
+from wtforms import StringField, SubmitField, SelectField, BooleanField, SelectMultipleField, widgets
 from wtforms.validators import DataRequired, ValidationError
 from flask_wtf.file import FileField, FileRequired
 from .. import utils
@@ -39,6 +39,18 @@ def validate_str_path(form: FlaskForm, field: StringField):
     Universal simple file and directory path validation function
     """
     path_validation_subroutine(field)
+
+
+class MultiCheckboxField(SelectMultipleField):
+    """
+    A multiple-select, except displays a list of checkboxes.
+
+    Iterating the field will produce subfields, allowing custom rendering of
+    the enclosed checkbox fields.
+    https://gist.github.com/ectrimble20/468156763a1389a913089782ab0f272e
+    """
+    widget = widgets.ListWidget(prefix_label=False)
+    option_widget = widgets.CheckboxInput()
 
 
 class UploadFileForm(FlaskForm):
@@ -156,3 +168,20 @@ class BatchServerEditForm(FlaskForm):
         Ensures that the asset path exists
         """
         path_validation_subroutine(asset_path, path_type="dir")
+
+
+class BatchMoveEditForm(FlaskForm):
+    asset_path = StringField('Path to Target Directory')
+    contents_to_move = MultiCheckboxField('Contents to Move')
+    destination_path = StringField('Destination Directory Path')
+    submit = SubmitField('Execute Change')
+
+    def validate_destination_path(self, destination_path):
+        """
+        Ensures that the destination path exists and is a directory
+        """
+        # if nothing is selected, then just return
+        if destination_path.data:
+            path_validation_subroutine(destination_path, path_type="dir")
+        
+        return
