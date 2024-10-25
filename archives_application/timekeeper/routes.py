@@ -646,7 +646,7 @@ def archiving_dashboard(archiver_id):
         query_start_date = query_start_date - timedelta(days=rolling_avg_window)
         query = db.session.query(ArchivedFileModel)\
             .filter(ArchivedFileModel.date_archived.between(query_start_date, query_end_date))
-        df = utils.FlaskAppUtils.db_query_to_df(query= query)
+        df = utils.FlaskAppUtils.db_query_to_df(query = query)
         archivist_df = df.query(f'archivist_id == {archiver_id}')
         date_range = pd.date_range(start=query_start_date, end=query_end_date)
         if df.shape[0] != 0:

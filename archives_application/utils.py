@@ -517,8 +517,14 @@ class FlaskAppUtils:
         :param filename: the name of the file to be created. If no filename is provided, the path to the temp file directory is returned.
         :param original_filepath: if True, will add a random number to the end of the filename until the filename is unique.
         """
-        temp_path = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", filename])
+        temp_location_dirs = ["archives_application", "static", "temp_files"]
+        temp_location = os.path.join(os.getcwd(), *temp_location_dirs)
+
+        if not os.path.exists(temp_location):
+            os.makedirs(temp_location)
         
+        temp_path = os.path.join(temp_location, filename)
+
         # if no filename is provided, return the path to the temp file directory
         if not filename:
             return temp_path

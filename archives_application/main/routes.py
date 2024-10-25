@@ -246,7 +246,8 @@ def change_config_settings():
 
         except Exception as e:
             return web_exception_subroutine(flash_message="Error processing form responses into json config file: ",
-                                       thrown_exception=e, app_obj=flask.current_app)
+                                            thrown_exception=e,
+                                            app_obj=flask.current_app)
 
     return flask.render_template('change_config_settings.html', title='Change Config File', form=form, settings_dict=config_dict)
 
@@ -308,6 +309,21 @@ def get_app_config():
     }
     return info
 
+@main.route("/test/rq", methods=['GET', 'POST'])
+@FlaskAppUtils.roles_required(['ADMIN'])
+def test_rq_connection():
+    """
+    Endpoint for testing the rq task queue.
+    """
+    try:
+        redis_client = flask.current_app.q.connection
+        redis_client.ping()
+        redis_info = redis_client.info()
+        return redis_info
+    
+    except Exception as e:
+        m = "Error connecting to the redis queue: "
+        return web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
 
 @main.route("/admin/sql_logging", methods=['GET', 'POST'])
 @FlaskAppUtils.roles_required(['ADMIN'])
