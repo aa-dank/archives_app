@@ -393,8 +393,7 @@ def batch_move_edit():
                     batch_move_params = {"user_target_path": user_asset_path,
                                         "user_destination_path": user_destination_path,
                                         "user_id": current_user.id,
-                                        "user_contents_to_move": contents_to_move,
-                                        "removal_timeout": 1200}
+                                        "user_contents_to_move": contents_to_move}
                     
                     # if test call, execute the batch task on this process and return the results.
                     # Allows for simpler debugging of the task function.
@@ -656,6 +655,18 @@ def upload_file():
 
 @archiver.route("/api/upload_file", methods=['POST'])
 def upload_file_api():
+    """
+    Function to handle the upload of a single file to the file server via an API request.
+    Requires the user to provide the file to upload in the request. Credentials are provided as URL parameters.
+    Available URL parameters:
+    - user (str): The email of the user making the request.
+    - password (str): The password of the user making the request.
+    - filing_code (str): The filing code for the file to be archived.
+    - destination (str): The path to the destination directory for the file.
+    - project_number (str): The project number for the file to be archived.
+    - notes (str): Any notes or comments to be associated with the file.
+    """
+
     # import task function here to avoid circular import
     from archives_application.archiver.archiver_tasks import add_file_to_db_task
 
