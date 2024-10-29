@@ -343,11 +343,33 @@ def batch_move_edit():
         user_asset_path = form.asset_path.data
         app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_asset_path, app=flask.current_app)
         contents = os.listdir(app_asset_path)
+        
+        if not contents:
+            flask.flash(f"No contents found in {user_asset_path}", 'error')
+            return flask.redirect(flask.url_for('archiver.batch_move_edit'))
         contents_dirs = [c for c in contents if os.path.isdir(os.path.join(app_asset_path, c))]
         contents_files = [c for c in contents if os.path.isfile(os.path.join(app_asset_path, c))]
+        # if the user has selected contents to move, do not bother with contents sizes
+        if form.contents_to_move.data and form.contents_to_move.data != []:
+            contents_choices = [(c, f"{c} (dir)") for c in contents_dirs]
+            contents_choices += [(c, f"{c} (file)") for c in contents_files]
 
-        contents_choices = [(c, f"{c} (dir)") for c in contents_dirs]
-        contents_choices += [(c, f"{c} (file)") for c in contents_files]
+        # otherwise provide the contents sizes
+        else:
+            contents_dict = {}
+            size_as_mb = lambda size: round(size / 1024 / 1024, 2)
+            # add directories to the contents_dict
+            for c_dir in contents_dirs:
+                c_dir_size, c_dir_file_count = contents_dir_size_tuple(c_dir)
+                c_dir_size = size_as_mb(c_dir_size)
+                contents_dict[c_dir] = {"type": "dir", "size": c_dir_size, "file_count": c_dir_file_count}
+            
+            # add files to the contents_dict
+            for content_file in contents_files:
+                file_size_mb = size_as_mb(os.path.getsize(os.path.join(app_asset_path, content_file)))
+                contents_dict[content_file] = {"type": "file", "size": file_size_mb}
+            contents_choices = [(c, f"{c} ({contents_dict[c]['type']}, {contents_dict[c]['size']} bytes)") for c in contents_dict]
+        
         form.contents_to_move.choices = contents_choices
 
     if form.validate_on_submit():
@@ -371,16 +393,7 @@ def batch_move_edit():
                     # get the contents of the directory and render the page with the checkboxes
                     # distinguis between directories and files in case a directory and file have the same name
                     choose_contents = True
-                    contents_dict = {}
-                    contents = os.listdir(app_asset_path)
-                    contents_dirs = [c for c in contents if os.path.isdir(os.path.join(app_asset_path, c))]
-                    contents_files = [c for c in contents if os.path.isfile(os.path.join(app_asset_path, c))]
-                    for c_dir in contents_dirs:
-                        c_dir_size, c_dir_file_count = contents_dir_size_tuple(c_dir)
-                        contents_dict[c_dir] = {"type": "dir", "size": c_dir_size, "file_count": c_dir_file_count}
 
-                    contents_dict.update({c:{"type":"file", "size": os.path.getsize(os.path.join(app_asset_path, c))} for c in contents_files})
-                    contents_choices = [(c, f"{c} ({contents_dict[c]['type']}, {contents_dict[c]['size']} bytes)") for c in contents_dict]
                     
                     choices_form = archiver_forms.BatchMoveEditForm()
                     choices_form.contents_to_move.choices = contents_choices

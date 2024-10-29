@@ -616,7 +616,11 @@ def batch_move_edits_task(user_target_path, user_contents_to_move, user_destinat
                             "Exception": str(e)}
                     log["errors"].append(e_dict)
             db.session.commit()
+            utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            return log
 
         except Exception as e:
             utils.FlaskAppUtils.attempt_db_rollback(db)
             log["errors"].append(e)
+            utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            return log
