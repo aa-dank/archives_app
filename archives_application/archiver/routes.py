@@ -315,20 +315,17 @@ def server_change():
     return flask.render_template('server_change.html', title='Make change to file server', form=form)
 
 
-@archiver.route("/api/batch_move", methods=['GET', 'POST'])
 @archiver.route("/batch_move", methods=['GET', 'POST'])
 def batch_move_edit():
     
     # imported here to avoid circular import
     from archives_application.archiver.server_edit import directory_contents_quantities
-    from archives_application.archiver.server_edit import ServerEdit
-
-    form = archiver_forms.BatchMoveEditForm()
-    testing = False
+    from archives_application.archiver.archiver_tasks import batch_move_edits_task
 
     # determine if the request is for testing the associated worker task
     # if the testing worker task, the task will be executed on this process and
     # not enqueued to be executed by the worker
+    testing = False
     if flask.request.args.get('test') and flask.request.args.get('test') == 'true' and has_admin_role(current_user):
         testing = True
 
@@ -337,115 +334,132 @@ def batch_move_edit():
     files_limit = flask.current_app.config.get('SERVER_CHANGE_FILES_LIMIT')
     data_limit = flask.current_app.config.get('SERVER_CHANGE_DATA_LIMIT')
     archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+    choose_contents = False
+
+    form = archiver_forms.BatchMoveEditForm()
+    contents_choices = []
+    if form.asset_path.data:
+        # Set the choices for contents_to_move based on the asset_path
+        user_asset_path = form.asset_path.data
+        app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_asset_path, app=flask.current_app)
+        contents = os.listdir(app_asset_path)
+        contents_dirs = [c for c in contents if os.path.isdir(os.path.join(app_asset_path, c))]
+        contents_files = [c for c in contents if os.path.isfile(os.path.join(app_asset_path, c))]
+
+        contents_choices = [(c, f"{c} (dir)") for c in contents_dirs]
+        contents_choices += [(c, f"{c} (file)") for c in contents_files]
+        form.contents_to_move.choices = contents_choices
 
     if form.validate_on_submit():
         try:
-            user_email = current_user.email
-            
             # if the user has admin credentials, there are no limits
             if has_admin_role(current_user):
                 files_limit, data_limit = 0, 0
-            
-            # flag to determine if the user has entered an asset path
-            # and now needs to select contents in asset dir
-            choose_contents = False
 
             # if useer entered an asset path, we will convert it to an app path
             # and re-render the page with the contents of the directory as checkboxes
             user_asset_path = form.asset_path.data
             user_destination_path = form.destination_path.data
-            if not form.contents_to_move.data:
+            if form.asset_path.data:
                 app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_asset_path,
-                                                                           app=flask.current_app)
+                                                                        app=flask.current_app)
                 contents_dir_size_tuple = lambda dir: directory_contents_quantities(dir_path=os.path.join(app_asset_path, dir),
                                                                                     server_location=archives_location,
                                                                                     db=db)
-                
-                # get the contents of the directory and render the page with the checkboxes
-                # distinguis between directories and files in case a directory and file have the same name
-                choose_contents = True
-                contents_dict = {}
-                contents = os.listdir(app_asset_path)
-                contents_dirs = [c for c in contents if os.path.isdir(os.path.join(app_asset_path, c))]
-                contents_files = [c for c in contents if os.path.isfile(os.path.join(app_asset_path, c))]
-                for c_dir in contents_dirs:
-                    c_dir_size, c_dir_file_count = contents_dir_size_tuple(c_dir)
-                    contents_dict[c_dir] = {"type": "dir", "size": c_dir_size, "file_count": c_dir_file_count}
+                if not form.contents_to_move.data:
 
-                contents_dict.update({c:{"type":"file", "size": os.path.getsize(os.path.join(app_asset_path, c))} for c in contents_files})
-                contents_choices = [(c, f"{c} ({contents_dict[c]['type']}, {contents_dict[c]['size']} bytes)") for c in contents_dict]
-                
-                form = archiver_forms.BatchMoveEditForm()
-                form.contents_to_move.choices = contents_choices
-                form.asset_path.data = user_asset_path
-                return flask.render_template('batch_move.html', title='Batch Move', form=form, choose_contents=choose_contents)
-            
-            user_asset_path = form.asset_path.data
-            user_destination_path = form.destination_path.data
-            if not user_destination_path:
-                raise Exception("No destination path provided.")
-            
-            app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_asset_path,
-                                                                       app=flask.current_app)
-            
-            asset_contents = os.listdir(app_asset_path)
-            assets_to_move = {}
-            quantity_to_move = 0
-            total_files_to_move = 0
-            for asset_content in asset_contents:
+                    # get the contents of the directory and render the page with the checkboxes
+                    # distinguis between directories and files in case a directory and file have the same name
+                    choose_contents = True
+                    contents_dict = {}
+                    contents = os.listdir(app_asset_path)
+                    contents_dirs = [c for c in contents if os.path.isdir(os.path.join(app_asset_path, c))]
+                    contents_files = [c for c in contents if os.path.isfile(os.path.join(app_asset_path, c))]
+                    for c_dir in contents_dirs:
+                        c_dir_size, c_dir_file_count = contents_dir_size_tuple(c_dir)
+                        contents_dict[c_dir] = {"type": "dir", "size": c_dir_size, "file_count": c_dir_file_count}
 
-                if asset_content in form.contents_to_move.data:
-                    asset_path = os.path.join(app_asset_path, asset_content)
+                    contents_dict.update({c:{"type":"file", "size": os.path.getsize(os.path.join(app_asset_path, c))} for c in contents_files})
+                    contents_choices = [(c, f"{c} ({contents_dict[c]['type']}, {contents_dict[c]['size']} bytes)") for c in contents_dict]
                     
-                    if os.path.isdir(asset_path):
-                        asset_size, asset_file_count = directory_contents_quantities(dir_path=os.path.join(app_asset_path, dir),
-                                                                                     server_location=archives_location,
-                                                                                     db=db)
-                        quantity_to_move += asset_size
-                        total_files_to_move += asset_file_count
-                        assets_to_move[asset_content] = {"type": "dir", "size": quantity_to_move}
+                    choices_form = archiver_forms.BatchMoveEditForm()
+                    choices_form.contents_to_move.choices = contents_choices
+                    choices_form.asset_path.data = user_asset_path
+                    return flask.render_template('batch_move.html', title='Batch Move', form=choices_form, choose_contents=choose_contents)
+
+                # if the user has selected contents to move, we will enqueue the task to move the contents
+                if form.contents_to_move.data and form.contents_to_move.data != []:
+                    contents_to_move = form.contents_to_move.data
+                    batch_move_params = {"user_target_path": user_asset_path,
+                                        "user_destination_path": user_destination_path,
+                                        "user_id": current_user.id,
+                                        "user_contents_to_move": contents_to_move,
+                                        "removal_timeout": 1200}
                     
-                    else:
-                        quantity_to_move += os.path.getsize(asset_path)
-                        total_files_to_move += 1
-                        assets_to_move[asset_content] = {"type": "file", "size": os.path.getsize(asset_path)}
-            
-            if files_limit or data_limit:
-                if total_files_to_move > files_limit or quantity_to_move > data_limit:
-                    e_mssg = f"""
-                    The content of the change requested surpasses the limits set.
-                    Try splitting the change into smaller parts:
-                    {user_asset_path}
-                    Files effected: {total_files_to_move}
-                    Data effected: {quantity_to_move}
-                    """
-                    raise Exception(e_mssg)
+                    # if test call, execute the batch task on this process and return the results.
+                    # Allows for simpler debugging of the task function.
+                    if testing:
+                        test_job_id = f"{batch_move_edits_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
+                        new_task_record = WorkerTaskModel(task_id=test_job_id,
+                                                        time_enqueued=str(datetime.now()),
+                                                        origin='test',
+                                                        function_name=batch_move_edits_task.__name__,
+                                                        status= "queued")
+                        db.session.add(new_task_record)
+                        db.session.commit()
+                        batch_move_params['queue_id'] = test_job_id
+                        batch_move_results = batch_move_edits_task(**batch_move_params)
+                        batch_move_results = utils.serializable_dict(batch_move_results)
+                        return flask.jsonify(batch_move_results)
+                    
 
-            app_destination_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_destination_path,
-                                                                             app=flask.current_app)
-            for asset, asset_info in assets_to_move.items():
-                new_path = os.path.join(app_destination_path, asset)
-                old_path = os.path.join(app_asset_path, asset)
-                server_edit = ServerEdit(server_location=archives_location,
-                                         change_type='MOVE',
-                                         new_path=new_path,
-                                         old_path=old_path)
-                nq_results = server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit, timeout=1200)
-                
-                # record the change in the database
-                editor = UserModel.query.filter_by(email=user_email).first()
-                change_model = ServerChangeModel(old_path=server_edit.old_path,
-                                                 new_path=server_edit.new_path,
-                                                 change_type=server_edit.change_type,
-                                                 files_effected=server_edit.files_effected,
-                                                 data_effected=server_edit.data_effected,
-                                                 date=datetime.now(),
-                                                 user_id=editor.id)
-                db.session.add(change_model)
-                db.session.commit()
+                    # get total size of files and number of files to be moved to check against limits
+                    if files_limit or data_limit:
+                        files_num_effected, data_effected = 0, 0
+                        for to_move_item in contents_to_move:
+                            to_move_item_path = os.path.join(app_asset_path, to_move_item)
+                            if os.path.isdir(to_move_item_path):
+                                to_move_item_size, to_move_item_file_count = contents_dir_size_tuple(to_move_item)
+                                files_num_effected += to_move_item_file_count
+                                data_effected += to_move_item_size
+                            
+                            else:
+                                files_num_effected += 1
+                                data_effected += os.path.getsize(to_move_item_path)
+                    
+                        if files_num_effected > files_limit or data_effected > data_limit:
+                            e_mssg = f"""
+                            The content of the change requested surpasses the limits set.
+                            Try splitting the change into smaller parts:
+                            {user_asset_path}
+                            Files effected: {files_num_effected}
+                            Data effected: {data_effected}
+                            """
+                            raise Exception(e_mssg)
 
-                
-            
+                    # create batch_move info json dictionary
+                    batch_move_info = {"parameters": batch_move_params,
+                                    "files_limit": files_limit,
+                                    "data_limit": data_limit}
+                    # enqueue the task to be executed by the worker
+                    nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                                    enqueued_function=batch_move_edits_task,
+                                                                    task_kwargs=batch_move_params,
+                                                                    task_info=batch_move_info,
+                                                                    timeout=None)
+                    
+                    success_message = f"Batch move task enqueued (job id: {nq_results['_id']})\nIt may take some time for the batch operation to complete."
+                    flask.flash(success_message, 'success')
+                    return flask.redirect(flask.url_for('archiver.batch_move_edit'))
+        
+        except Exception as e:
+            m = "Error processing or executing batch move"
+            return web_exception_subroutine(flash_message=m,
+                                            thrown_exception=e,
+                                            app_obj=flask.current_app)
+        
+    return flask.render_template('batch_move.html', title='Batch Move', form=form, choose_contents=choose_contents)
+
 
 @archiver.route("/batch_edit", methods=['GET', 'POST'])#TODO remove
 @archiver.route("/api/consolidate_dirs", methods=['GET', 'POST'])
@@ -454,7 +468,7 @@ def batch_server_edit():
     
     # imported here to avoid circular import
     from archives_application.archiver.server_edit import directory_contents_quantities
-    from archives_application.archiver.archiver_tasks import batch_server_move_edits_task
+    from archives_application.archiver.archiver_tasks import consolidate_dirs_edit_task
     form = archiver_forms.BatchServerEditForm()
     testing = False
 
@@ -506,16 +520,16 @@ def batch_server_edit():
             # if test call, execute the batch task on this process and return the results.
             # Allows for simpler debugging of the task function.
             if testing:
-                test_job_id = f"{batch_server_move_edits_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
+                test_job_id = f"{consolidate_dirs_edit_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
                 new_task_record = WorkerTaskModel(task_id=test_job_id,
                                                   time_enqueued=str(datetime.now()),
                                                   origin='test',
-                                                  function_name=batch_server_move_edits_task.__name__,
+                                                  function_name=consolidate_dirs_edit_task.__name__,
                                                   status= "queued")
                 db.session.add(new_task_record)
                 db.session.commit()
                 batch_move_params['queue_id'] = test_job_id
-                batch_move_results = batch_server_move_edits_task(**batch_move_params)
+                batch_move_results = consolidate_dirs_edit_task(**batch_move_params)
                 batch_move_results = utils.serializable_dict(batch_move_results)
                 return flask.jsonify(batch_move_results)
             
@@ -527,7 +541,7 @@ def batch_server_edit():
                                "files_effected": files_num_effected}
             # enqueue the task to be executed by the worker
             nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
-                                                            enqueued_function=batch_server_move_edits_task,
+                                                            enqueued_function=consolidate_dirs_edit_task,
                                                             task_kwargs=batch_move_params,
                                                             task_info=batch_move_info,
                                                             timeout=None)
@@ -542,7 +556,7 @@ def batch_server_edit():
                                             thrown_exception=e,
                                             app_obj=flask.current_app)
 
-    return flask.render_template('batch_change.html', title='Batch Edit', form=form)
+    return flask.render_template('consolidate_edit.html', title='Cponsolidate Directories', form=form)
             
 
 @archiver.route("/upload_file", methods=['GET', 'POST'])

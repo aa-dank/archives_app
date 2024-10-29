@@ -1,6 +1,6 @@
 import os
 import flask
-from flask_wtf import FlaskForm, 
+from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField, SelectField, BooleanField, SelectMultipleField, widgets
 from wtforms.validators import DataRequired, ValidationError
 from flask_wtf.file import FileField, FileRequired
@@ -172,7 +172,7 @@ class BatchServerEditForm(FlaskForm):
 
 class BatchMoveEditForm(FlaskForm):
     asset_path = StringField('Path to Target Directory')
-    contents_to_move = MultiCheckboxField('Contents to Move')
+    contents_to_move = MultiCheckboxField('Contents to Move', choices=[])
     destination_path = StringField('Destination Directory Path')
     submit = SubmitField('Execute Change')
 
@@ -183,5 +183,10 @@ class BatchMoveEditForm(FlaskForm):
         # if nothing is selected, then just return
         if destination_path.data:
             path_validation_subroutine(destination_path, path_type="dir")
-        
-        return
+    
+    def validate_asset_path(self, asset_path):
+        """
+        Ensures that the asset path exists
+        """
+        if asset_path.data:
+            path_validation_subroutine(asset_path, path_type="dir")
