@@ -1,18 +1,16 @@
-import os
-import sys
-from datetime import datetime, timedelta, time
-
 import flask
-import flask_sqlalchemy
+import matplotlib
+matplotlib.use('Agg') # Required to generate plots without a display
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from typing import List
+from datetime import datetime, timedelta, time
 from flask import current_app
 from flask_login import login_required, current_user
 from matplotlib import ticker
 from sqlalchemy import and_, func
+from typing import List
 
 
 from .forms import TimekeepingForm, TimeSheetForm, TimeSheetAdminForm
