@@ -544,20 +544,20 @@ class ServerEdit:
                 
                 if location_entry:
                     location_entry.file_server_directories = new_server_path
-                    if os.path.exists(os.path.join(self.new_path, filename)):
+                    print(os.path.join(self.new_path, filename)) #TODO remove
+                    if os.path.exists(self.new_path):
                         location_entry.existence_confirmed = datetime.datetime.now()
                     db.session.commit()
                     move_log['files_entries_effected'] += 1
 
                 # if there is not an entry for the file in db, add it.
                 else:
-                    new_path = os.path.join(self.new_path, filename)
-                    
+            
                     # if the file is excluded by the exclusion functions, do not add it to the database
-                    if any([exclusion_func(new_path) for exclusion_func in self.exclusion_functions]):
+                    if any([exclusion_func(self.new_path) for exclusion_func in self.exclusion_functions]):
                         return move_log
                     
-                    file_hash = utils.FilesUtils.get_hash(new_path)
+                    file_hash = utils.FilesUtils.get_hash(self.new_path)
                     file_entry = None
                     while not file_entry:
                         
@@ -565,7 +565,7 @@ class ServerEdit:
                             .filter(FileModel.hash == file_hash).first()
                         if not file_entry:
                             file_entry = FileModel(hash=file_hash,
-                                                   size=os.path.getsize(new_path),
+                                                   size=os.path.getsize(self.new_path),
                                                    extension=filename.split('.')[-1])
                             db.session.add(file_entry)
                             db.session.commit()
