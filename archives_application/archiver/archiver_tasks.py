@@ -49,8 +49,6 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
             # extract the path from the root of the windows share
             file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
             server_directories = filepath[:-(len(filename)+1)]
-            task_results['server_directories'] = server_directories # TODO remove this line after debugging
-            task_results['root_index'] = file_server_root_index # TODO remove this line after debugging
             server_dirs_list = utils.FileServerUtils.split_path(server_directories)[file_server_root_index:]
             server_directories = os.path.join(*server_dirs_list)
 
