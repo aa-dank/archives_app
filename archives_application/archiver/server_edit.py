@@ -48,6 +48,8 @@ class ServerEdit:
         :param server_location: The root directory of the file server.
         :param change_type: The type of change to be executed (DELETE, RENAME, MOVE, CREATE).
         :param exclusion_functions: A list of functions that take a file path as input and return True if the file should be excluded from the change, False otherwise.
+        :param new_path: The new path for the asset being changed (default is None).
+        :param old_path: The old path for the asset being changed (default is None).
         """
         self.server_location = server_location
         self.change_type = change_type

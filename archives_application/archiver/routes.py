@@ -368,7 +368,7 @@ def batch_move_edit():
             for content_file in contents_files:
                 file_size_mb = size_as_mb(os.path.getsize(os.path.join(app_asset_path, content_file)))
                 contents_dict[content_file] = {"type": "file", "size": file_size_mb}
-            contents_choices = [(c, f"{c} ({contents_dict[c]['type']}, {contents_dict[c]['size']} bytes)") for c in contents_dict]
+            contents_choices = [(c, f"{c} ({contents_dict[c]['type']}, {contents_dict[c]['size']} MBs            sudo apt update)") for c in contents_dict]
         
         form.contents_to_move.choices = contents_choices
 

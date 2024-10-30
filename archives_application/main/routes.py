@@ -22,7 +22,10 @@ TASK_RECORD_LIFESPANS = {'add_file_to_db_task': 90,
                         'temp_file_clean_up_task': 90,
                         'db_backup_task': 180,
                         'fmp_caan_project_reconciliation_task': 365,
-                        'confirm_project_locations_task': 365}
+                        'confirm_project_locations_task': 365,
+                        'consolidation_target_removal_task': 365,
+                        'consolidate_dirs_edit_task': 365,
+                        'batch_move_edits_task': 365}
 
 main = flask.Blueprint('main', __name__)
 
