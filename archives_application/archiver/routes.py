@@ -326,7 +326,7 @@ def batch_move_edit():
     # if the testing worker task, the task will be executed on this process and
     # not enqueued to be executed by the worker
     testing = False
-    if flask.request.args.get('test') and flask.request.args.get('test') == 'true' and has_admin_role(current_user):
+    if flask.request.args.get('test') and flask.request.args.get('test').lower() == 'true' and has_admin_role(current_user):
         testing = True
 
     # retrieve limits to how much can be changed on the server, but if the user has admin credentials,
@@ -487,7 +487,7 @@ def batch_server_edit():
     # determine if the request is for testing the associated worker task
     # if the testing worker task, the task will be executed on this process and
     # not enqueued to be executed by the worker
-    if flask.request.args.get('test') and flask.request.args.get('test') == 'true' and has_admin_role(current_user):
+    if flask.request.args.get('test') and flask.request.args.get('test').lower() == 'true' and has_admin_role(current_user):
         testing = True
     
     # retrieve limits to how much can be changed on the server, but if the user has admin credentials,
@@ -1440,25 +1440,58 @@ def scrape_location():
     """
     # import task here to avoid circular import
     from archives_application.archiver.archiver_tasks import scrape_location_files_task
-
-    form = archiver_forms.ScrapeLocationForm()
-    if form.validate_on_submit():
-        search_location = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=form.scrape_location.data,
-                                                                    app=flask.current_app)
-        
-        scrape_params = {'scrape_location': search_location,
-                         'recursively': form.recursive.data,
-                         'confirm_data': True}
-        scrape_info = {'paprameters': scrape_params}
-        nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
-                                                        enqueued_function=scrape_location_files_task,
-                                                        task_kwargs=scrape_params,
-                                                        task_info=scrape_info,
-                                                        timeout=3600)
-        id = nq_results.get("_id")
-        function_call = nq_results.get("description")
-        m = f"Scraping task has been successfully enqueued. Function Enqueued: {function_call}"
-        flask.flash(m, 'success')
-        return flask.redirect(flask.url_for('archiver.scrape_location'))
     
-    return flask.render_template('scrape_location.html', form=form)
+    try:
+        testing = False
+
+        # determine if the request is for testing the associated worker task
+        # if the testing worker task, the task will be executed on this process and
+        # not enqueued to be executed by the worker
+        if flask.request.args.get('test') and flask.request.args.get('test').lower() == 'true' and has_admin_role(current_user):
+            testing = True
+
+        form = archiver_forms.ScrapeLocationForm()
+        if form.validate_on_submit():
+            search_location = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=form.scrape_location.data,
+                                                                        app=flask.current_app)
+            
+            scrape_params = {'scrape_location': search_location,
+                            'recursively': form.recursive.data,
+                            'confirm_data': True}
+            scrape_info = {'paprameters': scrape_params}
+            
+            # if the request is for testing the worker task, we will execute the task on this process
+            if testing:
+                test_job_id = f"{scrape_location_files_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
+                new_task_record = WorkerTaskModel(task_id=test_job_id,
+                                                time_enqueued=str(datetime.now()),
+                                                origin='test',
+                                                function_name=scrape_location_files_task.__name__,
+                                                status= "queued")
+                db.session.add(new_task_record)
+                db.session.commit()
+                
+                scrape_params['queue_id'] = test_job_id
+                scrape_results = scrape_location_files_task(**scrape_params)
+                scrape_info['results'] = scrape_results
+                scrape_info['task_id'] = test_job_id
+                return flask.jsonify(scrape_info)
+            
+            
+            nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                            enqueued_function=scrape_location_files_task,
+                                                            task_kwargs=scrape_params,
+                                                            task_info=scrape_info,
+                                                            timeout=3600)
+            id = nq_results.get("_id")
+            function_call = nq_results.get("description")
+            m = f"Scraping task has been successfully enqueued. Function Enqueued: {function_call}"
+            flask.flash(m, 'success')
+            return flask.redirect(flask.url_for('archiver.scrape_location', values={'test': testing}))
+        
+        return flask.render_template('scrape_location.html', form=form)
+    
+    except Exception as e:
+        return web_exception_subroutine(flash_message="Error scraping location: ",
+                                        thrown_exception=e,
+                                        app_obj=flask.current_app)

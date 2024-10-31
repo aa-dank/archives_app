@@ -409,6 +409,12 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
         # Iterate through the files in the scrape location and add them to the database if they are not already there
         # by enqueuing a task to add the file to the database.
         for root, _, files in os.walk(scrape_location):
+            server_dirs_list = []
+            server_dirs = ""
+            if files:
+                server_dirs_list = utils.FileServerUtils.split_path(root)[file_server_root_index:]
+                server_dirs = os.path.join(*server_dirs_list)
+            
             for file in files:
                 try:
                     filepath = os.path.join(root, file)
@@ -417,9 +423,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                         continue
                     
                     # If the file is already in our previous query results, we move to the next file.
-                    if confirm_data:
-                        server_dirs_list = utils.FileServerUtils.split_path(root)[file_server_root_index:]
-                        server_dirs = os.path.join(*server_dirs_list)
+                    if confirm_data:                        
                         if (server_dirs, file) in relevant_file_data_list:
                             continue
                     
