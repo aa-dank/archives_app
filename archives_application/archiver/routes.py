@@ -339,6 +339,11 @@ def batch_move_edit():
     form = archiver_forms.BatchMoveEditForm()
     contents_choices = []
     if form.asset_path.data:
+        app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=form.asset_path.data,
+                                                                   app=flask.current_app)
+        contents_dir_size_tuple = lambda dir: directory_contents_quantities(dir_path=os.path.join(app_asset_path, dir),
+                                                                            server_location=archives_location,
+                                                                            db=db)
         # Set the choices for contents_to_move based on the asset_path
         user_asset_path = form.asset_path.data
         app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_asset_path, app=flask.current_app)
@@ -368,7 +373,7 @@ def batch_move_edit():
             for content_file in contents_files:
                 file_size_mb = size_as_mb(os.path.getsize(os.path.join(app_asset_path, content_file)))
                 contents_dict[content_file] = {"type": "file", "size": file_size_mb}
-            contents_choices = [(c, f"{c} ({contents_dict[c]['type']}, {contents_dict[c]['size']} MBs            sudo apt update)") for c in contents_dict]
+            contents_choices = [(c, f"{c} ({contents_dict[c]['type']}, {contents_dict[c]['size']} MBs)") for c in contents_dict]
         
         form.contents_to_move.choices = contents_choices
 
@@ -383,11 +388,9 @@ def batch_move_edit():
             user_asset_path = form.asset_path.data
             user_destination_path = form.destination_path.data
             if form.asset_path.data:
-                app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_asset_path,
-                                                                        app=flask.current_app)
-                contents_dir_size_tuple = lambda dir: directory_contents_quantities(dir_path=os.path.join(app_asset_path, dir),
-                                                                                    server_location=archives_location,
-                                                                                    db=db)
+                
+                # if the user has not selected contents to move, we will render the page with the checkboxes
+                # so that the user can select the contents to move.
                 if not form.contents_to_move.data:
 
                     # get the contents of the directory and render the page with the checkboxes
