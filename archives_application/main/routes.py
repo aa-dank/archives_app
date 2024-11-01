@@ -89,7 +89,6 @@ def backup_database():
         
         # first determine if the request is being made by an admin user
         authenticated_to_make_request = False
-        has_admin_role = lambda usr: any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
 
         if flask.request.args.get('user'):
             user_param = flask.request.args.get('user')
@@ -97,11 +96,11 @@ def backup_database():
             user = UserModel.query.filter_by(email=user_param).first()
 
             # If there is a matching user to the request parameter, the password matches and that account has admin role...
-            if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
+            if user and bcrypt.check_password_hash(user.password, password_param) and FlaskAppUtils.has_admin_role(user):
                 authenticated_to_make_request = True
 
         elif current_user:
-            if current_user.is_authenticated and has_admin_role(current_user):
+            if current_user.is_authenticated and FlaskAppUtils.has_admin_role(current_user):
                 authenticated_to_make_request = True
 
         if authenticated_to_make_request:
@@ -146,8 +145,6 @@ def app_maintenance():
     custodian = AppCustodian(temp_file_lifespan=3,
                              task_records_lifespan_map=TASK_RECORD_LIFESPANS,
                              db_backup_file_lifespan=2)
-    
-    has_admin_role = lambda usr: any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
 
     if flask.request.args.get('user'):
         user_param = flask.request.args.get('user')
@@ -155,7 +152,7 @@ def app_maintenance():
         user = UserModel.query.filter_by(email=user_param).first()
 
         # If there is a matching user to the request parameter, the password matches and that account has admin role...
-        if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
+        if user and bcrypt.check_password_hash(user.password, password_param) and FlaskAppUtils.has_admin_role(user):
             task_enqueueing_result = custodian.enqueue_maintenance_tasks(db=db)
             task_enqueueing_result = str_dictionary_values(task_enqueueing_result)
             return flask.Response(response=json.dumps(task_enqueueing_result),
@@ -163,7 +160,7 @@ def app_maintenance():
                                   mimetype="application/json")
         
     elif current_user:
-        if current_user.is_authenticated and has_admin_role(current_user):
+        if current_user.is_authenticated and FlaskAppUtils.has_admin_role(current_user):
             task_enqueueing_result = custodian.enqueue_maintenance_tasks(db=db)
             task_enqueueing_result = str_dictionary_values(task_enqueueing_result)
             return flask.Response(response=json.dumps(task_enqueueing_result),

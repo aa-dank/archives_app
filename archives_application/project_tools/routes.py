@@ -20,14 +20,6 @@ DEFAULT_TASK_TIMEOUT = 18000 # 5 hours
 project_tools = flask.Blueprint('project_tools', __name__)
 
 
-
-def has_admin_role(usr: UserModel):
-    """
-    Checks if a user has admin role
-    """
-    return any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
-
-
 def api_exception_subroutine(response_message, thrown_exception):
     """
     Subroutine for handling an exception and returning response code to api call.
@@ -70,11 +62,14 @@ def filemaker_reconciliation():
             user = UserModel.query.filter_by(email=user_param).first()
 
             # If there is a matching user to the request parameter, the password matches and that account has admin role...
-            if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
+            if user \
+                and bcrypt.check_password_hash(user.password, password_param) \
+                and utils.FlaskAppUtils.has_admin_role(user):
                 request_is_authenticated = True
 
         elif current_user:
-            if current_user.is_authenticated and has_admin_role(current_user):
+            if current_user.is_authenticated \
+                and utils.FlaskAppUtils.has_admin_role(current_user):
                 request_is_authenticated = True
     
     except Exception as e:

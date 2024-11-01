@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.sql.expression import func
 from typing import Union, List, Dict
 
-from archives_application.models import WorkerTaskModel
+from archives_application.models import WorkerTaskModel, UserModel
 
 def contains_unicode(text):
     """
@@ -611,6 +611,17 @@ class FlaskAppUtils:
             db.session.rollback()
         except:
             pass
+
+    @staticmethod   
+    def has_admin_role(usr: UserModel):
+        """
+        Checks if a user has admin role
+        """
+        if not usr.get('roles'):
+            return False
+        
+        return any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
+
 
 
 class FilesUtils:
