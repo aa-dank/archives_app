@@ -617,7 +617,7 @@ class FlaskAppUtils:
         """
         Checks if a user has admin role
         """
-        if not usr.get('roles'):
+        if not hasattr(usr, 'roles'):
             return False
         
         return any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
