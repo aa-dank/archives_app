@@ -92,13 +92,6 @@ def get_user_handle():
     return current_user.email.split("@")[0]
 
 
-def has_admin_role(usr: UserModel):
-    """
-    Checks if a user has admin role
-    """
-    return any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
-
-
 def exclude_extensions(f_path, extensions_list=EXCLUDED_FILE_EXTENSIONS):
     """
     checks filepath to see if it is using excluded extensions
@@ -240,7 +233,7 @@ def server_change():
             user_email = current_user.email
             
             # if the user has admin credentials, there are no limits
-            if has_admin_role(current_user):
+            if utils.FlaskAppUtils.has_admin_role(current_user):
                 files_limit, data_limit = 0, 0
 
             # If the user entered a path to delete
@@ -326,7 +319,9 @@ def batch_move_edit():
     # if the testing worker task, the task will be executed on this process and
     # not enqueued to be executed by the worker
     testing = False
-    if flask.request.args.get('test') and flask.request.args.get('test').lower() == 'true' and has_admin_role(current_user):
+    if flask.request.args.get('test') \
+        and flask.request.args.get('test').lower() == 'true' \
+        and utils.FlaskAppUtils.has_admin_role(current_user):
         testing = True
 
     # retrieve limits to how much can be changed on the server, but if the user has admin credentials,
@@ -380,7 +375,7 @@ def batch_move_edit():
     if form.validate_on_submit():
         try:
             # if the user has admin credentials, there are no limits
-            if has_admin_role(current_user):
+            if utils.FlaskAppUtils.has_admin_role(current_user):
                 files_limit, data_limit = 0, 0
 
             # if useer entered an asset path, we will convert it to an app path
@@ -490,7 +485,9 @@ def batch_server_edit():
     # determine if the request is for testing the associated worker task
     # if the testing worker task, the task will be executed on this process and
     # not enqueued to be executed by the worker
-    if flask.request.args.get('test') and flask.request.args.get('test').lower() == 'true' and has_admin_role(current_user):
+    if flask.request.args.get('test') \
+        and flask.request.args.get('test').lower() == 'true' \
+        and utils.FlaskAppUtils.has_admin_role(current_user):
         testing = True
     
     # retrieve limits to how much can be changed on the server, but if the user has admin credentials,
@@ -501,10 +498,9 @@ def batch_server_edit():
     
     if form.validate_on_submit():
         try:
-            user_email = current_user.email
             
             # if the user has admin credentials, there are no limits
-            if has_admin_role(current_user):
+            if utils.FlaskAppUtils.has_admin_role(current_user):
                 files_limit, data_limit = 0, 0
             
             user_asset_path = form.asset_path.data
@@ -1184,11 +1180,14 @@ def scrape_files():
         user = UserModel.query.filter_by(email=user_param).first()
 
         # If there is a matching user to the request parameter, the password matches and that account has admin role...
-        if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
+        if user \
+            and bcrypt.check_password_hash(user.password, password_param) \
+            and utils.FlaskAppUtils.has_admin_role(user):
             request_is_authenticated = True
 
     elif current_user:
-        if current_user.is_authenticated and has_admin_role(current_user):
+        if current_user.is_authenticated \
+            and utils.FlaskAppUtils.has_admin_role(current_user):
             request_is_authenticated = True
 
     # If the request is authenticated, we can proceed to enqueue the task.
@@ -1288,11 +1287,14 @@ def confirm_db_file_locations():
         user = UserModel.query.filter_by(email=user_param).first()
 
         # If there is a matching user to the request parameter, the password matches and that account has admin role...
-        if user and bcrypt.check_password_hash(user.password, password_param) and has_admin_role(user):
+        if user \
+            and bcrypt.check_password_hash(user.password, password_param) \
+            and utils.FlaskAppUtils.has_admin_role(user):
             request_is_authenticated = True
 
     elif current_user:
-        if current_user.is_authenticated and has_admin_role(current_user):
+        if current_user.is_authenticated \
+            and utils.FlaskAppUtils.has_admin_role(current_user):
             request_is_authenticated = True
     
     if request_is_authenticated:
@@ -1450,7 +1452,9 @@ def scrape_location():
         # determine if the request is for testing the associated worker task
         # if the testing worker task, the task will be executed on this process and
         # not enqueued to be executed by the worker
-        if flask.request.args.get('test') and flask.request.args.get('test').lower() == 'true' and has_admin_role(current_user):
+        if flask.request.args.get('test') \
+            and flask.request.args.get('test').lower() == 'true' \
+            and utils.FlaskAppUtils.has_admin_role(current_user):
             testing = True
 
         form = archiver_forms.ScrapeLocationForm()
