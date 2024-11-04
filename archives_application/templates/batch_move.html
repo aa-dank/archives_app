@@ -59,7 +59,10 @@
                 {% endif %}
             </fieldset>
             <div class="form-group">
-                {{ form.submit(class="btn btn-outline-info", id="execute-button") }}
+                <input type="submit" class="btn btn-outline-info"
+                       id="execute-button"
+                       value="{% if not choose_contents %}Select{% else %}Submit{% endif %}"
+                       data-executing-text="{% if not choose_contents %}Retrieving Contents...{% else %}Executing...{% endif %}">
             </div>
         </form>
     </div>
@@ -71,7 +74,8 @@
                 form.addEventListener('submit', function(event) {
                     var button = document.getElementById('execute-button');
                     if (button) {
-                        button.value = 'Executing...';  // Change button text
+                        var executingText = button.getAttribute('data-executing-text');
+                        button.value = executingText;  // Change button text
                         // Disable button to prevent double submission
                         setTimeout(() => button.disabled = true, 10);
                     }
@@ -83,4 +87,3 @@
         });
     </script>
 {% endblock content %}
-

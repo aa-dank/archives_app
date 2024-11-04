@@ -831,14 +831,15 @@ class RQTaskUtils:
         sql_db.session.commit()
 
     @staticmethod
-    def initiate_task_subroutine(q_id, sql_db):
+    def initiate_task_subroutine(q_id, sql_db, task_result={}):
         """
         Updates the database to indicate that the task has started. 
         This is meant to be called at the begining of a task sent to the rq worker.
         :param q_id: the task id of the task being executed
         :param sql_db: the database object
+        :param start_task_db_updates: dictionary of updates to be made to the database
         """
-        start_task_db_updates = {"status": 'started'}
+        start_task_db_updates = {"status": 'started', "task_results": task_result}
         sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(start_task_db_updates)
         sql_db.session.commit()
 
