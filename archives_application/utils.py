@@ -684,7 +684,7 @@ class FilesUtils:
             if page_img.width > max_width:
                 max_width_percent = (max_width / float(page_img.size[0]))
                 hsize = int((float(page_img.size[1]) * float(max_width_percent)))
-                page_img = page_img.resize((max_width, hsize), Image.ANTIALIAS)
+                page_img = page_img.resize((max_width, hsize), Image.LANCZOS)
 
             page_img.save(output_path)
         
