@@ -1,3 +1,4 @@
+import errno
 import os
 import flask
 from flask_wtf import FlaskForm
@@ -9,7 +10,7 @@ from .. import utils
 
 def path_validation_subroutine(path_form_field: StringField, path_type: str = None):
     """
-    Ensures that the path exists and matches the type requirment
+    Ensures that the path exists and matches the type requirement
     :param path_form_field: The form field that contains the path string
     :param path_type: The type of path that is required. Either "file" or "dir"
     """
@@ -19,14 +20,25 @@ def path_validation_subroutine(path_form_field: StringField, path_type: str = No
     if path_form_field.data:
         path_validation_error = lambda mssg: ValidationError(f"{mssg}: \n{path_form_field.data}")
         try:
-            network_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=path_form_field.data,
-                                                                     app=flask.current_app)
+            network_path = utils.FlaskAppUtils.user_path_to_app_path(
+                path_from_user=path_form_field.data,
+                app=flask.current_app
+            )
         except Exception as e:
             raise ValidationError(f"Error converting user path to network path: \n{path_form_field.data}\n{e}")
         
-        if not os.path.exists(network_path):
-            valid_error = f"Path doesn't exist on server:\n{network_path}\nEntered path:\n"
-            raise path_validation_error(valid_error)
+        try:
+            os.stat(network_path)
+        except OSError as e:
+            if e.errno == errno.ENOENT:
+                valid_error = f"Path doesn't exist on server:\n{network_path}\nEntered path:\n"
+                raise path_validation_error(valid_error)
+            elif e.errno == errno.EACCES:
+                valid_error = f"Permission denied accessing path:\n{network_path}\nEntered path:\n"
+                raise path_validation_error(valid_error)
+            else:
+                valid_error = f"Error accessing path:\n{network_path}\nError: {e}\nEntered path:\n"
+                raise path_validation_error(valid_error)
         
         if path_type == "file" and not os.path.isfile(network_path):
             valid_error = f"Path is not a file:\n{network_path}\nEntered path:\n"
