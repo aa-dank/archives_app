@@ -31,21 +31,21 @@ def path_validation_subroutine(path_form_field: StringField, path_type: str = No
             os.stat(network_path)
         except OSError as e:
             if e.errno == errno.ENOENT:
-                valid_error = f"Path doesn't exist on server:\n{network_path}\nEntered path:\n"
+                valid_error = f"Path doesn't exist on server:\n{network_path}\nEntered path"
                 raise path_validation_error(valid_error)
             elif e.errno == errno.EACCES:
-                valid_error = f"Permission denied accessing path:\n{network_path}\nEntered path:\n"
+                valid_error = f"Permission denied accessing path:\n{network_path}\nEntered path"
                 raise path_validation_error(valid_error)
             else:
-                valid_error = f"Error accessing path:\n{network_path}\nError: {e}\nEntered path:\n"
+                valid_error = f"Error accessing path:\n{network_path}\nError: {e}\nEntered path"
                 raise path_validation_error(valid_error)
         
         if path_type == "file" and not os.path.isfile(network_path):
-            valid_error = f"Path is not a file:\n{network_path}\nEntered path:\n"
+            valid_error = f"Path is not a file:\n{network_path}\nEntered path"
             raise path_validation_error(valid_error)
 
         if path_type == "dir" and not os.path.isdir(network_path):
-            valid_error = f"Path is not a directory:\n{network_path}\nEntered path:\n"
+            valid_error = f"Path is not a directory:\n{network_path}\nEntered path"
             raise path_validation_error(valid_error)
 
 
