@@ -25,13 +25,16 @@ def path_validation_subroutine(path_form_field: StringField, path_type: str = No
             raise ValidationError(f"Error converting user path to network path: \n{path_form_field.data}\n{e}")
         
         if not os.path.exists(network_path):
-            raise path_validation_error("Path doesn't exist")
+            valid_error = f"Path doesn't exist on server:\n{network_path}\nEntered path:\n"
+            raise path_validation_error(valid_error)
         
         if path_type == "file" and not os.path.isfile(network_path):
-            raise path_validation_error("path is not a file")
+            valid_error = f"Path is not a file:\n{network_path}\nEntered path:\n"
+            raise path_validation_error(valid_error)
 
         if path_type == "dir" and not os.path.isdir(network_path):
-            raise path_validation_error("path is not a directory")
+            valid_error = f"Path is not a directory:\n{network_path}\nEntered path:\n"
+            raise path_validation_error(valid_error)
 
 
 def validate_str_path(form: FlaskForm, field: StringField):
