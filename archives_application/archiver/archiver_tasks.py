@@ -339,16 +339,29 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
 
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
-        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+        def debug_prod_sub_routine(task_log, additional_info):
+            """
+            Quick function to delete later.
+            Logs additional information and task log in the app logger.
+            Also updates the db record witht he additional info
+            """
+            app.logger.info(f"Additional Information: {additional_info}")
+            app.logger.info(f"Task Log: {task_log}")
+            composit_log = {**task_log, **additional_info}
+            utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, sql_db=db, task_results=composit_log)
+
+        xtra_prod_log = lambda log, add_info: debug_prod_sub_routine(task_log=log, additional_info=add_info) #TODO: delete this line
         file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
         location_scrape_log = {"queue_id": queue_id,
                                "Location": scrape_location,
                                "Recursive": recursively,
+                               "Confirm Data": confirm_data,
                                "Locations Missing": 0,
                                "Files Records Removed": 0,
                                "Files Confirmed": 0,
                                "Files Enqueued to Add": 0,
                                "Errors": []}
+        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db, task_result=location_scrape_log)
         relevant_file_data_list = []
         if confirm_data:
             try:
@@ -356,10 +369,18 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                 query_dirs = os.path.join(*location_db_dirs_list)
                 archive_location = flask.current_app.config.get('ARCHIVES_LOCATION')
                 relevant_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories.startswith(query_dirs)).all()
-                for location_record in relevant_locations:
+                xtra_prod_log(log=location_scrape_log, #TODO: delete this
+                              add_info={"Query Directories": query_dirs,
+                                        "Archive Location": archive_location,
+                                        "Relevant Locations": relevant_locations})
+                for idx, location_record in enumerate(relevant_locations):
                     try:
                         filepath = os.path.join(archive_location, location_record.file_server_directories, location_record.filename)
-                        
+                        if idx in  [0, 1, 2, 10, 15, 25]:#TODO: delete this
+                            xtra_prod_log(log=location_scrape_log,
+                                          add_info={"Location Record": location_record,
+                                                    "Filepath": filepath,
+                                                    "location_exists": os.path.exists(filepath)})
                         # if the file no longer exists, we delete the entry in the database
                         if not os.path.exists(filepath):
                             location_scrape_log["Locations Missing"] += 1
@@ -406,9 +427,18 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                           "Exception": str(e)}
                 location_scrape_log["Errors"].append(e_dict)
 
+        #TODO: delete this
+        xtra_prod_log(log=location_scrape_log,
+                      add_info={
+                          "Relevant File Data List": relevant_file_data_list,
+                          "Scrape location exists": os.path.exists(scrape_location),
+                          "scrape location": scrape_location,
+                          "items in scrape location": len(os.listdir(scrape_location))}
+                          )        
         # Iterate through the files in the scrape location and add them to the database if they are not already there
         # by enqueuing a task to add the file to the database.
         for root, _, files in os.walk(scrape_location):
+            
             server_dirs_list = []
             server_dirs = ""
             if files:
@@ -428,6 +458,15 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                             continue
                     
                     location_scrape_log["Files Enqueued to Add"] += 1
+
+                    # TODO: delete this
+                    if location_scrape_log["Files Enqueued to Add"] in [0, 1, 2, 10, 15, 25]:
+                        xtra_prod_log(log=location_scrape_log,
+                                      add_info={"Filepath": filepath,
+                                                "Server Directories": server_dirs,
+                                                "Filename": file,
+                                                "file_exists": os.path.exists(filepath)})
+
                     add_file_params = {"filepath": filepath}
                     utils.RQTaskUtils.enqueue_new_task(db=db,
                                                        enqueued_function=add_file_to_db_task, 
