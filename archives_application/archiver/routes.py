@@ -356,19 +356,18 @@ def batch_move_edit():
 
         # otherwise provide the contents sizes
         else:
-            contents_dict = {}
+            contents_choices = []
             size_as_mb = lambda size: round(size / 1024 / 1024, 2)
             # add directories to the contents_dict
             for c_dir in contents_dirs:
                 c_dir_size, c_dir_file_count = contents_dir_size_tuple(c_dir)
                 c_dir_size = size_as_mb(c_dir_size)
-                contents_dict[c_dir] = {"type": "dir", "size": c_dir_size, "file_count": c_dir_file_count}
+                contents_choices.append((c_dir, f"{c_dir} (dir, {c_dir_file_count} files, {c_dir_size} MBs)"))
             
             # add files to the contents_dict
             for content_file in contents_files:
                 file_size_mb = size_as_mb(os.path.getsize(os.path.join(app_asset_path, content_file)))
-                contents_dict[content_file] = {"type": "file", "size": file_size_mb}
-            contents_choices = [(c, f"{c} ({contents_dict[c]['type']}, {contents_dict[c]['size']} MBs)") for c in contents_dict]
+                contents_choices.append((content_file, f"{content_file} (file, {file_size_mb} MBs)"))
         
         form.contents_to_move.choices = contents_choices
 
@@ -1159,6 +1158,7 @@ def retrieve_location_to_start_scraping():
 
 
 @archiver.route("/scrape_files", methods=['GET', 'POST'])
+@archiver.route("/api/scrape_files", methods=['GET', 'POST'])
 def scrape_files():
     """
     Enqueues a task to scrape files from the archives location. Built to accept requests from logged in users
@@ -1494,7 +1494,8 @@ def scrape_location():
             function_call = nq_results.get("description")
             m = f"Scraping task has been successfully enqueued. Function Enqueued: {function_call}"
             flask.flash(m, 'success')
-            return flask.redirect(flask.url_for('archiver.scrape_location', values={'test': testing}))
+            testing_params = {} if not testing else {'test': str(bool(testing))}
+            return flask.redirect(flask.url_for('archiver.scrape_location', values=testing_params))
         
         return flask.render_template('scrape_location.html', form=form)
     
