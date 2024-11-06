@@ -360,7 +360,7 @@ def batch_move_edit():
             size_as_mb = lambda size: round(size / 1024 / 1024, 2)
             # add directories to the contents_dict
             for c_dir in contents_dirs:
-                c_dir_size, c_dir_file_count = contents_dir_size_tuple(c_dir)
+                c_dir_file_count, c_dir_size = contents_dir_size_tuple(c_dir)
                 c_dir_size = size_as_mb(c_dir_size)
                 contents_choices.append((c_dir, f"{c_dir} (dir, {c_dir_file_count} files, {c_dir_size} MBs)"))
             
