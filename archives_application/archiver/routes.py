@@ -473,7 +473,7 @@ def batch_move_edit():
 @archiver.route("/batch_edit", methods=['GET', 'POST'])#TODO remove
 @archiver.route("/api/consolidate_dirs", methods=['GET', 'POST'])
 @archiver.route("/consolidate_dirs", methods=['GET', 'POST'])
-def batch_server_edit():
+def consolidate_dirs():
     
     # imported here to avoid circular import
     from archives_application.archiver.server_edit import directory_contents_quantities
@@ -558,7 +558,7 @@ def batch_server_edit():
             
             success_message = f"Batch move task enqueued (job id: {nq_results['_id']})\nIt may take some time for the batch operation to complete."
             flask.flash(success_message, 'success')
-            return flask.redirect(flask.url_for('archiver.batch_server_edit'))
+            return flask.redirect(flask.url_for('archiver.consolidate_dirs'))
 
         except Exception as e:
             m = "Error processing or executing batch change"
@@ -566,7 +566,7 @@ def batch_server_edit():
                                             thrown_exception=e,
                                             app_obj=flask.current_app)
 
-    return flask.render_template('consolidate_edit.html', title='Cponsolidate Directories', form=form)
+    return flask.render_template('consolidate_edit.html', title='Consolidate Directories', form=form)
             
 
 @archiver.route("/upload_file", methods=['GET', 'POST'])

@@ -10,7 +10,7 @@
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Batch Move</legend>
                 {% if not choose_contents %}
-                    <p>This form is for moving selected contents of a directory into another directory.</p>
+                    <p>This form is for moving selected contents of a directory into another directory. Depending on the aggregate size of content being moved, it can take some time to copmplete the move. While the application is moving the files, it is important to stay out of the way -- not open or otherwise manipulate the files being used by the application while it is doing the batch moving.</p>
                     <div class="form-group">
                         <h5>{{ form.asset_path.label(class="form-control-label") }}</h5>
                         <p>Enter the path to the directory whose contents you want to move.</p>

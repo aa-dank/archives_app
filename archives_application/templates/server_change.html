@@ -61,7 +61,9 @@
                 <div class="form-group">
                     <h6>Move a File or Directory</h6>
                     <p>Enter the path to the asset to be moved and the path to the destination directory where it will be moved.</br>
-                    <a href="{{url_for('archiver.batch_server_edit')}}">Use Batch Editing tool to move contents of Directory to another Directory.</a></p></br>
+                    <a href="{{url_for('archiver.consolidate_dirs')}}">- Use consolidate directories tool to move all of the contents of a target directory to destination directory.</a></br>
+                    <a href="{{url_for('archiver.batch_move_edit')}}">- Use batch moving tool to move several files from target directory to another, destination Directory.</a>
+                    </p>
                     {{ form.asset_path.label(class="form-control-label") }}
                     {% if form.asset_path.errors %}
                         {{ form.asset_path(class="form-control form-control-lg is-invalid") }}
