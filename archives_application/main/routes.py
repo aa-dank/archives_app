@@ -349,3 +349,21 @@ def toggle_sql_logging():
     return flask.jsonify(**{"sql logging":flask.current_app.config['SQLALCHEMY_ECHO'], "log location":log_path})
 
 
+@main.route("/endpoints_index")
+def endpoints_index():
+    """
+    This endpoint is used to display all the endpoints of the application.
+    """
+    # get all the endpoints of the application
+    output = []
+    for rule in sorted(flask.current_app.url_map.iter_rules(), key=lambda r: r.rule):
+        methods = ', '.join(sorted(rule.methods))
+        endpoint = rule.endpoint
+        view_func = flask.current_app.view_functions.get(endpoint)
+        doc = view_func.__doc__ or 'No documentation available.'
+        line = f"{rule.rule} [{methods}] --> {endpoint}<br>{doc}<br><br>"
+        output.append(line)
+    return '<br>'.join(output)
+
+
+
