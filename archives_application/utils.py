@@ -59,6 +59,11 @@ def html_table_from_df(df, path_columns: List[str], space_holder: str = '1spc_hl
     Turns a pandas dataframe into a formatted html table, ready for flask.render_template(). 
     This function replaces spaces in dataframe values with the space_holder which is returned with the html table for use 
     in replacement of the space_holder with the html space character, '&nbsp;'. (eg replace(space_holder, '&nbsp;')
+    :param df: pandas dataframe
+    :param path_columns: list of column names that contain file paths
+    :param space_holder: string to replace spaces in file paths with
+    :param column_widths: dictionary of column names and their corresponding widths
+    :return: html table string
     """
     # The following lines of code are to resolve an issue where html collapses multiple spaces into one space but 
     # to_html() escapes the non-collapsing html space character. The solution is to replace spaces in filepaths with 

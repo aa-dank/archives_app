@@ -4,9 +4,10 @@ import logging
 import os
 import subprocess
 import archives_application.app_config as app_config
+import pandas as pd
 from flask_login import current_user
 from archives_application.main import forms
-from archives_application.utils import *
+from archives_application.utils import html_table_from_df, FlaskAppUtils, RQTaskUtils
 from archives_application import db, bcrypt
 from archives_application.models import *
 
@@ -355,15 +356,29 @@ def endpoints_index():
     This endpoint is used to display all the endpoints of the application.
     """
     # get all the endpoints of the application
-    output = []
+    data = []
     for rule in sorted(flask.current_app.url_map.iter_rules(), key=lambda r: r.rule):
-        methods = ', '.join(sorted(rule.methods))
+        methods = ', '.join(sorted(rule.methods - {'HEAD', 'OPTIONS'}))
         endpoint = rule.endpoint
         view_func = flask.current_app.view_functions.get(endpoint)
-        doc = view_func.__doc__ or 'No documentation available.'
-        line = f"{rule.rule} [{methods}] --> {endpoint}<br>{doc}<br><br>"
-        output.append(line)
-    return '<br>'.join(output)
+        doc = (view_func.__doc__ or 'No documentation available.').strip()
+        data.append({
+            'URL': rule.rule,
+            'Methods': methods,
+            'Endpoint': endpoint,
+            'Docstring': doc
+        })
 
+    df = pd.DataFrame(data)
+    column_widths = {
+        'URL': '10%',
+        'Methods': '10%',
+        'Endpoint': '15%',
+        'Docstring': '65%'
+    }
 
-
+    df_html = html_table_from_df(df, path_columns=[], column_widths=column_widths)
+    return flask.render_template('endpoints_index.html',
+                                 title='Endpoints Index',
+                                 endpoints_html_table=df_html,
+                                 hide_sidebar=True)
