@@ -54,14 +54,8 @@ def home():
 
 @main.route("/about")
 def about():
+    """Placeholder for an about page"""
     return flask.render_template('about.html', title='About')
-
-
-@main.route("/admin")
-def main_admin():
-    #TODO add page of links to admin pages
-    flask.flash("Admin enpoint hit.")
-    return flask.redirect(flask.url_for('main.home'))
 
 
 @main.route("/admin/db_backup", methods=['GET', 'POST'])

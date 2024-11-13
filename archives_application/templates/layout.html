@@ -69,6 +69,7 @@
                     {% if 'ADMIN' in current_user.roles %}
                         <li class="list-group-item list-group-item-light"><a href={{url_for('main.change_config_settings')}}>Change App Config</a></li>
                         <li class="list-group-item list-group-item-light"><a href={{url_for('timekeeper.choose_employee')}}>See Timesheets</a></li>
+                        <li class="list-group-item list-group-item-light"><a href={{url_for('main.endpoints_index')}}>App Index</a></li>
                     {% endif %}
                     {% if 'ARCHIVIST' in current_user.roles %}
                         <li class="list-group-item list-group-item-light"><a href={{url_for('timekeeper.timekeeper_event')}}>Timekeeper</a></li>
