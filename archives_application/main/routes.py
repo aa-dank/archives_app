@@ -49,6 +49,12 @@ def web_exception_subroutine(flash_message, thrown_exception, app_obj):
 @main.route("/")
 @main.route("/home")
 def home():
+    """
+    Renders the home page.
+
+    Returns:
+        Response: The rendered 'home.html' template.
+    """
     return flask.render_template('home.html')
 
 
@@ -61,9 +67,18 @@ def about():
 @main.route("/admin/db_backup", methods=['GET', 'POST'])
 def backup_database():
     """
-    This endpoint is for backing up the databases. It can be used for manual backups by navigating to the url as a user
-    or one can pass credentials to it in the request which is useful for a scheduled process
-    @return:
+    Endpoint for backing up the database.
+
+    This endpoint can be used for manual backups by navigating to the URL as an admin user
+    or by providing credentials via query parameters for scheduled processes.
+
+    Query Parameters:
+        user (str): The username for authentication.
+        password (str): The password for authentication.
+
+    Returns:
+        Response: A Flask Response object with the result of the backup operation,
+        or an error message with the appropriate HTTP status code.
     """
     
     # import task here to avoid circular import
@@ -117,8 +132,20 @@ def backup_database():
 
 @main.route("/admin/maintenance", methods=['GET', 'POST'])
 def app_maintenance():
-    """
-    This endpoint is used to perform regular maintenance tasks on the application and database.
+    """Performs routine maintenance tasks on the application and database.
+
+    This endpoint enqueues tasks like cleaning up temporary files,
+    removing old task records, and deleting outdated database backups.
+    A helper process (`AppCustodian`) defines and manages these tasks.
+    Meant to be used for regular, scheduled application maintenance.
+
+    Query Parameters:
+        user (str): Username for authentication.
+        password (str): Password for authentication.
+
+    Returns:
+        Response: A JSON response with the results of the maintenance tasks,
+        or an error message with the appropriate HTTP status code.
     """
 
     # import task here to avoid circular import
@@ -171,10 +198,15 @@ def app_maintenance():
 @main.route("/admin/config", methods=['GET', 'POST'])
 @FlaskAppUtils.roles_required(['ADMIN'])
 def change_config_settings():
+    """Allows admin users to change application configuration settings within the app.
+
+    This endpoint provides a form to modify the configuration file. After submitting
+    new settings, a helper process restarts the application to apply the changes.
+
+    Returns:
+        Response: Renders the configuration form or redirects with a success/error message.
     """
-    Endpoint for changing the configuration settings of the application.
-    After editing the configuration json file, the application will restart.
-    """
+
     # import task here to avoid circular import
     from archives_application.main.main_tasks import restart_app_task
 
@@ -250,9 +282,17 @@ def change_config_settings():
 @main.route("/test/logging", methods=['GET', 'POST'])
 @FlaskAppUtils.roles_required(['ADMIN'])
 def test_logging():
-    """
-    endpoint for seeing how the system responds to different logging events
-    @return:
+    """Generates test log messages at various levels for debugging purposes.
+
+    This endpoint logs messages at DEBUG, INFO, WARNING, ERROR, and CRITICAL levels.
+    It can be useful for verifying that the logging configuration is working as expected.
+
+    Examples:
+        - Use this endpoint to ensure that log messages appear in log files or consoles.
+        - Test different log handlers or troubleshoot logging issues.
+
+    Returns:
+        Response: Redirects to the home page after logging the messages.
     """
     flask.current_app.logger.debug("I'm a test DEBUG message")
     flask.current_app.logger.info("I'm an test INFO message")
@@ -266,23 +306,27 @@ def test_logging():
 @main.route("/test/database_info")
 @FlaskAppUtils.roles_required(['ADMIN'])
 def get_db_uri():
-    """
-    Display the current database uri and the status of the database connection pool.
+    """Displays the current database URI and the status of the database connection pool.
+
+    Returns:
+        Response: A JSON response containing the database URL and pool status.
     """
     status = db.engine.pool.status()
     info = {
         "database_url": flask.current_app.config.get("SQLALCHEMY_DATABASE_URI"),
         "status": status
     }
-    return info
+    return flask.jsonify(info)
 
 
 @main.route("/test/see_config")
 @FlaskAppUtils.roles_required(['ADMIN'])
 def get_app_config():
-    """
-    Endpoint function to see the current configuration of the runnning application.
-    Useful for debugging and checking the current state of the application.
+    """Endpoint function to see the current configuration of the runnning application.
+    Useful for debugging and checking the current state of the application, sanity checks, etc.
+    
+    Returns:
+        Response: A JSON response containing various configuration parameters of the application.
     """
     info = {
         "database_url": flask.current_app.config.get("SQLALCHEMY_DATABASE_URI"),
@@ -302,13 +346,15 @@ def get_app_config():
         "app_restart_command": flask.current_app.config.get("APP_RESTART_COMMAND"),
 
     }
-    return info
+    return flask.jsonify(info)
 
 @main.route("/test/rq", methods=['GET', 'POST'])
 @FlaskAppUtils.roles_required(['ADMIN'])
 def test_rq_connection():
-    """
-    Endpoint for testing the rq task queue.
+    """Tests the connection to the RQ (Redis Queue) task queue.
+
+    Returns:
+        Response: A JSON response indicating the status of the RQ connection.
     """
     try:
         redis_client = flask.current_app.q.connection
@@ -323,9 +369,11 @@ def test_rq_connection():
 @main.route("/admin/sql_logging", methods=['GET', 'POST'])
 @FlaskAppUtils.roles_required(['ADMIN'])
 def toggle_sql_logging():
-    """
-    The purpose of this endpoint is to toggle the logging of sql statements to the console.
+    """The purpose of this endpoint is to toggle the logging of sql statements to the console.
     This is useful for debugging, but should not be left on in production.
+
+    Returns:
+        Response: A JSON response indicating the new logging status and log file location.
     """
     
     # "If set to True SQLAlchemy will log all the statements issued to stderr which can be useful for debugging"
@@ -346,8 +394,10 @@ def toggle_sql_logging():
 
 @main.route("/endpoints_index")
 def endpoints_index():
-    """
-    This endpoint is used to display all the endpoints of the application.
+    """Displays all the endpoints of the application.
+
+    Returns:
+        Response: Renders the 'endpoints_index.html' template with the endpoints table.
     """
     # get all the endpoints of the application
     data = []
