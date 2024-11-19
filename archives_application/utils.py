@@ -86,7 +86,7 @@ def html_table_from_df(df, path_columns: List[str] = [], html_columns: List[str]
                          index=False,
                          justify='left',
                          render_links=True,
-                         escape=bool(html_columns))
+                         escape= not html_columns) # escape=False to allow html in the columns
 
     # These lines add some css to the html table to format it to sit neatly within the div container.
     df_html = df_html.replace('<table', '<table style="table-layout: auto; width: 100%;"')
