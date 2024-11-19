@@ -54,7 +54,7 @@ def serializable_dict(some_dict: dict):
     serial_dict = {k: v.strftime('%Y-%m-%d %H:%M:%S') if isinstance(v, datetime) else str(v) for k, v in some_dict.items()}
     return serial_dict
 
-def html_table_from_df(df, path_columns: List[str], space_holder: str = '1spc_hldr1', column_widths: Dict[str, str] = {}):
+def html_table_from_df(df, path_columns: List[str] = [], html_columns: List[str] = [], space_holder: str = '1spc_hldr1', column_widths: Dict[str, str] = {}):
     """
     Turns a pandas dataframe into a formatted html table, ready for flask.render_template(). 
     This function replaces spaces in dataframe values with the space_holder which is returned with the html table for use 
@@ -63,6 +63,7 @@ def html_table_from_df(df, path_columns: List[str], space_holder: str = '1spc_hl
     :param path_columns: list of column names that contain file paths
     :param space_holder: string to replace spaces in file paths with
     :param column_widths: dictionary of column names and their corresponding widths
+    :param html_columns: list of column names that need to be transformed to render correctly in HTML
     :return: html table string
     """
     # The following lines of code are to resolve an issue where html collapses multiple spaces into one space but 
@@ -76,10 +77,16 @@ def html_table_from_df(df, path_columns: List[str], space_holder: str = '1spc_hl
         # replace empty values with "UNKNOWN"
         df[col_name] = df[col_name].apply(lambda pth: "UNKNOWN" if (pth == '' or pd.isnull(pth) or type(pth) == type(None)) else pth)
     
+    # Replace newlines with <br> in the specified HTML columns
+    for col_name in html_columns:
+        if col_name in df.columns:
+            df[col_name] = df[col_name].apply(lambda x: x.replace('\n', '<br>') if isinstance(x, str) else x)
+
     df_html = df.to_html(classes='table-dark table-striped table-bordered table-hover table-sm',
                          index=False,
                          justify='left',
-                         render_links=True)
+                         render_links=True,
+                         escape=bool(html_columns))
 
     # These lines add some css to the html table to format it to sit neatly within the div container.
     df_html = df_html.replace('<table', '<table style="table-layout: auto; width: 100%;"')

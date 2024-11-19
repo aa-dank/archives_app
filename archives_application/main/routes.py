@@ -405,7 +405,7 @@ def endpoints_index():
         methods = ', '.join(sorted(rule.methods - {'HEAD', 'OPTIONS'}))
         endpoint = rule.endpoint
         view_func = flask.current_app.view_functions.get(endpoint)
-        doc = (view_func.__doc__ or 'No documentation available.').strip()
+        doc = (view_func.__doc__ or 'No documentation available.').strip().replace('\n', '<br>')
         data.append({
             'URL': rule.rule,
             'Methods': methods,
@@ -421,7 +421,7 @@ def endpoints_index():
         'Docstring': '65%'
     }
 
-    df_html = html_table_from_df(df, path_columns=[], column_widths=column_widths)
+    df_html = html_table_from_df(df, html_columns=[], column_widths=column_widths)
     return flask.render_template('endpoints_index.html',
                                  title='Endpoints Index',
                                  endpoints_html_table=df_html,
