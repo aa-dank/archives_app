@@ -1,4 +1,5 @@
 import flask
+import io
 import json
 import logging
 import os
@@ -394,35 +395,96 @@ def toggle_sql_logging():
 
 @main.route("/endpoints_index")
 def endpoints_index():
-    """Displays all the endpoints of the application.
+    """Displays all the endpoints of the application or returns an Excel file.
 
     Returns:
-        Response: Renders the 'endpoints_index.html' template with the endpoints table.
+        Response: Renders the 'endpoints_index.html' template with the endpoints table,
+                  or returns an Excel file if 'spreadsheet' parameter is set to 'True'.
     """
-    # get all the endpoints of the application
-    data = []
-    for rule in sorted(flask.current_app.url_map.iter_rules(), key=lambda r: r.rule):
-        methods = ', '.join(sorted(rule.methods - {'HEAD', 'OPTIONS'}))
-        endpoint = rule.endpoint
-        view_func = flask.current_app.view_functions.get(endpoint)
-        doc = (view_func.__doc__ or 'No documentation available.').strip().replace('\n', '<br>')
-        data.append({
-            'URL': rule.rule,
-            'Methods': methods,
-            'Endpoint': endpoint,
-            'Docstring': doc
-        })
+    try:
+        # Get all the endpoints of the application
+        data = []
+        for rule in sorted(flask.current_app.url_map.iter_rules(), key=lambda r: r.rule):
+            methods = ', '.join(sorted(rule.methods - {'HEAD', 'OPTIONS'}))
+            endpoint = rule.endpoint
+            view_func = flask.current_app.view_functions.get(endpoint)
+            doc = (view_func.__doc__ or 'No documentation available.').strip()
+            data.append({
+                'URL': rule.rule,
+                'Methods': methods,
+                'Endpoint': endpoint,
+                'Docstring': doc
+            })
 
-    df = pd.DataFrame(data)
-    column_widths = {
-        'URL': '10%',
-        'Methods': '10%',
-        'Endpoint': '15%',
-        'Docstring': '65%'
-    }
+        df = pd.DataFrame(data)
 
-    df_html = html_table_from_df(df, html_columns=[], column_widths=column_widths)
-    return flask.render_template('endpoints_index.html',
-                                 title='Endpoints Index',
-                                 endpoints_html_table=df_html,
-                                 hide_sidebar=True)
+        # Check if 'spreadsheet' parameter is set to 'True'
+        spreadsheet_param = flask.request.args.get('spreadsheet', 'False')
+        if spreadsheet_param.lower() == 'true':
+            # Return Excel file
+            output = io.BytesIO()
+            try:
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df.to_excel(writer, index=False, sheet_name='Endpoints')
+
+                    # Adjust column widths
+                    workbook = writer.book
+                    worksheet = writer.sheets['Endpoints']
+
+                    for column_cells in worksheet.columns:
+                        max_length = 0
+                        column = column_cells[0].column_letter  # Get the column name
+                        for cell in column_cells:
+                            try:
+                                if cell.value:
+                                    cell_length = len(str(cell.value))
+                                    if cell_length > max_length:
+                                        max_length = cell_length
+                            except Exception:
+                                pass
+                        adjusted_width = (max_length + 2)
+                        worksheet.column_dimensions[column].width = adjusted_width
+
+                # Seek to the beginning of the stream
+                output.seek(0)
+
+                # Send the Excel file as a response
+                return flask.send_file(
+                    output,
+                    download_name='endpoints.xlsx',  # Use 'attachment_filename' if using Flask < 2.0
+                    as_attachment=True,
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+            except Exception as e:
+                # Handle exceptions during Excel file generation
+                flash_message = 'An error occurred while generating the Excel file'
+                return web_exception_subroutine(flash_message, e, flask.current_app)
+        else:
+            # Continue with original behavior
+            try:
+                column_widths = {
+                    'URL': '10%',
+                    'Methods': '10%',
+                    'Endpoint': '15%',
+                    'Docstring': '65%'
+                }
+                df_html = html_table_from_df(
+                    df,
+                    column_widths=column_widths,
+                    html_columns=['Docstring']
+                )
+                return flask.render_template(
+                    'endpoints_index.html',
+                    title='Endpoints Index',
+                    endpoints_html_table=df_html,
+                    hide_sidebar=True
+                )
+            except Exception as e:
+                # Handle exceptions during HTML rendering
+                flash_message = 'An error occurred while rendering the endpoints index page'
+                return web_exception_subroutine(flash_message, e, flask.current_app)
+    
+    except Exception as e:
+        # Handle any other exceptions
+        flash_message = 'An unexpected error occurred'
+        return web_exception_subroutine(flash_message, e, flask.current_app)
