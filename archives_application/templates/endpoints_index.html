@@ -1,5 +1,7 @@
 {% extends "layout.html" %}
 {% block content %}
     <h1>Endpoints Index</h1>
+    <P>Table of application urls and the app functions (endpoints) that are called from the url.<br>
+    Multiple urls may use the same endpoint (eg if I wanted an api url for the same endpoint that the web gui uses.)</P>
     {{ endpoints_html_table|safe }}
 {% endblock %}
