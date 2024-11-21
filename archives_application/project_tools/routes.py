@@ -104,7 +104,19 @@ def filemaker_reconciliation():
 @utils.FlaskAppUtils.roles_required(['ADMIN'])
 def test_fmp_reconciliation():
     """
-    Endpoint for testing the task that reconciles the application database with the FileMaker database, fmp_caan_project_reconciliation_task.
+    Endpoint for testing the task that reconciles the application database with the FileMaker database.
+
+    This endpoint enqueues a task to reconcile the application database with the FileMaker database.
+    Optionally, it can also confirm the locations of projects in the application database.
+
+    Query Parameters:
+        confirm_locations (str): Whether to confirm the locations of projects in the application database. 
+                                 Accepts 'true' or 'false'. Default is 'false'.
+        update_projects (str): Whether to update the projects in the application database to match the FileMaker database.
+                               Accepts 'true' or 'false'. Default is 'false'.
+
+    Returns:
+        Response: A JSON response with the results of the reconciliation and confirmation tasks.
     """
     from archives_application.project_tools.project_tools_tasks import fmp_caan_project_reconciliation_task, confirm_project_locations_task
     results = {"confirm_results":{},
@@ -150,6 +162,17 @@ def test_fmp_reconciliation():
 def caan_drawings(caan):
     """
     Endpoint for displaying drawings for a given CAAN.
+
+    This endpoint retrieves and displays the locations of project drawings associated with a given CAAN.
+    It checks the database for projects linked to the CAAN and categorizes them based on whether they have drawings.
+    The locations of the drawings are then displayed in an HTML table.
+
+    Path Parameters:
+        caan (str): The CAAN identifier for which to retrieve project drawings.
+
+    Returns:
+        Response: Renders the 'caan_drawings.html' template with tables of projects that have drawings and those that might have drawings.
+                  Returns a 404 response if the CAAN is not found or if no projects are associated with the CAAN.
     """
 
     def project_drawing_location(project_location, archives_location, network_location, drawing_folder_prefix = "f5"):
