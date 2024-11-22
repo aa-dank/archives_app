@@ -112,42 +112,74 @@ def exclude_filenames(f_path, excluded_names=EXCLUDED_FILENAMES):
 @archiver.route("/server_change", methods=['GET', 'POST'])
 def server_change():
     """
-    Handles server change requests for the file server, either through a form submission or API request.
-    
-    This endpoint can be accessed in two primary ways:
-    1. Through a web form that users fill out to make changes on the file server.
-    2. Directly through an API request with parameters passed in the request URL or request headers.
+    Handles server change requests for the file server, either through a web form submission or an API request.
 
-    Supported Methods:
-    - GET: Displays the server change form to the user.
-    - POST: Processes the server change request, either from the submitted form or directly through API request.
+    This endpoint allows users with the appropriate permissions ('ADMIN' or 'ARCHIVIST') to perform server-side file operations such as deleting, renaming, moving, or creating directories and files.
 
-    Parameters (for API requests):
-    - user (str): The email of the user making the request. Can be provided as a URL parameter or in the request headers.
-    - password (str): The password of the user making the request. Can be provided as a URL parameter or in the request headers.
-    - new_path (str): The new path for file/directory operations (e.g., RENAME, MOVE, or CREATE).
-                      Can be provided as a URL parameter or in the request headers.
-    - old_path (str): The original path for file/directory operations (e.g., DELETE, RENAME, or MOVE).
-                      Can be provided as a URL parameter or in the request headers.
-    - edit_type (str): Specifies the type of server edit to perform. Can be one of:
-                       - DELETE: Deletes a specified path.
-                       - RENAME: Renames a file/directory from old_path to new_path.
-                       - MOVE: Moves an asset from old_path to new_path.
-                       - CREATE: Creates a new directory at new_path.
-                      Can be provided as a URL parameter or in the request headers.
+    Access Methods:
+    1. **Web Interface**:
+       - Users can access a form to submit server change requests directly via the web interface.
+    2. **API Requests**:
+       - Users can make API requests by sending parameters in the URL query string, request headers, or form data.
+
+    Supported HTTP Methods:
+    - **GET**: Displays the server change form to the user.
+    - **POST**: Processes the server change request, either from the submitted form or directly through an API request.
+
+    Authentication:
+    - **Web Interface**:
+      - Users must be logged in and have the necessary permissions.
+    - **API Requests**:
+      - Users must provide valid credentials.
+      - Parameters `user` and `password` must be provided in the URL parameters, request headers, or form data.
+
+    Permissions:
+    - Only users with roles `'ADMIN'` or `'ARCHIVIST'` can perform server changes.
+    - Users with `'ADMIN'` role are exempt from limits on the number of files and data size affected by operations.
+
+    Parameters (for API requests and form submissions):
+    - `user` (str): The email of the user making the request. Provide in URL parameters, request headers, or form data.
+    - `password` (str): The password of the user making the request. Provide in URL parameters, request headers, or form data.
+    - `edit_type` (str): Specifies the type of server edit to perform. Must be one of:
+        - `'DELETE'`: Deletes the item at `old_path`.
+        - `'RENAME'`: Renames an item from `old_path` to `new_path`.
+        - `'MOVE'`: Moves an item from `old_path` to `new_path`.
+        - `'CREATE'`: Creates a new directory at `new_path`.
+      Provide in URL parameters, request headers, or form data.
+    - `old_path` (str): The original path for file/directory operations (required for `'DELETE'`, `'RENAME'`, `'MOVE'`). Provide in URL parameters, request headers, or form data.
+    - `new_path` (str): The new path for file/directory operations (required for `'RENAME'`, `'MOVE'`, `'CREATE'`). Provide in URL parameters, request headers, or form data.
 
     Returns:
-    - HTML template: If accessed via web, either displays the server change form or redirects after successful form submission.
-    - JSON response: If accessed via API, returns success or error messages in JSON format.
+    - **Web Interface**:
+      - On **GET**: Renders the server change form.
+      - On successful **POST**: Redirects to the home page with a success message.
+      - On error: Redirects to the home page with an error message.
+    - **API Requests**:
+      - On success: Returns a response with status code `200` and a success message.
+      - On error: Returns a response with an appropriate status code and error message.
 
     Notes:
-    - The user must be authenticated and have the correct permissions (ADMIN or ARCHIVIST) to make server changes.
-    - There are certain limits on the number of files and data size that can be changed unless the user has admin credentials.
-    - In the case of an exception during the server change operation, an appropriate error message is returned.
+    - When using the web form, users should only fill in the fields relevant to the operation they wish to perform. The form validation ensures that only one operation is specified per request.
+    - For API requests, all parameters (`user`, `password`, `edit_type`, `old_path`, `new_path`) can be supplied via URL parameters, request headers, or form data.
+    - Limits on the number of files and total data size affected by operations are configurable in the application settings. Users with `'ADMIN'` role are exempt from these limits.
+    - The endpoint uses the `ServerEdit` class to execute the requested file operations.
+    - In case of an exception during the server change operation, an appropriate error message is returned, and the error is logged.
+
+    Examples:
+    - **Deleting a file via API**:
+      - Parameters:
+        - `edit_type=DELETE`
+        - `old_path=/path/to/file.txt`
+      - Provide authentication credentials (`user` and `password`).
+    - **Renaming a directory via Web Form**:
+      - Fill in `Current Path` with the current directory path.
+      - Fill in `New Path` with the desired directory name or path.
+      - Select `RENAME` as the edit type.
 
     Raises:
-    - Unauthorized: If the user is not authenticated or lacks the necessary permissions.
-    - Various errors: Depending on the issues encountered during the server change operation.
+    - **Unauthorized (401)**: If the user is not authenticated or lacks the necessary permissions.
+    - **Bad Request (400)**: If the form validation fails or required parameters are missing.
+    - **Exception**: Various exceptions may be raised due to issues like invalid paths, access violations, or server errors.
     """
     
     # imported here to avoid circular import
@@ -311,6 +343,44 @@ def server_change():
 
 @archiver.route("/batch_move", methods=['GET', 'POST'])
 def batch_move_edit():
+    """
+    Handles batch moving of selected files or directories from a source directory to a destination directory.
+
+    This endpoint provides a form that allows users to select multiple files or subdirectories within a specified source directory (`asset_path`) and move them collectively to a destination directory (`destination_path`).
+
+    Workflow:
+    1. The user enters the `asset_path`, which is the path to the source directory containing items to move.
+    2. The endpoint displays the contents of the specified source directory.
+    3. The user selects one or more files or subdirectories (`contents_to_move`) from the displayed contents.
+    4. The user specifies the `destination_path` where the selected items will be moved.
+    5. Upon form submission, the selected items are moved to the destination directory.
+
+    Supported Methods:
+    - **GET**: Renders the batch move form for user input.
+    - **POST**: Processes the submitted form and initiates the batch move operation.
+
+    Form Fields:
+    - `asset_path` (str): The path to the source directory containing the items to move.
+    - `contents_to_move` (List[str]): A list of filenames or subdirectory names selected for moving.
+    - `destination_path` (str): The path to the destination directory where items will be moved.
+
+    Returns:
+    - **HTML Template**: Renders the batch move form along with success or error messages based on the operation's outcome.
+
+    Notes:
+    - Users must be authenticated and have the necessary permissions to perform batch move operations.
+    - There may be limits on the number of files and the total data size that can be moved unless the user has administrative privileges.
+    - If the user has admin permissions and includes the query parameter `test=true`, the batch move task will execute synchronously for testing purposes.
+    - Error messages will be displayed if the operation encounters issues, such as invalid paths or permission errors.
+
+    Examples:
+    - Use this endpoint to move multiple project folders from a staging directory to an archive location in a single operation.
+    - Organize files by moving selected documents from one directory to another without moving all contents.
+
+    Raises:
+    - **Unauthorized**: If the user is not authenticated or lacks the required permissions.
+    - **Exception**: Various exceptions may be raised due to issues like invalid paths, access violations, or server errors.
+    """
     
     # imported here to avoid circular import
     from archives_application.archiver.server_edit import directory_contents_quantities
@@ -471,11 +541,44 @@ def batch_move_edit():
     return flask.render_template('batch_move.html', title='Batch Move', form=form, choose_contents=choose_contents)
 
 
-@archiver.route("/batch_edit", methods=['GET', 'POST'])#TODO remove
+@archiver.route("/batch_edit", methods=['GET', 'POST'])  # TODO remove
 @archiver.route("/api/consolidate_dirs", methods=['GET', 'POST'])
 @archiver.route("/consolidate_dirs", methods=['GET', 'POST'])
 def consolidate_dirs():
-    
+    """
+    Consolidates directories with identical names within a specified parent directory into single directories.
+    Uses a worker process to perform the consolidation operation.
+    This endpoint allows users to merge the contents of two directories. This is particularly useful for organizing files when duplicate directories exist.
+
+    Workflow:
+    1. The user specifies the 'Path to Target Directory', the directory with the contents to be moved.
+    2. The user enters a 'Destination Directory Path', the directory where the contents will be moved.
+    3. The user can choose to remove empty directories after consolidation.
+    4. Upon form submission, the contents of the target directory are moved to the destination directory. Any duplicate directories are consolidated.
+
+    Supported Methods:
+    - **GET**: Renders the consolidation form for user input.
+    - **POST**: Processes the submitted form and initiates the consolidation operation.
+
+    Form Fields:
+    - `asset_path` (str): The path to the target directory containing the contents to be moved.
+    - `destination_path` (str): The path to the destination directory where the contents will be moved.
+    - `remove_empty_dirs` (bool): Option to remove the now empty asset_path location after consolidation.
+
+    Returns:
+    - **HTML Template**: Renders the consolidation form along with success or error messages based on the operation's outcome.
+
+    Notes:
+    - Users must be authenticated and have the necessary permissions to perform consolidation operations.
+    - Limits on the number of files and total data size affected by operations are configurable in the application settings. Users with `'ADMIN'` role are exempt from these limits.
+    - If the user has admin permissions and includes the query parameter `test=true`, the consolidation task will execute synchronously for testing purposes.
+    - The endpoint uses the `consolidate_dirs_edit_task` function to perform the consolidation operation.
+    - Error messages will be displayed if the operation encounters issues, such as invalid paths or permission errors.
+
+    Raises:
+    - **Unauthorized**: If the user is not authenticated or lacks the required permissions.
+    - **Exception**: Various exceptions may be raised due to issues like invalid paths, access violations, or server errors.
+    """
     # imported here to avoid circular import
     from archives_application.archiver.server_edit import directory_contents_quantities
     from archives_application.archiver.archiver_tasks import consolidate_dirs_edit_task
@@ -574,7 +677,45 @@ def consolidate_dirs():
 @login_required
 def upload_file():
     """
-    This function handles the upload of a single file to the file server.
+    Handles the upload of a single file to the archive by authenticated users.
+    This endpoint allows users to upload a file to the server and archive it in a specified directory. Users must be logged in to access this functionality.
+
+    Workflow:
+    1. The user navigates to the upload page and is presented with a form to upload a file.
+    2. The user selects a file and fills in required metadata such as the destination directory and project number.
+    3. Upon form submission, the file and form data are validated.
+    4. If validation passes, the file is saved to a temporary location and then moved to the archive destination.
+    5. The file's metadata is recorded in the database.
+    6. The user is redirected to the home page with a success message.
+
+    Supported Methods:
+    - **GET**: Renders the upload file form for the user.
+    - **POST**: Processes the uploaded file and form data.
+
+    Form Fields:
+    - `project_number` (str, optional): The project number associated with the file.
+    - `destination_directory` (str, optional): The filing code directory where the file will be archived.
+    - `destination_path` (str, optional): The full path to the destination directory. If provided, `destination_directory` and `project_number` are ignored.
+    - `document_date` (Date, optional): The date of the document associated with the file.
+    - `new_filename` (str, optional): The new filename for the file. If not provided, the original filename is used.
+    - `upload` (File): The file to upload. Required.
+    - `notes` (str, optional): Any additional notes or comments about the file.
+
+    Returns:
+    - **HTML Template**: Renders the upload form on GET requests.
+    - On successful **POST**: Redirects to the home page with a success message.
+    - On error: Renders the form again with error messages.
+
+    Notes:
+    - Users must be authenticated to access this endpoint.
+    - The maximum allowed file size is defined in the application configuration.
+    - Only certain file types may be allowed, as defined by the application's settings.
+    - The `destination_directory` must be one of the predefined choices in the application configuration.
+
+    Raises:
+    - **Unauthorized**: If the user is not authenticated.
+    - **ValidationError**: If the form data is invalid or missing required fields.
+    - **Exception**: Various exceptions may be raised due to issues like file save errors or database errors.
     """
     # import task function here to avoid circular import
     from archives_application.archiver.archiver_tasks import add_file_to_db_task
@@ -701,7 +842,7 @@ def upload_file_api():
         uploaded_file = flask.request.files['file']
         if uploaded_file.filename == '':
             return flask.Response("No file selected", status=400)
-        
+
         filing_code = utils.FlaskAppUtils.retrieve_request_param('filing_code')
         destination = utils.FlaskAppUtils.retrieve_request_param('destination')
 
