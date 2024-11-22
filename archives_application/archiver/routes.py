@@ -116,24 +116,25 @@ def server_change():
     
     This endpoint can be accessed in two primary ways:
     1. Through a web form that users fill out to make changes on the file server.
-    2. Directly through an API request with parameters passed in the request URL.
+    2. Directly through an API request with parameters passed in the request URL or request headers.
 
     Supported Methods:
     - GET: Displays the server change form to the user.
     - POST: Processes the server change request, either from the submitted form or directly through API request.
 
-    URL Parameters (for API requests):
-    - user (str): The email of the user making the request.
-    - password (str): The password of the user making the request.
+    Parameters (for API requests):
+    - user (str): The email of the user making the request. Can be provided as a URL parameter or in the request headers.
+    - password (str): The password of the user making the request. Can be provided as a URL parameter or in the request headers.
     - new_path (str): The new path for file/directory operations (e.g., RENAME, MOVE, or CREATE).
-                     Note: Should be URL-encoded.
+                      Can be provided as a URL parameter or in the request headers.
     - old_path (str): The original path for file/directory operations (e.g., DELETE, RENAME, or MOVE).
-                     Note: Should be URL-encoded.
+                      Can be provided as a URL parameter or in the request headers.
     - edit_type (str): Specifies the type of server edit to perform. Can be one of:
                        - DELETE: Deletes a specified path.
                        - RENAME: Renames a file/directory from old_path to new_path.
                        - MOVE: Moves an asset from old_path to new_path.
                        - CREATE: Creates a new directory at new_path.
+                      Can be provided as a URL parameter or in the request headers.
 
     Returns:
     - HTML template: If accessed via web, either displays the server change form or redirects after successful form submission.
@@ -193,18 +194,18 @@ def server_change():
     # User needs to have ADMIN role.
     request_is_authenticated = False
     form_request = True
-    if flask.request.args.get('user'):
+    user_param = utils.FlaskAppUtils.retrieve_request_param('user', None)
+    if user_param:
         form_request = False
-        user_param = flask.request.args.get('user')
-        password_param = flask.request.args.get('password')
+        password_param = utils.FlaskAppUtils.retrieve_request_param('password')
         user = UserModel.query.filter_by(email=user_param).first()
 
         # If there is a matching user to the request parameter, the password matches and that account has admin role...
         if user and bcrypt.check_password_hash(user.password, password_param) and has_correct_permissions(user=user):
             request_is_authenticated = True
-            new_path = parse.unquote(flask.request.args.get('new_path'))
-            old_path = parse.unquote(flask.request.args.get('old_path'))
-            edit_type = flask.request.args.get('edit_type')
+            new_path = parse.unquote(utils.FlaskAppUtils.retrieve_request_param('new_path'))
+            old_path = parse.unquote(utils.FlaskAppUtils.retrieve_request_param('old_path'))
+            edit_type = utils.FlaskAppUtils.retrieve_request_param('edit_type')
             user_email = user.email
 
     elif current_user:
@@ -319,8 +320,8 @@ def batch_move_edit():
     # if the testing worker task, the task will be executed on this process and
     # not enqueued to be executed by the worker
     testing = False
-    if flask.request.args.get('test') \
-        and flask.request.args.get('test').lower() == 'true' \
+    if utils.FlaskAppUtils.retrieve_request_param('test', None) \
+        and utils.FlaskAppUtils.retrieve_request_param('test').lower() == 'true' \
         and utils.FlaskAppUtils.has_admin_role(current_user):
         testing = True
 
@@ -484,8 +485,8 @@ def consolidate_dirs():
     # determine if the request is for testing the associated worker task
     # if the testing worker task, the task will be executed on this process and
     # not enqueued to be executed by the worker
-    if flask.request.args.get('test') \
-        and flask.request.args.get('test').lower() == 'true' \
+    if utils.FlaskAppUtils.retrieve_request_param('test', None) \
+        and utils.FlaskAppUtils.retrieve_request_param('test').lower() == 'true' \
         and utils.FlaskAppUtils.has_admin_role(current_user):
         testing = True
     
@@ -682,9 +683,9 @@ def upload_file_api():
     from archives_application.archiver.archiver_tasks import add_file_to_db_task
 
     request_authenticated = False
-    if flask.request.args.get('user'):
-        user_param = flask.request.args.get('user')
-        password_param = flask.request.args.get('password')
+    user_param = utils.FlaskAppUtils.retrieve_request_param('user', None)
+    if user_param:
+        password_param = utils.FlaskAppUtils.retrieve_request_param('password', None)
         user = UserModel.query.filter_by(email=user_param).first()
 
         if user and bcrypt.check_password_hash(user.password, password_param):
@@ -701,19 +702,25 @@ def upload_file_api():
         if uploaded_file.filename == '':
             return flask.Response("No file selected", status=400)
         
-        filing_code = flask.request.args.get('filing_code')
-        destination = flask.request.args.get('destination')
+        filing_code = utils.FlaskAppUtils.retrieve_request_param('filing_code')
+        destination = utils.FlaskAppUtils.retrieve_request_param('destination')
 
         # raise exception if there is not the required parameters in the submitted request.
-        project_number = flask.request.args.get('project_number')
+        project_number = utils.FlaskAppUtils.retrieve_request_param('project_number')
         if not (destination or (project_number and filing_code)):
             response_args = flask.request.args.copy()
-            if 'password' in response_args:
-                response_args['password'] = ''.join(['*' for _ in range(len(response_args['password']))])
+            response_header_args = flask.request.headers.copy()
+            
+            # combine request and header args into single dict
+            response_args.update(response_header_args)
+             
+            password_val = utils.FlaskAppUtils.retrieve_request_param('password')
+            if password_val:
+                response_args['password'] = ''.join(['*' for _ in range(len(password_val))])
             
             response_text = f"""
             Need either a destination or project_number and filing_code to archive the file.
-            Request args: {flask.request.args}
+            Request args: {response_args}
             """
             return flask.Response(response_text, status=400)
 
@@ -725,13 +732,13 @@ def upload_file_api():
         if project_number:
             project_number = utils.sanitize_unicode(project_number.strip())
 
-        arch_file = ArchivalFile(current_path=temp_path,
-                                 project=project_number,
-                                 new_filename=filename,
-                                 notes=flask.request.args.get('notes'),
-                                 destination_dir=filing_code,
-                                 directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
-                                 archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'))
+        arch_file = ArchivalFile(current_path = temp_path,
+                                 project = project_number,
+                                 new_filename = filename,
+                                 notes = utils.FlaskAppUtils.retrieve_request_param('notes'),
+                                 destination_dir = filing_code,
+                                 directory_choices = flask.current_app.config.get('DIRECTORY_CHOICES'),
+                                 archives_location = flask.current_app.config.get('ARCHIVES_LOCATION'))
         
         if destination:
             app_destination_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=destination,
@@ -1039,9 +1046,9 @@ def archived_or_not_api():
         Exception: An exception is raised when an error occurs during file processing or database querying.
     """
     request_authenticated = False
-    if flask.request.args.get('user'):
-        user_param = flask.request.args.get('user')
-        password_param = flask.request.args.get('password')
+    user_param = utils.FlaskAppUtils.retrieve_request_param('user', None)
+    if user_param:
+        password_param = utils.FlaskAppUtils.retrieve_request_param('password')
         user = UserModel.query.filter_by(email=user_param).first()
 
         if user and bcrypt.check_password_hash(user.password, password_param):
@@ -1174,9 +1181,9 @@ def scrape_files():
     # Check if the request includes user credentials or is from a logged in user. 
     # User needs to have ADMIN role.
     request_is_authenticated = False
-    if flask.request.args.get('user'):
-        user_param = flask.request.args.get('user')
-        password_param = flask.request.args.get('password')
+    user_param = utils.FlaskAppUtils.retrieve_request_param('user', None)
+    if user_param:
+        password_param = utils.FlaskAppUtils.retrieve_request_param('password')
         user = UserModel.query.filter_by(email=user_param).first()
 
         # If there is a matching user to the request parameter, the password matches and that account has admin role...
@@ -1197,8 +1204,8 @@ def scrape_files():
             scrape_location = retrieve_location_to_start_scraping()
             scrape_time = 8
             file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get("ARCHIVES_LOCATION")))
-            if flask.request.args.get('scrape_time'):
-                scrape_time = int(flask.request.args.get('scrape_time'))
+            if utils.FlaskAppUtils.retrieve_request_param('scrape_time'):
+                scrape_time = int(utils.FlaskAppUtils.retrieve_request_param('scrape_time'))
             scrape_time = timedelta(minutes=scrape_time)
             # Create our own job id to pass to the task so it can manipulate and query its own representation 
             # in the database and Redis.
@@ -1244,8 +1251,8 @@ def test_scrape_files():
     scrape_location = retrieve_location_to_start_scraping()
     scrape_time = 8
     file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get("ARCHIVES_LOCATION")))
-    if flask.request.args.get('scrape_time'):
-        scrape_time = int(flask.request.args.get('scrape_time'))
+    if utils.FlaskAppUtils.retrieve_request_param('scrape_time'):
+        scrape_time = int(utils.FlaskAppUtils.retrieve_request_param('scrape_time'))
     scrape_time = timedelta(minutes=scrape_time)
     
     # Record test task in database
@@ -1281,9 +1288,9 @@ def confirm_db_file_locations():
     # Check if the request includes user credentials or is from a logged in user. 
     # User needs to have ADMIN role.
     request_is_authenticated = False
-    if flask.request.args.get('user'):
-        user_param = flask.request.args.get('user')
-        password_param = flask.request.args.get('password')
+    user_param = utils.FlaskAppUtils.retrieve_request_param('user', None)
+    if user_param:
+        password_param = utils.FlaskAppUtils.retrieve_request_param('password')
         user = UserModel.query.filter_by(email=user_param).first()
 
         # If there is a matching user to the request parameter, the password matches and that account has admin role...
@@ -1300,8 +1307,8 @@ def confirm_db_file_locations():
     if request_is_authenticated:
         try:
             confirming_time = 10
-            if flask.request.args.get('confirming_time'):
-                confirming_time = int(flask.request.args.get('confirming_time'))
+            if utils.FlaskAppUtils.retrieve_request_param('confirming_time'):
+                confirming_time = int(utils.FlaskAppUtils.retrieve_request_param('confirming_time'))
             
             confirming_time = timedelta(minutes=confirming_time)
             confirm_params = {"archive_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
@@ -1370,9 +1377,9 @@ def file_search():
     
     # if the request includes a timestamp for a previous search results, then we will return the spreadsheet of the search results.
     # If there is not a corresponding file, then we will raise an error.
-    if flask.request.args.get('timestamp'):
+    if utils.FlaskAppUtils.retrieve_request_param('timestamp'):
         try:
-            timestamp = flask.request.args.get('timestamp')
+            timestamp = utils.FlaskAppUtils.retrieve_request_param('timestamp')
             csv_filepath = utils.FlaskAppUtils.create_temp_filepath(filename=f'{csv_filename_prefix}{timestamp}.csv',
                                                                      unique_filepath=False)
             if not os.path.exists(csv_filepath):
@@ -1452,8 +1459,8 @@ def scrape_location():
         # determine if the request is for testing the associated worker task
         # if the testing worker task, the task will be executed on this process and
         # not enqueued to be executed by the worker
-        if flask.request.args.get('test') \
-            and flask.request.args.get('test').lower() == 'true' \
+        if utils.FlaskAppUtils.retrieve_request_param('test') \
+            and utils.FlaskAppUtils.retrieve_request_param('test').lower() == 'true' \
             and utils.FlaskAppUtils.has_admin_role(current_user):
             testing = True
 

@@ -633,7 +633,24 @@ class FlaskAppUtils:
             return False
         
         return any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
-
+    
+    @staticmethod
+    def retrieve_request_param(param_name: str, default_value: str = None):
+        """
+        Retrieves a parameter from the request. If the parameter is not found, the default value is returned.
+        Looks in the url, headers, and body of the request.
+        :param param_name: the name of the parameter to retrieve
+        :param default_value: the value to return if the parameter is not found
+        :return: the value of the parameter or the default value
+        """
+        param_value = flask.request.args.get(param_name)
+        if not param_value:
+            param_value = flask.request.headers.get(param_name)
+        if not param_value:
+            param_value = flask.request.form.get(param_name)
+        if not param_value:
+            param_value = default_value
+        return param_value
 
 
 class FilesUtils:

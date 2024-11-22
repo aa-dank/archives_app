@@ -100,10 +100,9 @@ def backup_database():
         
         # first determine if the request is being made by an admin user
         authenticated_to_make_request = False
-
-        if flask.request.args.get('user'):
-            user_param = flask.request.args.get('user')
-            password_param = flask.request.args.get('password')
+        user_param = FlaskAppUtils.retrieve_request_param('user', None)
+        if user_param:
+            password_param = FlaskAppUtils.retrieve_request_param('password')
             user = UserModel.query.filter_by(email=user_param).first()
 
             # If there is a matching user to the request parameter, the password matches and that account has admin role...
@@ -119,7 +118,7 @@ def backup_database():
                                                      enqueued_function=db_backup_task,
                                                      timeout=60)
             job_id = nk_result["task_id"]
-            if flask.request.args.get('user'):
+            if FlaskAppUtils.retrieve_request_param('user'):
                 return flask.Response(f"Database Back-up Task Enqueued. Job ID: {job_id}", status=200)
             
             flask.flash("Database Back-up Task Enqueued.", 'info')
@@ -168,10 +167,9 @@ def app_maintenance():
     custodian = AppCustodian(temp_file_lifespan=3,
                              task_records_lifespan_map=TASK_RECORD_LIFESPANS,
                              db_backup_file_lifespan=2)
-
-    if flask.request.args.get('user'):
-        user_param = flask.request.args.get('user')
-        password_param = flask.request.args.get('password')
+    user_param = FlaskAppUtils.retrieve_request_param('user', None)
+    if user_param:
+        password_param = FlaskAppUtils.retrieve_request_param('password')
         user = UserModel.query.filter_by(email=user_param).first()
 
         # If there is a matching user to the request parameter, the password matches and that account has admin role...
