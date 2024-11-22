@@ -54,11 +54,10 @@ def filemaker_reconciliation():
     # User needs to have ADMIN role.
     request_is_authenticated = False
     try:
-        user_param = None
+        user_param = utils.FlaskAppUtils.retrieve_request_param("user")
         password_param = None
-        if flask.request.args.get('user'):
-            user_param = flask.request.args.get('user')
-            password_param = flask.request.args.get('password')
+        if user_param:
+            password_param = utils.FlaskAppUtils.retrieve_request_param("password")
             user = UserModel.query.filter_by(email=user_param).first()
 
             # If there is a matching user to the request parameter, the password matches and that account has admin role...
@@ -78,11 +77,11 @@ def filemaker_reconciliation():
 
     if request_is_authenticated:
         # extract fmp_caan_project_reconciliation_task params from request
-        to_confirm = flask.request.args.get('confirm_locations')
+        to_confirm = utils.FlaskAppUtils.retrieve_request_param('confirm_locations')
         to_confirm = True if (to_confirm and to_confirm.lower() == "true") else False
-        to_update = flask.request.args.get('update_projects')
+        to_update = utils.FlaskAppUtils.retrieve_request_param('update_projects')
         to_update = True if (to_update and to_update.lower() == "true") else False
-        timeout = flask.request.args.get('timeout') if flask.request.args.get('timeout') else DEFAULT_TASK_TIMEOUT
+        timeout = utils.FlaskAppUtils.retrieve_request_param('timeout') if utils.FlaskAppUtils.retrieve_request_param('timeout') else DEFAULT_TASK_TIMEOUT
 
         task_info = {"confirm_locations": to_confirm,
                      "update_projects": to_update,
@@ -130,9 +129,9 @@ def test_fmp_reconciliation():
     db.session.add(new_task_record)
     db.session.commit()
     
-    to_confirm = flask.request.args.get('confirm_locations')
+    to_confirm = utils.FlaskAppUtils.retrieve_request_param('confirm_locations')
     to_confirm = True if (to_confirm and to_confirm.lower() == "true") else False
-    update_existing = flask.request.args.get('update_projects')
+    update_existing = utils.FlaskAppUtils.retrieve_request_param('update_projects')
     update_existing = True if (update_existing and update_existing.lower() == "true") else False
     reconciliation_results = fmp_caan_project_reconciliation_task(queue_id=recon_job_id,
                                                                   confirm_locations=False, # call this seperately

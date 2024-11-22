@@ -87,7 +87,6 @@ def google_auth():
                                           thrown_exception=e, app_obj=flask.current_app)
 
 
-
 @users.route("/google_auth/callback")
 def callback():
     """
@@ -97,7 +96,7 @@ def callback():
 
     client = flask.current_app.config['google_auth_client']
     # Get authorization code Google sent back to you
-    code = flask.request.args.get("code")
+    code = utils.FlaskAppUtils.retrieve_request_param("code")
 
     #Get token url endpoint
     token_endpoint = get_google_provider_urls()["token_endpoint"]
@@ -263,7 +262,7 @@ def login():
                 
                 if bcrypt.check_password_hash(user.password, form.password.data):
                     user_login_flow(user=user)
-                    next_page = flask.request.args.get('next')
+                    next_page = utils.FlaskAppUtils.retrieve_request_param('next')
 
                     # after successful login it will attempt to send user to the previous page they were trying to access.
                     # If that is not available, it will flask.redirect to the home page
