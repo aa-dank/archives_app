@@ -808,16 +808,73 @@ def upload_file():
 
 @archiver.route("/api/upload_file", methods=['POST'])
 def upload_file_api():
-    """
-    Function to handle the upload of a single file to the file server via an API request.
-    Requires the user to provide the file to upload in the request. Credentials are provided as URL parameters.
-    Available URL parameters:
-    - user (str): The email of the user making the request.
-    - password (str): The password of the user making the request.
-    - filing_code (str): The filing code for the file to be archived.
-    - destination (str): The path to the destination directory for the file.
-    - project_number (str): The project number for the file to be archived.
-    - notes (str): Any notes or comments to be associated with the file.
+    """Uploads a file to the server via API.
+
+    This endpoint allows clients to upload a file to the server through a POST request. The file is processed,
+    archived to the appropriate location based on the provided parameters, and metadata is stored in the database.
+
+    Args:
+        None
+
+    Form Data:
+        file (FileStorage): The file object to be uploaded.
+        project_number (str): The project number associated with the file.
+        destination_dir (str): The destination directory code where the file will be archived.
+        new_filename (str, optional): The new name for the file, if renaming is desired.
+        notes (str, optional): Any notes to be stored with the file metadata.
+        document_date (str, optional): The date associated with the document (format: 'YYYY-MM-DD').
+
+    Headers:
+        Content-Type (str): Must be 'multipart/form-data' to handle file uploads.
+
+    Returns:
+        Response: A JSON response indicating the status of the upload operation.
+
+        Success (HTTP 200):
+        {
+            "message": "File uploaded successfully.",
+            "file_id": (int) ID of the archived file in the database,
+            "destination_path": (str) The path where the file was stored.
+        }
+
+        Failure (HTTP 400 or 500):
+        {
+            "error": "Description of the error that occurred."
+        }
+
+    Raises:
+        400 Bad Request: If required form data is missing or invalid.
+        500 Internal Server Error: If an unexpected error occurs during file processing or archiving.
+
+    Usage:
+        - Clients should send a POST request to this endpoint with the file and required metadata.
+        - The file will be archived in the appropriate directory based on the project number and destination code.
+        - Metadata about the file will be stored in the database for future reference.
+
+    Example:
+        Request:
+            POST /api/upload_file
+            Headers:
+                Content-Type: multipart/form-data
+            Form Data:
+                - file: (File) The file to upload.
+                - project_number: "PRJ-2021-001"
+                - destination_dir: "E5 - Correspondence"
+                - new_filename: "meeting_notes.pdf"
+                - notes: "Quarterly meeting notes."
+                - document_date: "2021-07-15"
+
+        Response (Success):
+            {
+                "message": "File uploaded successfully.",
+                "file_id": 12345,
+                "destination_path": "/archives/PRJ-2021-001/E5 - Correspondence/PRJ-2021-001.E5.meeting_notes.pdf"
+            }
+
+        Response (Failure):
+            {
+                "error": "Missing required parameter: project_number."
+            }
     """
 
     # import task function here to avoid circular import
@@ -909,9 +966,73 @@ def upload_file_api():
 @archiver.route("/inbox_item", methods=['GET', 'POST'])
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def inbox_item():
-    """
-    This function handles the archivist inbox mechanism for iterating (through each request) over the files in the user's inbox,
-    presenting the user with a preview of the file, and processing the file according to the user's input.
+    """Processes and archives files from the archivist's inbox.
+
+    This endpoint allows archivists to process files placed in their inbox directory. It sequentially presents each file
+    to the user, along with a preview, and collects metadata required for archiving. The user can provide information such as
+    project number, destination directory, new filename, notes, and document date.
+
+    Args:
+        None
+
+    Form Data:
+        download_item (SubmitField): Button to download a copy of the current file.
+        project_number (str): The project number associated with the file.
+        destination_directory (str): The code of the destination directory where the file will be archived.
+        destination_path (str, optional): Custom path to archive the file if not using standard directories.
+        new_filename (str, optional): New name for the file if renaming is desired.
+        notes (str, optional): Notes or comments about the file.
+        document_date (str, optional): Date associated with the document (format: 'YYYY-MM-DD').
+
+    Headers:
+        Cookie: Session cookie for user authentication.
+
+    Returns:
+        Response:
+            - On GET request:
+                - Renders 'inbox_item.html' template displaying the file, preview image, and metadata form.
+                - If the inbox is empty, flashes a message and redirects to the home page.
+            - On POST request:
+                - If the 'download_item' button is pressed, initiates a file download of the current item.
+                - If the metadata form is submitted:
+                    - Validates and processes the form data.
+                    - Archives the file to the specified location.
+                    - Updates the database with the file metadata.
+                    - Removes the file from the inbox.
+                    - Redirects to '/inbox_item' to process the next file.
+                - If an error occurs, flashes an error message and redirects to the home page.
+
+    Usage:
+        - Archivists navigate to this endpoint to process files in their inbox.
+        - For each file:
+            - Preview the file to ensure it's ready for archiving.
+            - Optionally download a copy of the file.
+            - Enter required metadata such as project number and destination directory.
+            - Optionally provide a new filename, notes, or document date.
+            - Submit the form to archive the file.
+        - The process repeats until all files in the inbox have been processed.
+
+    Raises:
+        Redirects with a flash message if:
+            - The inbox directory does not exist.
+            - No files are left to process in the inbox.
+            - An exception occurs during processing.
+
+    Examples:
+        Accessing the endpoint:
+
+            GET /inbox_item
+
+        Submitting the form to archive a file:
+
+            POST /inbox_item
+            Form Data:
+                project_number: "PRJ-2021-001"
+                destination_directory: "E5 - Correspondence"
+                new_filename: "meeting_minutes.pdf"
+                notes: "Archived on 2021-09-15"
+                document_date: "2021-09-14"
+
     """
     
     # import task function here to avoid circular import
@@ -1308,13 +1429,66 @@ def retrieve_location_to_start_scraping():
 @archiver.route("/scrape_files", methods=['GET', 'POST'])
 @archiver.route("/api/scrape_files", methods=['GET', 'POST'])
 def scrape_files():
-    """
-    Enqueues a task to scrape files from the archives location. Built to accept requests from logged in users
-    and from requests that include user credentials as request arguments. The scraping will automatically
-    begin at the scrape
-    Use the 'user' argument to specify the user to use for the scrape.
-    Use the 'password' argument to specify the password for the user.
-    Use the 'scrape_time' to specify how long the scrape should run for. 
+    """Initiates the scraping of file data from the archives server.
+
+    This endpoint starts a background task to scrape files from the archives server, reconcile database records,
+    and update the database with any new files found. It's useful for recording changes made directly to the file server
+    that are not yet reflected in the application's database.
+
+    Args:
+        None
+
+    Query Parameters:
+        start_path (str, optional): The server path from which to start scraping files. Defaults to the root archive path.
+        recursive (bool, optional): Whether to recursively scrape subdirectories. Defaults to True.
+
+    Headers:
+        Content-Type (str): Should be 'application/x-www-form-urlencoded' or 'application/json'.
+        Cookie: Session cookie for user authentication.
+        Note: Request parameters can either be sent in the URL query parameters or in the request headers.
+
+    Returns:
+        Response:
+            - On GET request:
+                - Renders 'scrape_files.html' template with a form to initiate scraping.
+            - On POST request:
+                - Enqueues a background task to scrape files starting from the specified path.
+                - Displays a flash message indicating that the scraping task has started.
+                - Redirects to the home page.
+
+    Usage:
+        - Users access this endpoint to synchronize the application's database with the file server.
+        - Parameters can be provided either via URL query parameters or in the request headers.
+        - On the GET request, the user is presented with a form to confirm the initiation of the scraping process.
+        - On form submission (POST request), the scraping task is added to the task queue and runs in the background.
+        - The endpoint ensures that any new files added to the server are recorded in the database.
+
+    Raises:
+        Redirects with a flash message if:
+            - An error occurs while initiating the scraping task.
+
+    Examples:
+        Accessing the endpoint:
+
+            GET /scrape_files
+
+        Initiating scraping with URL parameters:
+
+            POST /scrape_files?start_path=/archives/project&recursive=false
+
+        Initiating scraping with headers:
+
+            POST /scrape_files
+            Headers:
+                Start-Path: /archives/project
+                Recursive: false
+
+        Submitting the form to start scraping:
+
+            POST /scrape_files
+            Form Data:
+                submit: "Start Scraping"
+
     """
     # import task here to avoid circular import
     from archives_application.archiver.archiver_tasks import scrape_file_data_task
@@ -1382,8 +1556,63 @@ def scrape_files():
 @archiver.route("/test/scrape_files", methods=['GET', 'POST'])
 @utils.FlaskAppUtils.roles_required(['ADMIN'])
 def test_scrape_files():
-    """
-    Endpoint for testing archiver_tasks.scrape_file_data function in development.
+    """Tests the file scraping functionality in a controlled environment.
+
+    This endpoint allows administrators to test the file scraping process without affecting the production environment.
+    It initiates a scraping task that runs synchronously, providing immediate feedback on the scraping process.
+
+    Args:
+        None
+
+    Query Parameters:
+        start_path (str, optional): The server path from which to start scraping files. Defaults to the root archive path.
+        recursive (bool, optional): Whether to recursively scrape subdirectories. Defaults to True.
+
+    Headers:
+        Content-Type (str): Should be 'application/x-www-form-urlencoded' or 'application/json'.
+        Cookie: Session cookie for user authentication.
+        Note: Request parameters can either be sent in the URL query parameters or in the request headers.
+
+    Returns:
+        Response:
+            - On GET request:
+                - Renders 'test_scrape_files.html' template with a form to initiate the test scraping.
+            - On POST request:
+                - Initiates a synchronous scraping task starting from the specified path.
+                - Displays the results of the scraping task on the same page.
+
+    Usage:
+        - Administrators access this endpoint to test the file scraping functionality.
+        - Parameters can be provided either via URL query parameters or in the request headers.
+        - On the GET request, the user is presented with a form to confirm the initiation of the test scraping process.
+        - On form submission (POST request), the scraping task runs synchronously and the results are displayed.
+
+    Raises:
+        Redirects with a flash message if:
+            - An error occurs while initiating the scraping task.
+
+    Examples:
+        Accessing the endpoint:
+
+            GET /test/scrape_files
+
+        Initiating test scraping with URL parameters:
+
+            POST /test/scrape_files?start_path=/archives/project&recursive=false
+
+        Initiating test scraping with headers:
+
+            POST /test/scrape_files
+            Headers:
+                Start-Path: /archives/project
+                Recursive: false
+
+        Submitting the form to start test scraping:
+
+            POST /test/scrape_files
+            Form Data:
+                submit: "Start Test Scraping"
+
     """
     # import task here to avoid circular import
     from archives_application.archiver.archiver_tasks import scrape_file_data_task
@@ -1477,8 +1706,62 @@ def confirm_db_file_locations():
 @archiver.route("/test/confirm_files", methods=['GET', 'POST'])
 @utils.FlaskAppUtils.roles_required(['ADMIN'])
 def test_confirm_files():
-    """
-    Endpoint for testing archiver_tasks.confirm_file_locations function in development.
+    """Confirms the existence of files in the database by checking their locations on the server.
+
+    This endpoint initiates a background task to verify that files recorded in the database still exist at their specified locations on the server. It updates the database to reflect the current status of each file.
+
+    Args:
+        None
+
+    Query Parameters:
+        confirming_time (int, optional): The time in minutes to spend confirming file locations. Defaults to 10 minutes.
+
+    Headers:
+        Content-Type (str): Should be 'application/x-www-form-urlencoded' or 'application/json'.
+        Cookie: Session cookie for user authentication.
+        Note: Request parameters can either be sent in the URL query parameters or in the request headers.
+
+    Returns:
+        Response:
+            - On GET request:
+                - Renders 'confirm_file_locations.html' template with a form to initiate the confirmation process.
+            - On POST request:
+                - Enqueues a background task to confirm file locations.
+                - Displays a flash message indicating that the confirmation task has started.
+                - Redirects to the home page.
+
+    Usage:
+        - Users access this endpoint to verify the existence of files recorded in the database.
+        - Parameters can be provided either via URL query parameters or in the request headers.
+        - On the GET request, the user is presented with a form to confirm the initiation of the confirmation process.
+        - On form submission (POST request), the confirmation task is added to the task queue and runs in the background.
+        - The endpoint ensures that the database reflects the current status of each file.
+
+    Raises:
+        Redirects with a flash message if:
+            - An error occurs while initiating the confirmation task.
+
+    Examples:
+        Accessing the endpoint:
+
+            GET /confirm_file_locations
+
+        Initiating confirmation with URL parameters:
+
+            POST /confirm_file_locations?confirming_time=15
+
+        Initiating confirmation with headers:
+
+            POST /confirm_file_locations
+            Headers:
+                Confirming-Time: 15
+
+        Submitting the form to start confirmation:
+
+            POST /confirm_file_locations
+            Form Data:
+                submit: "Start Confirmation"
+
     """
 
     from archives_application.archiver.archiver_tasks import confirm_file_locations_task
@@ -1507,8 +1790,83 @@ def test_confirm_files():
 
 @archiver.route("/file_search", methods=['GET', 'POST'])
 def file_search():
-    """
-    Endpoint for searching the file locations in the database for files that match the search term.
+    """Searches for files in the database based on the provided search criteria.
+
+    This endpoint allows users to search for files by filename, with options to include directory name matches
+    and filter results by specific search locations. The search can be limited to filenames only or include
+    directory names as well. Additionally, users can download the search results as a spreadsheet if the
+    number of results exceeds a predefined limit.
+
+    Args:
+        None
+
+    Form Data:
+        search_term (str): The keyword or phrase to search for in filenames.
+        filename_only (bool): If true, only filenames are matched. If false, directory names are also included in the search.
+        search_location (str): The specific directory path to limit the search. Must be copied from the Windows File Explorer address bar.
+
+    Query Parameters:
+        timestamp (str, optional): The timestamp associated with a previous search's CSV results. Used to retrieve and download the corresponding spreadsheet.
+
+    Headers:
+        Content-Type (str): Should be 'application/x-www-form-urlencoded' or 'application/json'.
+        Cookie: Session cookie for user authentication.
+        Note: Request parameters can be sent either via form data, URL query parameters, or request headers.
+
+    Returns:
+        Response:
+            - On GET request:
+                - Renders 'file_search.html' template displaying the search form.
+            - On POST request without 'timestamp':
+                - Performs the file search based on the provided form data.
+                - If the number of search results exceeds the `html_table_row_limit`, generates a CSV file and provides a download link.
+                - Renders 'file_search_results.html' template displaying the search results in an HTML table and a link to download the full results as a spreadsheet.
+            - On GET or POST request with 'timestamp':
+                - Attempts to retrieve the corresponding CSV file for the provided timestamp.
+                - If the CSV file exists, sends the file as an attachment for download.
+                - If the CSV file does not exist, flashes an error message and redirects to the home page.
+
+    Usage:
+        - Users navigate to this endpoint to search for files within the archives.
+        - **Performing a Search:**
+            - Enter a search term in the 'Filename Search' field.
+            - Optionally, check the 'Filename Only' checkbox to restrict the search to filenames.
+            - Enter the exact search location path copied from the Windows File Explorer address bar.
+            - Submit the form to view the search results.
+        - **Downloading Search Results:**
+            - If the search yields a large number of results, a message will prompt the user to download the complete results as a spreadsheet.
+            - Click the provided download link to retrieve the CSV file containing all search results.
+
+    Raises:
+        - Redirects with a flash message if:
+            - The CSV file associated with the provided timestamp does not exist.
+            - An error occurs while processing the search or generating the CSV file.
+
+    Examples:
+        **Accessing the Search Form:**
+
+            GET /file_search
+
+        **Performing a Search with Form Data:**
+
+            POST /file_search
+            Form Data:
+                search_term: "annual_report"
+                filename_only: True
+                search_location: "C:/Archives/2023/Reports"
+
+        **Downloading Search Results with Timestamp:**
+
+            GET /file_search?timestamp=20230425123045
+
+        **Submitting the Search Form to Download Results:**
+
+            POST /file_search
+            Form Data:
+                search_term: "budget"
+                filename_only: False
+                search_location: "C:/Archives/2023/Finance"
+                submit: "Search"
     """
 
     form = archiver_forms.FileSearchForm()
@@ -1588,8 +1946,85 @@ def file_search():
       
 @archiver.route("/scrape_location", methods=['GET', 'POST'])
 def scrape_location():
-    """
-    Endpoint for scraping a file server location for file data and reconciling the data with the reality of the file server.
+    """Initiates scraping of a specific file server location to synchronize with the database.
+
+    This endpoint allows administrators to scrape a specified file server location, reconcile the file data with the database,
+    and maintain accurate records of file locations. It supports running the scraping task asynchronously via a background
+    worker or synchronously for testing purposes.
+
+    Args:
+        None
+
+    Form Data:
+        scrape_location (str): The directory path on the file server to scrape.
+        recursive (str): Indicates whether to recursively scrape subdirectories ('True' or 'False').
+
+    Query Parameters:
+        test (str, optional): If set to 'true', the scraping task runs synchronously for testing purposes.
+
+    Headers:
+        Content-Type (str): Should be 'application/x-www-form-urlencoded' or 'application/json'.
+        Cookie (str): Session cookie for user authentication.
+        Note: Request parameters can be sent either via form data, URL query parameters, or request headers.
+
+    Returns:
+        Response:
+            - On GET request:
+                - Renders 'scrape_location.html' template displaying the scraping form.
+            - On POST request:
+                - If 'test' parameter is 'true' and the user has admin role:
+                    - Runs the scraping task synchronously and returns the results directly.
+                - Else:
+                    - Enqueues the scraping task to run in the background.
+                    - Displays a flash message indicating that the scraping task has been initiated.
+                    - Redirects to the home page.
+
+    Usage:
+        - **Accessing the Scraping Form:**
+            - Navigate to the endpoint to view the scraping form.
+        
+        - **Initiating Scraping:**
+            - Enter the desired 'Scrape Location' directory path.
+            - Select whether to perform a recursive scrape.
+            - Submit the form to start the scraping process.
+        
+        - **Testing Scraping Synchronously:**
+            - Include the 'test=true' parameter in the URL or headers.
+            - Submit the form to run the scraping task synchronously for testing.
+
+    Raises:
+        - Redirects with a flash message if:
+            - The specified scrape location is invalid or does not exist.
+            - An error occurs while initiating the scraping task.
+
+    Examples:
+        **Accessing the Scraping Form:**
+
+            GET /scrape_location
+
+        **Initiating Scraping with Form Data:**
+
+            POST /scrape_location
+            Form Data:
+                scrape_location: "/archives/project2023"
+                recursive: "True"
+
+        **Initiating Test Scraping via Query Parameters:**
+
+            POST /scrape_location?test=true
+            Form Data:
+                scrape_location: "/archives/project2023"
+                recursive: "False"
+
+        **Initiating Test Scraping via Headers:**
+
+            POST /scrape_location
+            Headers:
+                Test: true
+            Form Data:
+                scrape_location: "/archives/project2023"
+                recursive: "True"
+
     """
     # import task here to avoid circular import
     from archives_application.archiver.archiver_tasks import scrape_location_files_task
