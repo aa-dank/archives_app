@@ -38,6 +38,7 @@ def filemaker_reconciliation():
     The purpose of this endpoint is to ensure that any changes made to the FileMaker database are reflected in the
     application database. This is done by comparing the FileMaker database to the application database and making
     changes to the application database as needed.
+    Request parameters can be sent in either th url or request headers.
     Request parameters:
         user: email of the user making the request (Required)
         password: password of the user making the request (Required)
@@ -107,7 +108,8 @@ def test_fmp_reconciliation():
 
     This endpoint enqueues a task to reconcile the application database with the FileMaker database.
     Optionally, it can also confirm the locations of projects in the application database.
-
+    Request parameters can be sent in either th url or request headers.
+    
     Query Parameters:
         confirm_locations (str): Whether to confirm the locations of projects in the application database. 
                                  Accepts 'true' or 'false'. Default is 'false'.

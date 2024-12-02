@@ -347,6 +347,7 @@ def batch_move_edit():
     Handles batch moving of selected files or directories from a source directory to a destination directory.
 
     This endpoint provides a form that allows users to select multiple files or subdirectories within a specified source directory (`asset_path`) and move them collectively to a destination directory (`destination_path`).
+    Request parameters can be sent in either th url or request headers.
 
     Workflow:
     1. The user enters the `asset_path`, which is the path to the source directory containing items to move.
@@ -549,6 +550,7 @@ def consolidate_dirs():
     Consolidates directories with identical names within a specified parent directory into single directories.
     Uses a worker process to perform the consolidation operation.
     This endpoint allows users to merge the contents of two directories. This is particularly useful for organizing files when duplicate directories exist.
+    Request parameters can be sent in either th url or request headers.
 
     Workflow:
     1. The user specifies the 'Path to Target Directory', the directory with the contents to be moved.
