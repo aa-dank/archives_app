@@ -72,6 +72,7 @@ def backup_database():
 
     This endpoint can be used for manual backups by navigating to the URL as an admin user
     or by providing credentials via query parameters for scheduled processes.
+    Request parameters can be sent in either th url or request headers.
 
     Query Parameters:
         user (str): The username for authentication.
@@ -138,6 +139,7 @@ def app_maintenance():
     removing old task records, and deleting outdated database backups.
     A helper process (`AppCustodian`) defines and manages these tasks.
     Meant to be used for regular, scheduled application maintenance.
+    Request parameters can be sent in either th url or request headers.
 
     Query Parameters:
         user (str): Username for authentication.
