@@ -151,9 +151,21 @@ def compile_journal(date: datetime.date, timecard_df: pd.DataFrame, delimiter_st
 @login_required
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def timekeeper_event():
-    """
-    Main timekeeper endpoint that spits out html form for clocking in and clocking out. Clocking events
-    :return:
+    """Handles clock-in and clock-out events for users.
+
+    This endpoint provides a form for users to clock in and clock out. It records the events in the database
+    and updates the user's status accordingly.
+
+    Usage:
+        - If the user is not clocked in, the form will display a "Clock In" button.
+        - If the user is clocked in, the form will display a journal entry field and "Clock Out" and "Clock Out and Log Out" buttons.
+        - The journal entry field allows users to briefly record what they worked on, including details like project number and print requester.
+
+    Args:
+        None
+
+    Returns:
+        Response: Renders the 'timekeeper.html' template with the form and current clock-in status, redirects to the home page, or redirext to user dashboard.
     """
 
 
@@ -354,7 +366,17 @@ def generate_user_timesheet_dataframes(user_id, start_date=None, end_date=None, 
 @login_required
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def user_timesheet(employee_id):
+    """Displays the timesheet for a specific user.
 
+    This endpoint provides a form for selecting the date range for the timesheet and displays the timesheet data
+    for the specified user within the selected date range.
+
+    Args:
+        employee_id (int): The ID of the employee whose timesheet is to be displayed.
+
+    Returns:
+        Response: Renders the 'timesheet_tables.html' template with the timesheet data for the specified user.
+    """
     form = TimeSheetForm()
     timesheet_df = None
 
@@ -396,39 +418,28 @@ def user_timesheet(employee_id):
 @login_required
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def all_timesheets():
-    """
-    Endpoint to display all timesheets for archivists.
+    """Displays all timesheets for archivists.
 
-    Route: '/timekeeper/all'
-    Methods: GET, POST
-    Access: Only accessible to users with 'ADMIN' or 'ARCHIVIST' roles and requires login.
+    This endpoint provides a form for selecting the date range for the timesheets and displays the timesheet data
+    for all active archivists within the selected date range.
+
+    Args:
+        None
 
     Form data:
-    * timesheet_begin: Start date of timesheet range to display
-    * timesheet_end: End date of timesheet range to display
+        timesheet_begin (date): Start date of timesheet range to display.
+        timesheet_end (date): End date of timesheet range to display.
 
-    Data retrieval:
-    1. Retrieves 'active' archivist emails from the UserModel database
-    2. Filters timekeeper events between the start and end dates for all active archivists
-    3. Creates a dataframe from the filtered timekeeper events
-    4. Aggregates data for each archivist for each day within the date range
-    5. Generates a table for each archivist with columns for date, hours worked, and journal
-
-    Data processing:
-    * Calculates hours worked and aggregates journal entries for each day in the date range
-    * Adds the calculated data to the archivist's data in a dictionary
-
-    Data return:
-    * Renders the 'timesheet_tables.html' template with the following data:
-    - form: the TimeSheetForm object
-    - title: "Timesheets"
-    - archivist_info_list: A list of dictionaries containing information for each archivist, including:
-    - email: email of the archivist
-    - id: id of the archivist
-    - timesheet_df: a dataframe with the timesheet data
-    - html_table: the timesheet data in HTML format
+    Returns:
+        Response: Renders the 'timesheet_tables.html' template with the following data:
+            - form: the TimeSheetForm object.
+            - title: "Timesheets".
+            - archivist_info_list: A list of dictionaries containing information for each archivist, including:
+                - email: email of the archivist.
+                - id: id of the archivist.
+                - timesheet_df: a dataframe with the timesheet data.
+                - html_table: the timesheet data in HTML format.
     """
-    
 
     form = TimeSheetForm()
     try:
@@ -504,8 +515,34 @@ def choose_employee():
 @login_required
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def archiving_dashboard(archiver_id):
-    """
-    Endpoint to display archiving metrics for a specific archivist.
+    """Displays archiving metrics for a specific archivist.
+
+    This endpoint provides a form for selecting the date range and rolling average window for the metrics.
+    It displays the total number of files archived, the total data quantity archived, and generates charts
+    showing the archiving activity over the selected date range.
+
+    Args:
+        archiver_id (int): The ID of the archivist whose metrics are to be displayed.
+
+    Form data:
+        timesheet_begin (date): Start date of the date range for the metrics.
+        timesheet_end (date): End date of the date range for the metrics.
+        rolling_avg_window (int): Number of days to use for the rolling average in the charts.
+
+    Usage:
+        - Users can select the start and end dates for the date range they want to analyze.
+        - Users can specify the rolling average window to smooth out the data in the charts.
+        - The endpoint displays the total number of files archived and the total data quantity archived.
+        - The endpoint generates and displays charts showing the archiving activity over the selected date range.
+
+    Returns:
+        Response: Renders the 'archivist_dashboard.html' template with the following data:
+            - archivist_name: The name of the archivist.
+            - archivist_files_count: The total number of files archived by the archivist.
+            - archivist_data_quantity: The total data quantity archived by the archivist.
+            - total_plot: The path to the generated chart showing the total archiving activity.
+            - archivist_plot: The path to the generated chart showing the archivist's archiving activity.
+            - form: The TimeSheetForm object for selecting the date range and rolling average window.
     """
     def bytes_to_mb(bytes):
         return round((bytes/(1024**2)), 3)
