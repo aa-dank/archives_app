@@ -223,7 +223,6 @@ def server_change():
     user_email = None
 
     # Check if the request includes user credentials or is from a logged in user. 
-    # User needs to have ADMIN role.
     request_is_authenticated = False
     form_request = True
     user_param = utils.FlaskAppUtils.retrieve_request_param('user', None)
@@ -586,13 +585,37 @@ def consolidate_dirs():
     from archives_application.archiver.archiver_tasks import consolidate_dirs_edit_task
     form = archiver_forms.BatchServerEditForm()
     testing = False
+    
+    roles_allowed = ['ADMIN', 'ARCHIVIST']
+    has_correct_permissions = lambda user: any([role in user.roles.split(",") for role in roles_allowed]) 
+    request_is_authenticated = False
+    form_request = True
+    # Check if the request includes user credentials or is from a logged in user.
+    user_param = utils.FlaskAppUtils.retrieve_request_param('user', None)
+    if user_param:
+        form_request = False
+        password_param = utils.FlaskAppUtils.retrieve_request_param('password')
+        user = UserModel.query.filter_by(email=user_param).first()
+
+        # If there is a matching user to the request parameter, the password matches and that account has admin role...
+        if user and bcrypt.check_password_hash(user.password, password_param) and has_correct_permissions(user=user):
+            request_is_authenticated = True
+            user_email = user.email
+
+    elif current_user:
+        if current_user.is_authenticated and has_correct_permissions(current_user):
+            user = current_user
+            request_is_authenticated = True
+
+    if not request_is_authenticated:
+        return flask.Response("Unauthorized", status=401)
 
     # determine if the request is for testing the associated worker task
     # if the testing worker task, the task will be executed on this process and
     # not enqueued to be executed by the worker
     if utils.FlaskAppUtils.retrieve_request_param('test', None) \
         and utils.FlaskAppUtils.retrieve_request_param('test').lower() == 'true' \
-        and utils.FlaskAppUtils.has_admin_role(current_user):
+        and utils.FlaskAppUtils.has_admin_role(user):
         testing = True
     
     # retrieve limits to how much can be changed on the server, but if the user has admin credentials,
@@ -601,18 +624,27 @@ def consolidate_dirs():
     data_limit = flask.current_app.config.get('SERVER_CHANGE_DATA_LIMIT')
     archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
     
-    if form.validate_on_submit():
+    # if the request includes an asset_path or the form is submitted, we will process the consolidation
+    processing_consolidation = bool(user_param) or form.validate_on_submit()
+    if processing_consolidation:
         try:
             
             # if the user has admin credentials, there are no limits
-            if utils.FlaskAppUtils.has_admin_role(current_user):
+            if utils.FlaskAppUtils.has_admin_role(user):
                 files_limit, data_limit = 0, 0
             
-            user_asset_path = form.asset_path.data
+            remove_asset = True
+            if form_request:
+                user_asset_path = form.asset_path.data
+                user_destination_path = form.destination_path.data
+                remove_asset = form.remove_asset.data
+            
+            else:
+                user_asset_path = utils.FlaskAppUtils.retrieve_request_param('asset_path', None)
+                user_destination_path = utils.FlaskAppUtils.retrieve_request_param('destination_path', None)
+            
             app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_asset_path,
                                                                        app=flask.current_app)
-            user_destination_path = form.destination_path.data
-            remove_asset = form.remove_asset.data
             files_num_effected, data_effected = directory_contents_quantities(dir_path=app_asset_path,
                                                                               server_location=archives_location,
                                                                               db = db)
@@ -627,11 +659,11 @@ def consolidate_dirs():
                     """
                     raise Exception(e_mssg)
             
-            batch_move_params = {"user_target_path": user_asset_path,
-                                 "user_destination_path": user_destination_path,
-                                 "user_id": current_user.id,
-                                 "remove_target": remove_asset,
-                                 "removal_timeout": 1200}
+            consolidation_params = {"user_target_path": user_asset_path,
+                                    "user_destination_path": user_destination_path,
+                                    "user_id": user.id,
+                                    "remove_target": remove_asset,
+                                    "removal_timeout": 1200}
             
             # if test call, execute the batch task on this process and return the results.
             # Allows for simpler debugging of the task function.
@@ -644,33 +676,42 @@ def consolidate_dirs():
                                                   status= "queued")
                 db.session.add(new_task_record)
                 db.session.commit()
-                batch_move_params['queue_id'] = test_job_id
-                batch_move_results = consolidate_dirs_edit_task(**batch_move_params)
-                batch_move_results = utils.serializable_dict(batch_move_results)
-                return flask.jsonify(batch_move_results)
+                consolidation_params['queue_id'] = test_job_id
+                consolidation_results = consolidate_dirs_edit_task(**consolidation_params)
+                consolidation_results = utils.serializable_dict(consolidation_results)
+                return flask.jsonify(consolidation_results)
             
             # create batch_move info json dictionary
-            batch_move_info = {"parameters": batch_move_params,
-                               "files_limit": files_limit,
-                               "data_limit": data_limit,
-                               "data_effected": data_effected,
-                               "files_effected": files_num_effected}
+            dirs_consolidation_info = {"parameters": consolidation_params,
+                                       "files_limit": files_limit,
+                                       "data_limit": data_limit,
+                                       "data_effected": data_effected,
+                                       "files_effected": files_num_effected}
+            
             # enqueue the task to be executed by the worker
             nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                             enqueued_function=consolidate_dirs_edit_task,
-                                                            task_kwargs=batch_move_params,
-                                                            task_info=batch_move_info,
+                                                            task_kwargs=consolidation_params,
+                                                            task_info=dirs_consolidation_info,
                                                             timeout=None)
             
             success_message = f"Batch move task enqueued (job id: {nq_results['_id']})\nIt may take some time for the batch operation to complete."
-            flask.flash(success_message, 'success')
-            return flask.redirect(flask.url_for('archiver.consolidate_dirs'))
+            
+            if form_request:
+                flask.flash(success_message, 'success')
+                return flask.redirect(flask.url_for('archiver.consolidate_dirs'))
+            else:
+                return flask.Response(json.dumps(nq_results), status=200)
 
         except Exception as e:
             m = "Error processing or executing batch change"
-            return web_exception_subroutine(flash_message=m,
-                                            thrown_exception=e,
-                                            app_obj=flask.current_app)
+            
+            if form_request:
+                return web_exception_subroutine(flash_message=m,
+                                                thrown_exception=e,
+                                                app_obj=flask.current_app)
+            else:
+                return api_exception_subroutine(response_message=m, thrown_exception=e)
 
     return flask.render_template('consolidate_edit.html', title='Consolidate Directories', form=form)
             
