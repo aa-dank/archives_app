@@ -546,38 +546,70 @@ def batch_move_edit():
 @archiver.route("/consolidate_dirs", methods=['GET', 'POST'])
 def consolidate_dirs():
     """
-    Consolidates directories with identical names within a specified parent directory into single directories.
-    Uses a worker process to perform the consolidation operation.
-    This endpoint allows users to merge the contents of two directories. This is particularly useful for organizing files when duplicate directories exist.
-    Request parameters can be sent in either th url or request headers.
+    Consolidates directories by moving contents from a source directory to a destination directory.
+    This endpoint allows users to merge the contents of one directory into another, optionally removing the source directory afterwards.
+    Request parameters can be sent either via the web form or included in the request.
 
-    Workflow:
-    1. The user specifies the 'Path to Target Directory', the directory with the contents to be moved.
-    2. The user enters a 'Destination Directory Path', the directory where the contents will be moved.
-    3. The user can choose to remove empty directories after consolidation.
-    4. Upon form submission, the contents of the target directory are moved to the destination directory. Any duplicate directories are consolidated.
+    Access Methods:
+    - **Web Interface**:
+      - Users can access a form to submit consolidation requests directly via the web interface.
+    - **API Requests**:
+      - Users can make API requests by sending parameters in the URL query string, request headers, or form data.
 
     Supported Methods:
-    - **GET**: Renders the consolidation form for user input.
-    - **POST**: Processes the submitted form and initiates the consolidation operation.
+    - **GET**: Displays the consolidation form to the user.
+    - **POST**: Processes the consolidation request, either from the submitted form or directly through an API request.
 
-    Form Fields:
-    - `asset_path` (str): The path to the target directory containing the contents to be moved.
+    Authentication:
+    - **Web Interface**:
+      - Users must be logged in and have the necessary permissions.
+    - **API Requests**:
+      - Users must provide valid credentials.
+      - Parameters `user` and `password` must be provided in the URL parameters, request headers, or form data.
+
+    Permissions:
+    - Only users with roles `'ADMIN'` or `'ARCHIVIST'` can perform consolidation.
+    - Users with `'ADMIN'` role are exempt from limits on the number of files and data size affected by operations.
+
+    Parameters (for API requests and form submissions):
+    - `user` (str): The email of the user making the request. Provide in URL parameters, request headers, or form data.
+    - `password` (str): The password of the user making the request. Provide in URL parameters, request headers, or form data.
+    - `asset_path` (str): The path to the source directory containing the contents to be moved.
     - `destination_path` (str): The path to the destination directory where the contents will be moved.
-    - `remove_empty_dirs` (bool): Option to remove the now empty asset_path location after consolidation.
+    - `remove_empty_dirs` (bool, optional): Option to remove the source directory after consolidation. Defaults to `False`.
 
     Returns:
-    - **HTML Template**: Renders the consolidation form along with success or error messages based on the operation's outcome.
+    - **Web Interface**:
+      - On **GET**: Renders the consolidation form.
+      - On successful **POST**: Redirects to the home page with a success message.
+      - On error: Redirects to the home page with an error message.
+    - **API Requests**:
+      - On success: Returns a response with status code `200` and a success message.
+      - On error: Returns a response with an appropriate status code and error message.
 
     Notes:
-    - Users must be authenticated and have the necessary permissions to perform consolidation operations.
+    - When using the web form, users should fill in the fields `asset_path`, `destination_path`, and optionally `remove_empty_dirs`.
+    - For API requests, all parameters (`user`, `password`, `asset_path`, `destination_path`, `remove_empty_dirs`) can be supplied via URL parameters, request headers, or form data.
     - Limits on the number of files and total data size affected by operations are configurable in the application settings. Users with `'ADMIN'` role are exempt from these limits.
     - If the user has admin permissions and includes the query parameter `test=true`, the consolidation task will execute synchronously for testing purposes.
     - The endpoint uses the `consolidate_dirs_edit_task` function to perform the consolidation operation.
     - Error messages will be displayed if the operation encounters issues, such as invalid paths or permission errors.
 
+    Examples:
+    - **Consolidating directories via API**:
+      - Parameters:
+        - `asset_path=/path/to/source_directory`
+        - `destination_path=/path/to/destination_directory`
+        - `remove_empty_dirs=true`
+      - Provide authentication credentials (`user` and `password`).
+    - **Consolidating directories via Web Form**:
+      - Fill in `Path to Target Directory` with the source directory path.
+      - Fill in `Destination Directory Path` with the destination directory path.
+      - Optionally check `Remove Empty Directories` to delete the source directory after consolidation.
+
     Raises:
-    - **Unauthorized**: If the user is not authenticated or lacks the required permissions.
+    - **Unauthorized (401)**: If the user is not authenticated or lacks the necessary permissions.
+    - **Bad Request (400)**: If the form validation fails or required parameters are missing.
     - **Exception**: Various exceptions may be raised due to issues like invalid paths, access violations, or server errors.
     """
     # imported here to avoid circular import
@@ -643,6 +675,13 @@ def consolidate_dirs():
                 user_asset_path = utils.FlaskAppUtils.retrieve_request_param('asset_path', None)
                 user_destination_path = utils.FlaskAppUtils.retrieve_request_param('destination_path', None)
             
+            # if the user has not provided an asset path or destination path, raise an exception
+            if not user_asset_path or not user_destination_path:
+                if not user_asset_path:
+                    raise Exception("No asset path provided.")
+                if not user_destination_path:
+                    raise Exception("No destination path provided.")
+
             app_asset_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_asset_path,
                                                                        app=flask.current_app)
             files_num_effected, data_effected = directory_contents_quantities(dir_path=app_asset_path,
@@ -701,6 +740,9 @@ def consolidate_dirs():
                 flask.flash(success_message, 'success')
                 return flask.redirect(flask.url_for('archiver.consolidate_dirs'))
             else:
+                # if this was an API request, we will return the results as a json response
+                nq_results['consolidation info'] = dirs_consolidation_info
+                nq_results = utils.serializable_dict(nq_results)
                 return flask.Response(json.dumps(nq_results), status=200)
 
         except Exception as e:
