@@ -308,6 +308,10 @@ def test_logging():
 @FlaskAppUtils.roles_required(['ADMIN'])
 def get_db_uri():
     """Displays the current database URI and the status of the database connection pool.
+    The database URI is useful for debugging and verifying the connection to the database.
+    The status of the connection pool can help identify issues with database connections.
+    If the pool is full, it may indicate that connections are not being closed properly.
+    If the pool is empty, it may indicate that connections are not being opened properly.
 
     Returns:
         Response: A JSON response containing the database URL and pool status.
@@ -366,6 +370,121 @@ def test_rq_connection():
     except Exception as e:
         m = "Error connecting to the redis queue: "
         return web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
+    
+
+@main.route("/test/file_server_access")
+@FlaskAppUtils.roles_required(['ADMIN'])
+def test_file_server_access():
+    """
+    Tests file server access permissions for various locations.
+
+    This function checks read, write, edit, and delete permissions for
+    the following locations:
+    - DATABASE_BACKUP_LOCATION: write, delete
+    - ARCHIVES_LOCATION: read, write, edit, delete (full permissions)
+    - ARCHIVIST_INBOX_LOCATION: read, write, edit, delete (full permissions)
+
+    Returns:
+        A JSON response indicating success or failure for each permission test.
+    """
+    import os
+    import tempfile
+    result = {}
+
+    # Get the paths from application config
+    db_backup_location = flask.current_app.config.get('DATABASE_BACKUP_LOCATION')
+    archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+    inbox_location = flask.current_app.config.get('ARCHIVIST_INBOX_LOCATION')
+
+    # Test DATABASE_BACKUP_LOCATION (write, delete)
+    db_backup_results = {'write': False, 'delete': False}
+    temp_name = None
+    try:
+        # Write test
+        with tempfile.NamedTemporaryFile(dir=db_backup_location, delete=False) as tmp_file:
+            tmp_file.write(b"Test")
+            temp_name = tmp_file.name
+        db_backup_results['write'] = True
+
+        # Delete test
+        if temp_name:
+            os.remove(temp_name)
+            db_backup_results['delete'] = True
+    except Exception as e:
+        flask.current_app.logger.error(f"DATABASE_BACKUP_LOCATION permission error: {e}")
+        if temp_name and os.path.exists(temp_name):
+            os.remove(temp_name)
+
+    result['DATABASE_BACKUP_LOCATION'] = db_backup_results
+
+    # Test ARCHIVES_LOCATION (full permissions)
+    archives_results = {'read': False, 'write': False, 'edit': False, 'delete': False}
+    temp_name = None
+    try:
+        # Read test
+        if os.access(archives_location, os.R_OK):
+            archives_results['read'] = True
+
+        # Write test
+        with tempfile.NamedTemporaryFile(dir=archives_location, delete=False) as tmp_file:
+            tmp_file.write(b"Test")
+            temp_name = tmp_file.name
+        archives_results['write'] = True
+
+        # Edit test
+        try:
+            with open(temp_name, 'a') as f:
+                f.write("Edit")
+            archives_results['edit'] = True
+        except Exception as e:
+            flask.current_app.logger.error(f"ARCHIVES_LOCATION edit permission error: {e}")
+
+        # Delete test
+        if temp_name:
+            os.remove(temp_name)
+            archives_results['delete'] = True
+    except Exception as e:
+        flask.current_app.logger.error(f"ARCHIVES_LOCATION permission error: {e}")
+        if temp_name and os.path.exists(temp_name):
+            os.remove(temp_name)
+
+    result['ARCHIVES_LOCATION'] = archives_results
+
+    # Test ARCHIVIST_INBOX_LOCATION (full permissions)
+    inbox_results = {'read': False, 'write': False, 'edit': False, 'delete': False}
+    temp_name = None
+    try:
+        # Read test
+        if os.access(inbox_location, os.R_OK):
+            inbox_results['read'] = True
+
+        # Write test
+        with tempfile.NamedTemporaryFile(dir=inbox_location, delete=False) as tmp_file:
+            tmp_file.write(b"Test")
+            temp_name = tmp_file.name
+        inbox_results['write'] = True
+
+        # Edit test
+        try:
+            with open(temp_name, 'a') as f:
+                f.write("Edit")
+            inbox_results['edit'] = True
+        except Exception as e:
+            flask.current_app.logger.error(f"ARCHIVIST_INBOX_LOCATION edit permission error: {e}")
+
+        # Delete test
+        if temp_name:
+            os.remove(temp_name)
+            inbox_results['delete'] = True
+    except Exception as e:
+        flask.current_app.logger.error(f"ARCHIVIST_INBOX_LOCATION permission error: {e}")
+        if temp_name and os.path.exists(temp_name):
+            os.remove(temp_name)
+
+    result['ARCHIVIST_INBOX_LOCATION'] = inbox_results
+
+    return flask.jsonify(result)
+
 
 @main.route("/admin/sql_logging", methods=['GET', 'POST'])
 @FlaskAppUtils.roles_required(['ADMIN'])
