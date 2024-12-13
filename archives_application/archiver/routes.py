@@ -234,8 +234,12 @@ def server_change():
         # If there is a matching user to the request parameter, the password matches and that account has admin role...
         if user and bcrypt.check_password_hash(user.password, password_param) and has_correct_permissions(user=user):
             request_is_authenticated = True
-            new_path = parse.unquote(utils.FlaskAppUtils.retrieve_request_param('new_path'))
-            old_path = parse.unquote(utils.FlaskAppUtils.retrieve_request_param('old_path'))
+            new_path = utils.FlaskAppUtils.retrieve_request_param('new_path')
+            if new_path:
+                new_path = parse.unquote(new_path)
+            old_path = utils.FlaskAppUtils.retrieve_request_param('old_path')
+            if old_path:
+                old_path = parse.unquote(old_path)
             edit_type = utils.FlaskAppUtils.retrieve_request_param('edit_type')
             user_email = user.email
 
