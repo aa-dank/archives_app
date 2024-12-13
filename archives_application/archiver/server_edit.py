@@ -68,7 +68,7 @@ class ServerEdit:
                 raise Exception(e_message)
 
             if self.old_path == server_location:
-                raise Exception("Server root directory chosen")
+                raise Exception("Server root directory chosen\nold_path: {self.old_path}\nserver_location: {server_location}")
         self.change_executed = False
         self.data_effected = 0
         
