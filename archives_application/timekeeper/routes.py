@@ -621,26 +621,38 @@ def archiving_dashboard(archiver_id):
     
 
     def metrics_plot_file(lines_df: pd.DataFrame, bars_df: pd.DataFrame, mb_ticks, file_count_ticks, file_destination: str, archiver_name: str = None):
-        
         plt.clf()
         sns.set_theme(style="darkgrid")
         _, ax1 = plt.subplots(figsize=(30,10))
+        
         bar_colors = ["#007988", "#fdc700"] 
         line_colors = ["#003c6c", "#f29813"]    
+        
+        # Create the plots
         sns.barplot(data=bars_df, x='Date', y='Files', hue='measure_type', ax=ax1, palette=bar_colors)
         sns.pointplot(data=lines_df, x='Date', y='Files', hue='measure_type', ax=ax1, palette=line_colors, linestyles='--')
-        ax1.set_xticklabels(labels=ax1.get_xticklabels(), rotation=45)
+        
+        # Handle x-axis ticks and labels
+        x_ticks = np.arange(len(bars_df['Date'].unique()))
+        ax1.set_xticks(x_ticks)
+        ax1.set_xticklabels(bars_df['Date'].unique(), rotation=45)
+        
+        # Handle y-axis ticks
         ax1.set_yticks(file_count_ticks)
         ax1.set_ylim(min(file_count_ticks), max(file_count_ticks))
         ax1.legend_.set_title('')
         
+        # Handle secondary y-axis
         ax2 = ax1.twinx()
         ax2.set_yticks(mb_ticks)
         ax2.set_ylim(min(mb_ticks), max(mb_ticks))
         ax2.grid(False)
         ax2.set_ylabel('MB Archived')
+        
+        # Set title
         title = f'Archiving Metrics for {archiver_name}' if archiver_name else 'Total Archiving Metrics'
         plt.title(title, fontsize=20)
+        
         plt.savefig(file_destination)
         return file_destination
 
