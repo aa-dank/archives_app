@@ -23,7 +23,7 @@ from archives_application import db, bcrypt
 archiver = flask.Blueprint('archiver', __name__)
 
 EXCLUDED_FILENAMES = ['Thumbs.db', 'thumbs.db', 'desktop.ini']
-EXCLUDED_FILE_EXTENSIONS = ['DS_Store', '.ini']
+EXCLUDED_FILE_EXTENSIONS = ['DS_Store', '.ini', '.git']
 
 
 def web_exception_subroutine(flash_message, thrown_exception, app_obj):
@@ -96,16 +96,16 @@ def exclude_extensions(f_path, extensions_list=EXCLUDED_FILE_EXTENSIONS):
     """
     checks filepath to see if it is using excluded extensions
     """
-    filename = utils.FileServerUtils.split_path(f_path)[-1]
-    return any([filename.endswith(ext) for ext in extensions_list])
+    filename = utils.FileServerUtils.split_path(f_path)[-1].lower()
+    return any([filename.endswith(ext.lower()) for ext in extensions_list])
 
 
 def exclude_filenames(f_path, excluded_names=EXCLUDED_FILENAMES):
     """
     excludes files with certain names
     """
-    filename = utils.FileServerUtils.split_path(f_path)[-1]
-    return filename in excluded_names
+    filename = utils.FileServerUtils.split_path(f_path)[-1].lower()
+    return any([filename == name.lower() for name in excluded_names])
 
 
 @archiver.route("/api/server_change", methods=['GET', 'POST'])
@@ -300,7 +300,8 @@ def server_change():
             server_edit = ServerEdit(server_location=archives_location,
                                      change_type=edit_type,
                                      new_path=new_path,
-                                     old_path=old_path)
+                                     old_path=old_path,
+                                     exclusion_functions=[exclude_filenames, exclude_extensions])
             nq_results = server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit, timeout=1200)
 
 
@@ -1140,19 +1141,7 @@ def inbox_item():
 
     def ignore_file(filepath):
         """Determines if the file at the path is not one we should be processing."""
-        # file types that might end up in the INBOX directory but do not need to be archived
-        filenames_to_ignore = ["thumbs.db"]
-        file_extensions_to_ignore = ["git", "ini"]
-        filename = utils.FileServerUtils.split_path(filepath)[-1]
-        file_ext = filename.split(".")[-1]
-
-        if filename.lower() in filenames_to_ignore:
-            return True
-
-        if file_ext in file_extensions_to_ignore:
-            return True
-
-        return False
+        return exclude_filenames(filepath) or exclude_extensions(filepath)
 
     try:
         # Setup User inbox

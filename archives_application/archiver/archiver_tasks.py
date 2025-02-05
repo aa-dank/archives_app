@@ -1,6 +1,6 @@
 from archives_application import create_app, utils
 from archives_application.models import ArchivedFileModel, FileLocationModel, FileModel, WorkerTaskModel, ServerChangeModel
-from archives_application.archiver.routes import EXCLUDED_FILENAMES, EXCLUDED_FILE_EXTENSIONS
+from archives_application.archiver.routes import exclude_extensions, exclude_filenames
 import flask
 import os
 import time
@@ -205,7 +205,7 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
                         confirmed_hash_dt = datetime.now()
                         
                         # If the file is not new, we check if the path is already represented in the database
-                        # and update the file database entryto reflect that the file has been checked.
+                        # and update the file database entry to reflect that the file has been checked.
                         if not file_is_new:
 
                             # query to see if the current path is already represented in the database
@@ -320,23 +320,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
     records. Then, it adds any files in the scrape location that are not in the database by enqueuing a task to add
     the file to the database.
     """
-        
-    def exclude_extensions(f_path, ext_list=EXCLUDED_FILE_EXTENSIONS):
-        """
-        checks filepath to see if it is using excluded extensions
-        """
-        filename = utils.FileServerUtils.split_path(f_path)[-1]
-        return any([filename.endswith(ext) for ext in ext_list])
-
-
-    def exclude_filenames(f_path, excluded_names=EXCLUDED_FILENAMES):
-        """
-        excludes files with certain names
-        """
-        filename = utils.FileServerUtils.split_path(f_path)[-1]
-        return filename in excluded_names
     
-
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
         file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
@@ -478,7 +462,8 @@ def consolidate_dirs_edit_task(user_target_path, user_destination_path, user_id,
                     item_edit = ServerEdit(server_location=archive_location,
                                            old_path=user_item_path,
                                            new_path=user_destination_path,
-                                           change_type='MOVE')
+                                           change_type='MOVE',
+                                           exclusion_functions=[exclude_filenames, exclude_extensions])
                     edit_nq_result = item_edit.execute()
                     nqed_move_tasks.append(edit_nq_result.get('task_id')) if edit_nq_result else None
 
@@ -600,7 +585,8 @@ def batch_move_edits_task(user_target_path, user_contents_to_move, user_destinat
                     item_edit = ServerEdit(server_location=archive_location,
                                            old_path=user_item_path,
                                            new_path=user_destination_path,
-                                           change_type='MOVE')
+                                           change_type='MOVE',
+                                           exclusion_functions=[exclude_filenames, exclude_extensions])
                     edit_nq_result = item_edit.execute()
                     nqed_move_tasks.append(edit_nq_result.get('task_id')) if edit_nq_result else None
 
