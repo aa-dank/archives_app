@@ -721,7 +721,8 @@ class FilesUtils:
             raise e 
 
         finally:
-            fitz_doc.close()
+            if fitz_doc:
+                fitz_doc.close()
         return output_path
 
     @staticmethod

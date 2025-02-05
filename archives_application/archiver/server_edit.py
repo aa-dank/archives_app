@@ -544,7 +544,6 @@ class ServerEdit:
                 
                 if location_entry:
                     location_entry.file_server_directories = new_server_path
-                    print(os.path.join(self.new_path, filename)) #TODO remove
                     if os.path.exists(self.new_path):
                         location_entry.existence_confirmed = datetime.datetime.now()
                     db.session.commit()
@@ -554,7 +553,8 @@ class ServerEdit:
                 else:
             
                     # if the file is excluded by the exclusion functions, do not add it to the database
-                    if any([exclusion_func(self.new_path) for exclusion_func in self.exclusion_functions]):
+                    full_path = os.path.join(self.new_path, filename)
+                    if any([exclusion_func(full_path) for exclusion_func in self.exclusion_functions]):
                         return move_log
                     
                     file_hash = utils.FilesUtils.get_hash(self.new_path)
@@ -626,7 +626,8 @@ class ServerEdit:
                         
                         if not located_in_db:
                             # if the file is excluded by the exclusion functions, do not add it to the database
-                            if any([exclusion_func(relocated_file) for exclusion_func in self.exclusion_functions]):
+                            full_path = os.path.join(root, relocated_file)
+                            if any([exclusion_func(full_path) for exclusion_func in self.exclusion_functions]):
                                 continue
                             
                             task_kwargs = {'filepath': os.path.join(root, relocated_file)}
