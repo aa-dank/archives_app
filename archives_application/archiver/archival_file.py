@@ -383,7 +383,7 @@ class ArchivalFile:
         destination_dir_path = os.path.join(*destination_path_list[:-1])
 
         if not os.path.exists(destination_dir_path):
-            os.makedirs(destination_dir_path)
+            os.makedirs(destination_dir_path, exist_ok=True)
         self.datetime_archived = datetime.now()
         try:
             shutil.copyfile(src=self.current_path, dst=self.get_destination_path())
