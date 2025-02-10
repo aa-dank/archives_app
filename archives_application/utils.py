@@ -700,6 +700,7 @@ class FilesUtils:
         preview_filename = ".".join(pdf_filename.split(".")[:-1])
         preview_filename += ".png"
         output_path = os.path.join(image_destination, preview_filename)
+        fitz_doc = None
         try:
             # use pymupdf to get pdf data for pillow Image object
             fitz_doc = fitz.open(pdf_path)
@@ -718,7 +719,7 @@ class FilesUtils:
             page_img.save(output_path)
         
         except Exception as e:
-            raise e 
+            raise e
 
         finally:
             if fitz_doc:

@@ -82,8 +82,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
     # add redis queue for asynchronous tasks
-    if app.config.get("REDIS_URL"):
-        app.q = rq.Queue(connection=redis.from_url(app.config.get("REDIS_URL")))
+    app.q = rq.Queue(connection=redis.from_url(app.config.get("REDIS_URL")))
 
     # add blueprints
     # https://flask.palletsprojects.com/en/1.1.x/blueprints/
