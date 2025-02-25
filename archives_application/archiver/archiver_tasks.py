@@ -614,3 +614,48 @@ def batch_move_edits_task(user_target_path, user_contents_to_move, user_destinat
             log["errors"].append(e)
             utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
             return log
+
+
+def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to_archive: list[str], project_number: str, destination_dir: str, destination_path: str, queue_id: str):
+    """
+    Task function to be enqueued for archiving items in the inbox.
+    :param inbox_path: str: The path of the inbox directory.
+    :param items_to_archive: list: The list of items to be archived.
+    :param project_number: str: The project number to which the items are to be archived.
+    :param destination_dir: str: The directory in the project to which the items are to be archived.
+    :param destination_path: str: The full path of the directory in the project to which the items are to be archived.
+    :param queue_id: str: The id of the task in the worker queue.
+    """
+    from archives_application.archiver.archival_file import ArchivalFile
+    from archives_application.models import ArchivedFileModel
+
+    with app.app_context():
+
+        db = flask.current_app.extensions['sqlalchemy']
+        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+        log = {"task_id": queue_id, 'items_archived':[], 'errors':[]}
+        try:
+            archive_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+            app_inbox_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=inbox_path,
+                                                                       app=flask.current_app)
+            app_destination_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=destination_path,
+                                                                             app=flask.current_app)
+            for some_item in items_to_archive:
+                try:
+                    user_item_path = os.path.join(inbox_path, some_item)
+                    if not os.path.exists(user_item_path):
+                        raise Exception(f"Item does not exist: {user_item_path}")
+                    
+                    item_size = os.path.getsize(user_item_path)
+                    item_to_archive = ArchivalFile(archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'),
+                                                directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
+                                                project_number=project_number,
+                                                destination_dir=destination_dir,
+                                                destination_path=app_destination_path,
+                                                notes=notes)
+                    archiving_success = item_to_archive.archive_in_destination()
+
+                    if not archiving_success:
+                        log['errors'].append(f"Error archiving {user_item_path}")
+
+                    

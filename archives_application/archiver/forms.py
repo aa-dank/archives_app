@@ -85,7 +85,6 @@ class ArchivedOrNotForm(FlaskForm):
     upload = FileField('File Upload', validators=[FileRequired()])
     submit = SubmitField('Submit')
 
-
 class InboxItemForm(FlaskForm):
     download_item = SubmitField('Download Copy')
     project_number = StringField('Project Number')
@@ -96,6 +95,13 @@ class InboxItemForm(FlaskForm):
     notes = StringField('Notes')
     submit = SubmitField('Archive File')
 
+class BatchInboxItemsForm(FlaskForm):
+    items_to_archive = MultiCheckboxField('Items to archive', choices=[])
+    project_number = StringField('Project Number')
+    destination_directory = SelectField('Destination Directory')
+    destination_path = StringField('Destination Path')
+    notes = StringField('Notes')
+    submit = SubmitField('Archive Items')
 
 class FileSearchForm(FlaskForm):
     search_location = StringField('Limit Search to Location')
