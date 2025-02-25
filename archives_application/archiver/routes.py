@@ -107,6 +107,23 @@ def exclude_filenames(f_path, excluded_names=EXCLUDED_FILENAMES):
     filename = utils.FileServerUtils.split_path(f_path)[-1].lower()
     return any([filename == name.lower() for name in excluded_names])
 
+def cleanse_locations_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sub-function used in the archived_or_not endpoint functions
+    """
+    # New df is only the columns we want, 'file_server_directories' and 'filename'
+    df = df[['file_server_directories', 'filename']]
+    # New row  'filepath' which joins the directories and the filename
+    df['filepath'] = df.apply(lambda row: (row['file_server_directories'] + "/" + row['filename']), axis=1)
+    return df[['filepath']]
+
+def ignore_inbox_file(filepath):
+    """
+    Determines if the file at the path is not one we should be processing.
+    Used in inbox endpoint functions.
+    """
+    return exclude_filenames(filepath) or exclude_extensions(filepath)
+
 
 @archiver.route("/api/server_change", methods=['GET', 'POST'])
 @archiver.route("/server_change", methods=['GET', 'POST'])
@@ -1139,9 +1156,6 @@ def inbox_item():
         random_placeholder = random.choice(placeholder_files)
         return flask.url_for(r"static", filename="default/" + random_placeholder)
 
-    def ignore_file(filepath):
-        """Determines if the file at the path is not one we should be processing."""
-        return exclude_filenames(filepath) or exclude_extensions(filepath)
 
     try:
         # Setup User inbox
@@ -1155,7 +1169,7 @@ def inbox_item():
         
         user_inbox_path = os.path.join(inbox_path, get_user_handle())
         user_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
-                                    os.path.isfile(os.path.join(user_inbox_path, thing)) and not ignore_file(thing)]
+                                    os.path.isfile(os.path.join(user_inbox_path, thing)) and not ignore_inbox_file(thing)]
         if not os.path.exists(user_inbox_path):
             os.makedirs(user_inbox_path)
 
@@ -1163,7 +1177,7 @@ def inbox_item():
         # This avoids other users from processing the same file, creating errors.
         if not user_inbox_files():
             general_inbox_files = [t for t in os.listdir(inbox_path) if
-                                   os.path.isfile(os.path.join(inbox_path, t)) and not ignore_file(t)]
+                                   os.path.isfile(os.path.join(inbox_path, t)) and not ignore_inbox_file(t)]
 
             # if there are no files to archive in either the user inbox or the archivist inbox we will send the user to
             # the homepage.
@@ -1357,13 +1371,42 @@ def inbox_item():
                                         thrown_exception=e,
                                         app_obj=flask.current_app)
 
+@archiver.route("/batch_process_inbox", methods=['GET', 'POST'])
+@utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
+def batch_process_inbox():
+    inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
+    if not os.path.exists(inbox_path):
+        m = "The archivist inbox directory does not exist."
+        return web_exception_subroutine(flash_message=m,
+                                        thrown_exception=FileNotFoundError(f"Missing path: {inbox_path}"),
+                                        app_obj=flask.current_app)
+    
+    user_inbox_path = os.path.join(inbox_path, get_user_handle())
+    if not os.path.exists(user_inbox_path):
+        os.makedirs(user_inbox_path)
 
-def cleanse_locations_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    # New df is only the columns we want, 'file_server_directories' and 'filename'
-    df = df[['file_server_directories', 'filename']]
-    # New row  'filepath' which joins the directories and the filename
-    df['filepath'] = df.apply(lambda row: (row['file_server_directories'] + "/" + row['filename']), axis=1)
-    return df[['filepath']]
+    user_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
+                                os.path.isfile(os.path.join(user_inbox_path, thing)) and not ignore_inbox_file(thing)]
+
+    # if not user_inbox_files, return to the home page with a message
+    if not user_inbox_files():
+        flask.flash("No files in inbox to process.", 'info')
+        return flask.redirect(flask.url_for('main.home'))
+    
+    form = archiver_forms.BatchInboxItemsForm()
+    form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
+    form.items_to_archive.choices = [(f, f) for f in user_inbox_files()]
+
+    if form.validate_on_submit():
+        try:
+            if not form.items_to_archive.data:
+                raise Exception("No files selected to archive.")
+            
+            if not ((form.project_number.data and form.destination_directory.data) or form.destination_path.data):
+                raise Exception("Missing required fields -- either project_number and destination_directory or just a destination_path")
+            
+            
+
 
 
 @archiver.route("/api/archived_or_not", methods=['POST'])

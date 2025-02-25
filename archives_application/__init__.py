@@ -14,7 +14,7 @@ from urllib3.exceptions import InsecureRequestWarning
 from oauthlib.oauth2 import WebApplicationClient
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-VERSION = '1.5.9'
+VERSION = '1.6.0'
 
 # Suppress only the InsecureRequestWarning.
 # https://urllib3.readthedocs.io/en/latest/advanced-usage.html#ssl-warnings
@@ -29,7 +29,7 @@ google_creds_json = r'google_client_secret.json'
 
 # These lines are used to set the config file for the app. If it is not set correctly,
 # the first error will LIKELY be issues with connecting to the database.
-config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file3
+config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
 #config_json = r'deploy_app_config.json'
 
 def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,
