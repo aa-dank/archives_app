@@ -652,7 +652,7 @@ def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to
                     item_to_archive = ArchivalFile(current_path=item_path,
                                                    archives_location=archives_location,
                                                    directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
-                                                   project_number=project_number,
+                                                   project=project_number,
                                                    destination_dir=destination_dir,
                                                    destination_path=app_destination_path,
                                                    notes=notes)

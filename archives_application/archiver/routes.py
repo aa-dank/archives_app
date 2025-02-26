@@ -1460,7 +1460,8 @@ def batch_process_inbox():
                                       'items_to_archive': form.items_to_archive.data,
                                       'project_number': form.project_number.data,
                                       'destination_dir': form.destination_directory.data,
-                                      'destination_path': form.destination_path.data}
+                                      'destination_path': form.destination_path.data,
+                                      'notes': form.notes.data}
             
             if testing:
                 test_task_id = f"{batch_process_inbox_task.__name__}_test_{datetime.now().strftime('%Y%m%d%H%M%S')}"
