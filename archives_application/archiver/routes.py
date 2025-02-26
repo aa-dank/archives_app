@@ -124,6 +124,16 @@ def ignore_inbox_file(filepath):
     """
     return exclude_filenames(filepath) or exclude_extensions(filepath)
 
+# TODO refactor to use this function
+def is_test_request():
+    """
+    Determines if the request is a test request.
+    Usually test request are for testing tasks that would otherwise get enqueued for execution by worker process.
+    """
+    return utils.FlaskAppUtils.retrieve_request_param('test', None) \
+        and utils.FlaskAppUtils.retrieve_request_param('test').lower() == 'true' \
+        and utils.FlaskAppUtils.has_admin_role(current_user)
+
 
 @archiver.route("/api/server_change", methods=['GET', 'POST'])
 @archiver.route("/server_change", methods=['GET', 'POST'])
@@ -1374,16 +1384,45 @@ def inbox_item():
 @archiver.route("/batch_process_inbox", methods=['GET', 'POST'])
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def batch_process_inbox():
+    """
+    Processes multiple files from an archivist's inbox for batch archiving.
+
+    This endpoint lets authorized users (with roles 'ADMIN' or 'ARCHIVIST') archive multiple files
+    from their personal inbox directory in one operation. The endpoint first checks that the global
+    inbox directory exists and creates a user-specific inbox if needed. It then lists the files available
+    (excluding system files) and presents a form for selecting files and providing metadata such as the 
+    project number, destination directory, and an optional destination path.
+
+    Request Methods:
+    - GET: Renders a form (batch_process_inbox.html) displaying the list of files available for archiving.
+    - POST: Processes the form submission. If valid, it enqueues a background task to archive the selected 
+            files. When testing parameters are provided (with admin privileges), the task can be executed 
+            synchronously and the results returned as JSON.
+
+    Form Fields:
+    - items_to_archive (MultiCheckboxField): List of file names from the inbox selected for archiving.
+    - project_number (StringField): Project number associated with the archiving process.
+    - destination_directory (SelectField): The destination directory code chosen from predefined options.
+    - destination_path (StringField, optional): Custom destination path that, if provided, overrides directory selection.
+
+    Returns:
+    - On GET: Renders the 'batch_process_inbox.html' template with the inbox processing form.
+    - On a successful POST:
+        - If testing mode is enabled, returns a JSON response with the task log.
+        - Otherwise, flashes a success message and redirects to the same inbox processing page.
+
+    Raises:
+    - FileNotFoundError: If the global archivist inbox directory does not exist.
+    - Exception: If required form fields are missing or any error occurs during task execution.
+
+    Examples:
+    - GET request: Access http://.../batch_process_inbox to load the archive form.
+    - POST request: Submit the form with selected files, project_number, and destination parameters to enqueue the archiving task.
+    """
     from archives_application.archiver.archiver_tasks import batch_process_inbox_task
 
     # determine if the request is for testing the associated worker task
-    # if the testing worker task, the task will be executed on this process and
-    # not enqueued to be executed by the worker
-    testing = False
-    if utils.FlaskAppUtils.retrieve_request_param('test', None) \
-        and utils.FlaskAppUtils.retrieve_request_param('test').lower() == 'true' \
-        and utils.FlaskAppUtils.has_admin_role(current_user):
-        testing = True
+    testing = is_test_request()
 
     inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
     if not os.path.exists(inbox_path):
@@ -1400,7 +1439,7 @@ def batch_process_inbox():
                                 os.path.isfile(os.path.join(user_inbox_path, thing)) and not ignore_inbox_file(thing)]
 
     # if not user_inbox_files, return to the home page with a message
-    if not user_inbox_files():
+    if not user_inbox_files:
         flask.flash("No files in inbox to process.", 'info')
         return flask.redirect(flask.url_for('main.home'))
     
@@ -1420,7 +1459,7 @@ def batch_process_inbox():
                                       'inbox_path': user_inbox_path,
                                       'items_to_archive': form.items_to_archive.data,
                                       'project_number': form.project_number.data,
-                                      'destination_directory': form.destination_directory.data,
+                                      'destination_dir': form.destination_directory.data,
                                       'destination_path': form.destination_path.data}
             
             if testing:
@@ -1444,7 +1483,8 @@ def batch_process_inbox():
                                                                 timeout=None)
                 message = f"Batch archiving task enqueued (job id: {nq_results['_id']})\nStay clear of the effected files while the operation processes them."
                 flask.flash(message, 'success')
-                return flask.redirect(flask.url_for('archiver.batch_process_inbox'))
+                testing_params = {} if not testing else {'test': str(bool(testing))}
+                return flask.redirect(flask.url_for('archiver.batch_process_inbox', values=testing_params))
             
         except Exception as e:
             return web_exception_subroutine(flash_message="Error processing batch archiving request: ",

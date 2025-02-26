@@ -1,0 +1,65 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="content-section">
+  <h2>Batch Process Inbox</h2>
+  <p>Select the files to archive and provide the required metadata.</p>
+  <form method="POST" action="">
+    {{ form.hidden_tag() }}
+    <fieldset class="form-group">
+      <legend class="border-bottom mb-4">Inbox Files</legend>
+      {% for subfield in form.items_to_archive %}
+      <div class="form-check">
+        {{ subfield(class="form-check-input") }}
+        {{ subfield.label(class="form-check-label") }}
+      </div>
+      {% endfor %}
+    </fieldset>
+    <fieldset class="form-group">
+      <legend class="border-bottom mb-4">Archiving Information</legend>
+      <div class="form-group">
+        <h5>{{ form.project_number.label(class="form-control-label") }}</h5>
+        {% if form.project_number.errors %}
+          {{ form.project_number(class="form-control form-control-lg is-invalid") }}
+          <div class="invalid-feedback">
+            {% for error in form.project_number.errors %}
+              <span>{{ error }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          {{ form.project_number(class="form-control form-control-lg") }}
+        {% endif %}
+      </div>
+      <div class="form-group">
+        <h5>{{ form.destination_directory.label(class="form-control-label") }} (Filing Code)</h5>
+        {% if form.destination_directory.errors %}
+          {{ form.destination_directory(class="form-control form-control-lg is-invalid") }}
+          <div class="invalid-feedback">
+            {% for error in form.destination_directory.errors %}
+              <span>{{ error }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          {{ form.destination_directory(class="form-control form-control-lg") }}
+        {% endif %}
+      </div>
+      <div class="form-group">
+        <h5>{{ form.destination_path.label(class="form-control-label") }} (Optional)</h5>
+        <p>Provide a custom destination path if needed.</p>
+        {% if form.destination_path.errors %}
+          {{ form.destination_path(class="form-control form-control-lg is-invalid") }}
+          <div class="invalid-feedback">
+            {% for error in form.destination_path.errors %}
+              <span>{{ error }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          {{ form.destination_path(class="form-control form-control-lg") }}
+        {% endif %}
+      </div>
+    </fieldset>
+    <div class="form-group">
+      <input type="submit" class="btn btn-outline-info" value="Archive Selected Files">
+    </div>
+  </form>
+</div>
+{% endblock content %}
