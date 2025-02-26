@@ -619,6 +619,7 @@ def batch_move_edits_task(user_target_path, user_contents_to_move, user_destinat
 def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to_archive: list[str], project_number: str, destination_dir: str, destination_path: str, queue_id: str):
     """
     Task function to be enqueued for archiving items in the inbox.
+    :param user_id: str: The id of the user who initiated the archiving.
     :param inbox_path: str: The path of the inbox directory.
     :param items_to_archive: list: The list of items to be archived.
     :param project_number: str: The project number to which the items are to be archived.
@@ -633,29 +634,70 @@ def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to
 
         db = flask.current_app.extensions['sqlalchemy']
         utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-        log = {"task_id": queue_id, 'items_archived':[], 'errors':[]}
+        items_to_archive = {item: {'archived': False} for item in items_to_archive}
+        log = {"task_id": queue_id, 'items_to_archived':items_to_archive, 'errors':[]}
         try:
-            archive_location = flask.current_app.config.get('ARCHIVES_LOCATION')
-            app_inbox_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=inbox_path,
-                                                                       app=flask.current_app)
-            app_destination_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=destination_path,
-                                                                             app=flask.current_app)
-            for some_item in items_to_archive:
+            archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+            for some_item, _ in items_to_archive.items():
                 try:
-                    user_item_path = os.path.join(inbox_path, some_item)
-                    if not os.path.exists(user_item_path):
-                        raise Exception(f"Item does not exist: {user_item_path}")
+                    app_destination_path = None
+                    if destination_path:
+                        app_destination_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=destination_path,
+                                                                                         app=flask.current_app)
+                    item_path = os.path.join(inbox_path, some_item)
+                    if not os.path.exists(item_path):
+                        raise Exception(f"Item does not exist: {item_path}")
                     
-                    item_size = os.path.getsize(user_item_path)
-                    item_to_archive = ArchivalFile(archives_location=flask.current_app.config.get('ARCHIVES_LOCATION'),
-                                                directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
-                                                project_number=project_number,
-                                                destination_dir=destination_dir,
-                                                destination_path=app_destination_path,
-                                                notes=notes)
+                    item_size = os.path.getsize(item_path)
+                    item_to_archive = ArchivalFile(current_path=item_path,
+                                                   archives_location=archives_location,
+                                                   directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
+                                                   project_number=project_number,
+                                                   destination_dir=destination_dir,
+                                                   destination_path=app_destination_path,
+                                                   notes=notes)
                     archiving_success = item_to_archive.archive_in_destination()
 
                     if not archiving_success:
-                        log['errors'].append(f"Error archiving {user_item_path}")
+                        log['errors'].append(f"Error archiving {item_path}")
+                        continue
+
+                    log["items_to_archived"][some_item]['archived'] = True
+
+                    # add the archiving event to the database
+                    recorded_filing_code = destination_dir if not destination_path else None
+                    archived_file = ArchivedFileModel(destination_path=item_to_archive.get_destination_path(),
+                                                      archivist_id=user_id,
+                                                      project_number=project_number,
+                                                      date_archived=datetime.now(),
+                                                      destination_directory=item_to_archive.destination_dir,
+                                                      file_code = recorded_filing_code,
+                                                      file_size = item_size,
+                                                      filename=item_to_archive.filename)
+                    db.session.add(archived_file)
+                    db.session.commit()
+
+                    # enqueue a task to add the file to the database
+                    add_file_params = {"filepath": item_path, "archiving": True}
+                    nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                                    enqueued_function=add_file_to_db_task,
+                                                                    task_kwargs=add_file_params)
+                except Exception as e:
+                    log['errors'].append(f"Error archiving {item_path}: {str(e)}")
+                    continue
+            
+            utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            return log
+        
+        except Exception as e:
+            utils.FlaskAppUtils.attempt_db_rollback(db)
+            log["errors"].append(str(e))
+            utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            return log
+                    
+                                                      
+                                                      
+
+                                        
 
                     
