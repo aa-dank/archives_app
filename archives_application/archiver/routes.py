@@ -1374,6 +1374,17 @@ def inbox_item():
 @archiver.route("/batch_process_inbox", methods=['GET', 'POST'])
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def batch_process_inbox():
+    from archives_application.archiver.archiver_tasks import batch_process_inbox_task
+
+    # determine if the request is for testing the associated worker task
+    # if the testing worker task, the task will be executed on this process and
+    # not enqueued to be executed by the worker
+    testing = False
+    if utils.FlaskAppUtils.retrieve_request_param('test', None) \
+        and utils.FlaskAppUtils.retrieve_request_param('test').lower() == 'true' \
+        and utils.FlaskAppUtils.has_admin_role(current_user):
+        testing = True
+
     inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
     if not os.path.exists(inbox_path):
         m = "The archivist inbox directory does not exist."
@@ -1405,8 +1416,42 @@ def batch_process_inbox():
             if not ((form.project_number.data and form.destination_directory.data) or form.destination_path.data):
                 raise Exception("Missing required fields -- either project_number and destination_directory or just a destination_path")
             
+            batch_archiving_params = {'user_id': current_user.id,
+                                      'inbox_path': user_inbox_path,
+                                      'items_to_archive': form.items_to_archive.data,
+                                      'project_number': form.project_number.data,
+                                      'destination_directory': form.destination_directory.data,
+                                      'destination_path': form.destination_path.data}
             
-
+            if testing:
+                test_task_id = f"{batch_process_inbox_task.__name__}_test_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                new_task_record = WorkerTaskModel(task_id=test_task_id,
+                                                  time_enqueued=str(datetime.now()),
+                                                  origin='test',
+                                                  function_name = batch_process_inbox_task.__name__,
+                                                  status= "queued")
+                db.session.add(new_task_record)
+                db.session.commit()
+                batch_archiving_params['queue_id'] = test_task_id
+                batch_archiving_log = batch_process_inbox_task(**batch_archiving_params)
+                batch_archiving_results = utils.serializable_dict(batch_archiving_log)
+                return flask.jsonify(batch_archiving_results)
+            
+            else:
+                nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
+                                                                enqueued_function=batch_process_inbox_task,
+                                                                task_kwargs=batch_archiving_params,
+                                                                timeout=None)
+                message = f"Batch archiving task enqueued (job id: {nq_results['_id']})\nStay clear of the effected files while the operation processes them."
+                flask.flash(message, 'success')
+                return flask.redirect(flask.url_for('archiver.batch_process_inbox'))
+            
+        except Exception as e:
+            return web_exception_subroutine(flash_message="Error processing batch archiving request: ",
+                                            thrown_exception=e,
+                                            app_obj=flask.current_app)
+        
+    return flask.render_template('batch_process_inbox.html', title='Batch Process Inbox', form=form)
 
 
 @archiver.route("/api/archived_or_not", methods=['POST'])
