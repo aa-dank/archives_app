@@ -572,7 +572,7 @@ def batch_move_edits_task(user_target_path, user_contents_to_move, user_destinat
             app_target_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_target_path,
                                                                         app=flask.current_app)
             app_destination_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_destination_path,
-                                                                            app=flask.current_app)
+                                                                             app=flask.current_app)
             if not os.path.exists(app_target_path):
                 raise Exception(f"Target directory does not exist: {user_target_path}")
             if not os.path.exists(app_destination_path):
@@ -655,6 +655,7 @@ def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to
                                                    project=project_number,
                                                    destination_dir=destination_dir,
                                                    destination_path=app_destination_path,
+                                                   new_filename=some_item,
                                                    notes=notes)
                     archiving_success = item_to_archive.archive_in_destination()
 
@@ -673,7 +674,7 @@ def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to
                                                       destination_directory=item_to_archive.destination_dir,
                                                       file_code = recorded_filing_code,
                                                       file_size = item_size,
-                                                      filename=item_to_archive.filename)
+                                                      new_filename=item_to_archive.new_filename)
                     db.session.add(archived_file)
                     db.session.commit()
 
