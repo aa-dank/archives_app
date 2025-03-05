@@ -74,6 +74,7 @@
                     {% if 'ARCHIVIST' in current_user.roles %}
                         <li class="list-group-item list-group-item-light"><a href={{url_for('timekeeper.timekeeper_event')}}>Timekeeper</a></li>
                         <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.inbox_item')}}>Archiving Inbox</a></li>
+                        <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.batch_process_inbox')}}>Batch Inbox Archiving</a></li>
                         <li class="list-group-item list-group-item-light"><a href={{url_for('timekeeper.archiving_dashboard', archiver_id=current_user.id)}}>Archiving Dashboard</a></li>
                     {% endif %}
                     <li class="list-group-item list-group-item-light"><a href={{url_for('users.account')}}>Account Info</a></li>
