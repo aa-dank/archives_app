@@ -97,15 +97,39 @@ class ArchivalFile:
 
     def get_destination_path(self):
         """
-        Major function that builds a plausible path string in the following steps:
-        Step 1: If it already has a cached destination path, return that
-        Step 2: Looks for xx directory in root (self.archives_location) and adds to path
-        Step 3: Looks through next two levels in directory hierarchy for directories that start with the project number
-            or a project number prefix and add them to the path.
-        Step 4: Looks for desired directory location in nested levels and adds it to new path
-
-        ...unless there is already a path in cached_destination_path attribute, in which case that will be returned
-        :return: string (or path object?)
+        Constructs the destination path for archiving a file based on project number and filing codes.
+        
+        This method implements a complex algorithm to determine the appropriate storage location
+        within the archives' hierarchical directory structure. It follows these steps:
+        
+        1. If a cached destination path exists (self.cached_destination_path), returns it immediately.
+        2. Otherwise, constructs a path through the following process:
+        a. Determines the "xx" level directory prefix from the project number (e.g., "106xx" for project "10638")
+        b. Locates the matching root directory in the archives location
+        c. Searches for directories that match either the exact project number or its prefix
+        d. Navigates through the hierarchy to find or determine the appropriate filing location
+        e. Builds the final path including the destination filename
+        
+        The method handles several edge cases:
+        - Multiple directories matching the same project number (raises an exception)
+        - No existing directories for the project (constructs a proposed path with new directories)
+        - Nested filing structures with parent-child directory relationships
+        - Various directory naming conventions and formats
+        
+        Once constructed, the path is cached in self.cached_destination_path for future calls.
+        
+        Returns:
+            str: The complete file path where the archive file should be stored
+            
+        Raises:
+            Exception: If multiple directories match the same project number or prefix,
+                    indicating potential duplicates in the archives
+        
+        Notes:
+            - The method uses nested_large_template_destination_dir() and assemble_destination_filename()
+            to determine the destination directory structure and filename
+            - The algorithm prioritizes existing directory structures when available
+            - This method determines the path but does not create any directories or files
         """
 
         def list_of_child_dirs(parent_directory_path):
@@ -282,7 +306,7 @@ class ArchivalFile:
                                                                         self.assemble_destination_filename())
                     self.cached_destination_path = new_path
                     return self.cached_destination_path
-
+                # if we do find a dir that corresponds with the project number...
                 if len(dirs_matching_proj_num) == 1:
                     new_path = os.path.join(new_path, dirs_matching_proj_num[0])
                     new_path = path_from_project_num_dir_to_destination(new_path,

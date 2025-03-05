@@ -306,21 +306,46 @@ def test_logging():
 
 @main.route("/test/database_info")
 @FlaskAppUtils.roles_required(['ADMIN'])
-def get_db_uri():
-    """Displays the current database URI and the status of the database connection pool.
-    The database URI is useful for debugging and verifying the connection to the database.
-    The status of the connection pool can help identify issues with database connections.
-    If the pool is full, it may indicate that connections are not being closed properly.
-    If the pool is empty, it may indicate that connections are not being opened properly.
-
+def get_db_info():
+    """Displays the current database URI, connection pool status, and tests connectivity.
+    
+    This endpoint combines database information and connectivity testing in one place:
+    - Shows the database URI for debugging and verification
+    - Displays connection pool status to identify connection management issues
+    - Tests connectivity by performing a simple SELECT query
+    
     Returns:
-        Response: A JSON response containing the database URL and pool status.
+        Response: A JSON response containing the database URL, pool status, and connection test results.
     """
+    # Get database URI and pool status
     status = db.engine.pool.status()
     info = {
         "database_url": flask.current_app.config.get("SQLALCHEMY_DATABASE_URI"),
         "status": status
     }
+    
+    # Test database connection
+    try:
+        # Run a simple SELECT 1 query via SQLAlchemy's engine
+        result = db.engine.execute("SELECT 1").scalar()
+        
+        if result == 1:
+            info["connection_test"] = {
+                "status": "success",
+                "message": "Database connection successful. SELECT 1 returned 1."
+            }
+        else:
+            info["connection_test"] = {
+                "status": "error",
+                "message": f"Unexpected result from SELECT 1: {result}"
+            }
+            
+    except Exception as e:
+        info["connection_test"] = {
+            "status": "error",
+            "message": str(e)
+        }
+        
     return flask.jsonify(info)
 
 
@@ -484,7 +509,6 @@ def test_file_server_access():
     result['ARCHIVIST_INBOX_LOCATION'] = inbox_results
 
     return flask.jsonify(result)
-
 
 @main.route("/admin/sql_logging", methods=['GET', 'POST'])
 @FlaskAppUtils.roles_required(['ADMIN'])
