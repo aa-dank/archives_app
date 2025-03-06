@@ -2,8 +2,10 @@
 {% block content %}
 <div class="content-section">
   <h2>Batch Process Inbox</h2>
-  <p>Select the files to archive and provide the required metadata.</p>
-  <form method="POST" action="">
+  <p>Select the files to archive and provide the required metadata to archive them.All the files will retain their </p>
+  <p><a href="https://docs.google.com/document/d/1Xub4G7-STdRrQsmfLbzuJsgFqC9Zu42qeYVMNM87JXM/edit?usp=sharing">Large Format Archiving Documentation.</a></p>
+  <p><a href="https://docs.google.com/document/d/1Bu4T71ge-00dWURt_oQHZJZhrLer9Q_bJ-m4xdXcJtI/edit?usp=sharing">Small Format Archiving Documentation.</a></p>
+  <form method="POST" action="" id="archive-form-main">
     {{ form.hidden_tag() }}
     <fieldset class="form-group">
       <legend class="border-bottom mb-4">Inbox Files</legend>
@@ -15,6 +17,7 @@
       {% endfor %}
     </fieldset>
     <fieldset class="form-group">
+      <h6>Either enter a...</h6>
       <legend class="border-bottom mb-4">Archiving Information</legend>
       <div class="form-group">
         <h5>{{ form.project_number.label(class="form-control-label") }}</h5>
@@ -29,6 +32,7 @@
           {{ form.project_number(class="form-control form-control-lg") }}
         {% endif %}
       </div>
+      <h6>..and choose a...</h6>
       <div class="form-group">
         <h5>{{ form.destination_directory.label(class="form-control-label") }} (Filing Code)</h5>
         {% if form.destination_directory.errors %}
@@ -42,9 +46,10 @@
           {{ form.destination_directory(class="form-control form-control-lg") }}
         {% endif %}
       </div>
+      <h6>...or, alternatively, enter path to archiving destination directory:</h6>
       <div class="form-group">
         <h5>{{ form.destination_path.label(class="form-control-label") }} (Optional)</h5>
-        <p>Provide a custom destination path if needed.</p>
+        <p>Useful for archiving to a location that doesn't have a corresponding project or if it needs custom directory structure beyond the filing code directories.</p>
         {% if form.destination_path.errors %}
           {{ form.destination_path(class="form-control form-control-lg is-invalid") }}
           <div class="invalid-feedback">
@@ -72,8 +77,27 @@
     </fieldset>
     <p>Make sure none of the files to be archived are open in other programs before submitting.</p>
     <div class="form-group">
-      <input type="submit" class="btn btn-outline-info" value="Archive Selected Files">
+      <input type="submit" class="btn btn-outline-info" value="Archive Selected Files" id="archive-button">
     </div>
   </form>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var archiveForm = document.getElementById('archive-form-main');
+        if (archiveForm) {
+            archiveForm.addEventListener('submit', function(event) {
+                var button = document.getElementById('archive-button');
+                if (button) {
+                    button.value = 'Archiving...';  // Change button text
+                    // Disable button to prevent double submission
+                    setTimeout(() => button.disabled = true, 10);
+                }
+                // Delay form submission to allow button text change
+                event.preventDefault();
+                setTimeout(() => HTMLFormElement.prototype.submit.call(archiveForm), 500);
+            });
+        }
+    });
+</script>
 {% endblock content %}

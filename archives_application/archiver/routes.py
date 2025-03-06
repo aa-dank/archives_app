@@ -1435,8 +1435,23 @@ def batch_process_inbox():
     if not os.path.exists(user_inbox_path):
         os.makedirs(user_inbox_path)
 
-    user_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
+    get_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
                                 os.path.isfile(os.path.join(user_inbox_path, thing)) and not ignore_inbox_file(thing)]
+    
+    get_enqueued_files = lambda: flask.session[current_user.email].get('files_enqueued_in_batch', [])
+    
+    # We need to determine which files ave already been enqueued in a batch archiving process and not include them in the form
+    # for the user to select again. We also need to remove any files that have been archived in a batch process from the session.
+    user_inbox_files = get_inbox_files()
+    if get_enqueued_files():
+        # remove any files that have already been enqueued in a batch archiving process
+        files_enqueued = get_enqueued_files()
+        user_inbox_files = [f for f in user_inbox_files if f not in files_enqueued]
+
+        # remove files that have been archived in a batch process from the session
+        files_enqueued = [f for f in files_enqueued if f in get_inbox_files()]
+        flask.session[current_user.email]['files_enqueued_in_batch'] = files_enqueued
+        
 
     # if not user_inbox_files, return to the home page with a message
     if not user_inbox_files:
@@ -1455,9 +1470,16 @@ def batch_process_inbox():
             if not ((form.project_number.data and form.destination_directory.data) or form.destination_path.data):
                 raise Exception("Missing required fields -- either project_number and destination_directory or just a destination_path")
             
+            # get the selected files from the form and add them to the session so they can be removed from the subsequent form render
+            selected_files = form.items_to_archive.data
+            if selected_files:
+                if not flask.session[current_user.email].get('files_enqueued_in_batch'):
+                    flask.session[current_user.email]['files_enqueued_in_batch'] = []
+                flask.session[current_user.email]['files_enqueued_in_batch'] += selected_files
+
             batch_archiving_params = {'user_id': current_user.id,
                                       'inbox_path': user_inbox_path,
-                                      'items_to_archive': form.items_to_archive.data,
+                                      'items_to_archive': selected_files,
                                       'project_number': form.project_number.data,
                                       'destination_dir': form.destination_directory.data,
                                       'destination_path': form.destination_path.data,

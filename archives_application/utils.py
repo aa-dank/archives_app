@@ -440,7 +440,7 @@ class FlaskAppUtils:
         return decorator
     
 
-    @staticmethod
+    @staticmethod # TODO - this function is not used anywhere in the application?
     def user_path_to_app_path(path_from_user, app: flask.app.Flask):
         """
         Uses setting from app config to convert a user entered path to a path that can be used by the application.
@@ -517,6 +517,7 @@ class FlaskAppUtils:
         # following is for Windows machine. ie location_path_prefix is a local network url
         if matches_network_url(path_from_user):
             app_path = "\\\\" + path_from_user.lstrip("/" + "\\")
+        # if the path is not a network url, we can map it to the network location
         if not matches_network_url(path_from_user):
             app_path = FileServerUtils.mounted_path_to_networked_path(mounted_path=path_from_user, network_location=location_path_prefix)
 
