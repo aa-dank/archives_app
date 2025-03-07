@@ -14,7 +14,7 @@ from urllib3.exceptions import InsecureRequestWarning
 from oauthlib.oauth2 import WebApplicationClient
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-VERSION = '1.6.0'
+VERSION = '1.6.1'
 
 # Suppress only the InsecureRequestWarning.
 # https://urllib3.readthedocs.io/en/latest/advanced-usage.html#ssl-warnings

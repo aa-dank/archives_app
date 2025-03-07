@@ -225,7 +225,16 @@ def change_config_settings():
                                     stderr=subprocess.PIPE,
                                     text=True)
         return cmd_result
-
+    
+    def clean_new_val_list_entry(list_val):
+        """
+        This function takes a string that is supposed to be a list and cleans it up.
+        """
+        chars_to_remove = ['"', "'"]
+        list_val = list_val.strip()
+        list_val = list_val[1:] if list_val[0] in chars_to_remove else list_val
+        list_val = list_val[:-1] if list_val[-1] in chars_to_remove else list_val
+        return list_val
 
     config_dict = {}
     config_filepath = flask.current_app.config.get('CONFIG_JSON_PATH')
@@ -248,9 +257,14 @@ def change_config_settings():
                     new_val = getattr(form, k).data
                     # if the value for this setting is a list, process input string into a list
                     if type(config_dict[k]['VALUE']) == type([]):
+                        
+                        #remove leading and trailing brackets if they exist
+                        new_val = new_val.strip()
+                        new_val = new_val[1:] if new_val[0] == '[' else new_val
+                        new_val = new_val[:-1] if new_val[-1] == ']' else new_val
 
-                        # To process into a list we remove
-                        new_val = [x.strip() for x in new_val.split(",") if x != '']
+                        # may need to remove leading and trailing quotes from each element
+                        new_val = [clean_new_val_list_entry(x) for x in new_val.split(",") if x != '']
                     config_dict[k]['VALUE'] = new_val
 
             with open(config_filepath, 'w') as config_file:
