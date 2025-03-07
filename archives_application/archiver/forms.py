@@ -96,7 +96,7 @@ class InboxItemForm(FlaskForm):
     submit = SubmitField('Archive File')
 
 class BatchInboxItemsForm(FlaskForm):
-    items_to_archive = MultiCheckboxField('Items to archive', choices=[])
+    items_to_archive = MultiCheckboxField('Items to archive', choices=[], validate_choice=False)
     project_number = StringField('Project Number')
     destination_directory = SelectField('Destination Directory')
     destination_path = StringField('Destination Path')
