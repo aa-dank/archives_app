@@ -1421,49 +1421,50 @@ def batch_process_inbox():
     """
     from archives_application.archiver.archiver_tasks import batch_process_inbox_task
 
-    # determine if the request is for testing the associated worker task
-    testing = is_test_request()
+    try:
+        # determine if the request is for testing the associated worker task
+        testing = is_test_request()
 
-    inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
-    if not os.path.exists(inbox_path):
-        m = "The archivist inbox directory does not exist."
-        return web_exception_subroutine(flash_message=m,
-                                        thrown_exception=FileNotFoundError(f"Missing path: {inbox_path}"),
-                                        app_obj=flask.current_app)
-    
-    user_inbox_path = os.path.join(inbox_path, get_user_handle())
-    if not os.path.exists(user_inbox_path):
-        os.makedirs(user_inbox_path)
-
-    get_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
-                                os.path.isfile(os.path.join(user_inbox_path, thing)) and not ignore_inbox_file(thing)]
-    
-    get_enqueued_files = lambda: flask.session[current_user.email].get('files_enqueued_in_batch', [])
-    
-    # We need to determine which files ave already been enqueued in a batch archiving process and not include them in the form
-    # for the user to select again. We also need to remove any files that have been archived in a batch process from the session.
-    user_inbox_files = get_inbox_files()
-    if get_enqueued_files():
-        # remove any files that have already been enqueued in a batch archiving process
-        files_enqueued = get_enqueued_files()
-        user_inbox_files = [f for f in user_inbox_files if f not in files_enqueued]
-
-        # remove files that have been archived in a batch process from the session
-        files_enqueued = [f for f in files_enqueued if f in get_inbox_files()]
-        flask.session[current_user.email]['files_enqueued_in_batch'] = files_enqueued
+        inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
+        if not os.path.exists(inbox_path):
+            m = "The archivist inbox directory does not exist."
+            return web_exception_subroutine(flash_message=m,
+                                            thrown_exception=FileNotFoundError(f"Missing path: {inbox_path}"),
+                                            app_obj=flask.current_app)
         
+        user_inbox_path = os.path.join(inbox_path, get_user_handle())
+        if not os.path.exists(user_inbox_path):
+            os.makedirs(user_inbox_path)
 
-    # if not user_inbox_files, return to the home page with a message
-    if not user_inbox_files:
-        flask.flash("No files in inbox to process.", 'info')
-        return flask.redirect(flask.url_for('main.home'))
-    
-    form = archiver_forms.BatchInboxItemsForm()
-    form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
-    form.items_to_archive.choices = [(f, f) for f in user_inbox_files()]
+        get_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
+                                    os.path.isfile(os.path.join(user_inbox_path, thing)) and not ignore_inbox_file(thing)]
+        
+        get_enqueued_files = lambda: flask.session[current_user.email].get('files_enqueued_in_batch', [])
+        
+        form = archiver_forms.BatchInboxItemsForm()
+        # We need to determine which files ave already been enqueued in a batch archiving process and not include them in the form
+        # for the user to select again. We also need to remove any files that have been archived (thus not in the inbox) in a batch 
+        # process from the session.
+        user_inbox_files = get_inbox_files()
+        if get_enqueued_files():
+            # remove any files that have already been enqueued in a batch archiving process
+            files_enqueued = get_enqueued_files()
+            user_inbox_files = [f for f in user_inbox_files if f not in files_enqueued]
 
-    if form.validate_on_submit():
-        try:
+            # remove files that have been archived in a batch process from the session
+            files_enqueued = [f for f in files_enqueued if f in get_inbox_files()]
+            flask.session[current_user.email]['files_enqueued_in_batch'] = files_enqueued
+            
+
+        # if not user_inbox_files, return to the home page with a message
+        if not user_inbox_files:
+            flask.flash("No files in inbox to process.", 'info')
+            return flask.redirect(flask.url_for('main.home'))
+        
+        form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
+        form.items_to_archive.choices = [(f, f) for f in user_inbox_files]
+
+        if form.validate_on_submit():
             if not form.items_to_archive.data:
                 raise Exception("No files selected to archive.")
             
@@ -1473,25 +1474,25 @@ def batch_process_inbox():
             # get the selected files from the form and add them to the session so they can be removed from the subsequent form render
             selected_files = form.items_to_archive.data
             if selected_files:
-                if not flask.session[current_user.email].get('files_enqueued_in_batch'):
+                if not get_enqueued_files():
                     flask.session[current_user.email]['files_enqueued_in_batch'] = []
                 flask.session[current_user.email]['files_enqueued_in_batch'] += selected_files
 
             batch_archiving_params = {'user_id': current_user.id,
-                                      'inbox_path': user_inbox_path,
-                                      'items_to_archive': selected_files,
-                                      'project_number': form.project_number.data,
-                                      'destination_dir': form.destination_directory.data,
-                                      'destination_path': form.destination_path.data,
-                                      'notes': form.notes.data}
+                                    'inbox_path': user_inbox_path,
+                                    'items_to_archive': selected_files,
+                                    'project_number': form.project_number.data,
+                                    'destination_dir': form.destination_directory.data,
+                                    'destination_path': form.destination_path.data,
+                                    'notes': form.notes.data}
             
             if testing:
                 test_task_id = f"{batch_process_inbox_task.__name__}_test_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 new_task_record = WorkerTaskModel(task_id=test_task_id,
-                                                  time_enqueued=str(datetime.now()),
-                                                  origin='test',
-                                                  function_name = batch_process_inbox_task.__name__,
-                                                  status= "queued")
+                                                time_enqueued=str(datetime.now()),
+                                                origin='test',
+                                                function_name = batch_process_inbox_task.__name__,
+                                                status= "queued")
                 db.session.add(new_task_record)
                 db.session.commit()
                 batch_archiving_params['queue_id'] = test_task_id
@@ -1506,14 +1507,14 @@ def batch_process_inbox():
                                                                 timeout=None)
                 message = f"Batch archiving task enqueued (job id: {nq_results['_id']})\nStay clear of the effected files while the operation processes them."
                 flask.flash(message, 'success')
-                testing_params = {} if not testing else {'test': str(bool(testing))}
+                testing_params = None if not testing else {'test': str(bool(testing))}
                 return flask.redirect(flask.url_for('archiver.batch_process_inbox', values=testing_params))
-            
-        except Exception as e:
-            return web_exception_subroutine(flash_message="Error processing batch archiving request: ",
-                                            thrown_exception=e,
-                                            app_obj=flask.current_app)
-        
+    
+    except Exception as e:
+        return web_exception_subroutine(flash_message="Error processing batch archiving request: ",
+                                        thrown_exception=e,
+                                        app_obj=flask.current_app)
+
     return flask.render_template('batch_process_inbox.html', title='Batch Process Inbox', form=form)
 
 
