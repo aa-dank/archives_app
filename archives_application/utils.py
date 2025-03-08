@@ -1,4 +1,3 @@
-import bz2
 import fitz
 import flask
 import flask_sqlalchemy
@@ -15,7 +14,7 @@ from datetime import datetime
 from flask_login import current_user
 from functools import wraps
 from pathlib import Path, PureWindowsPath
-from PIL import Image, ImageFilter
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.sql.expression import func
 from typing import Union, List, Dict
