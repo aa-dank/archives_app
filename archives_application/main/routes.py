@@ -14,20 +14,21 @@ from archives_application.models import *
 
 # This dictionary is used to determine how long to keep task records in the database
 TASK_RECORD_LIFESPANS = {'add_file_to_db_task': 90,
-                        'scrape_file_data_task': 365,
-                        'confirm_file_locations_task': 365,
-                        'add_deletion_to_db_task':180,
-                        'add_move_to_db_task': 180,
-                        'add_renaming_to_db_task': 180,
-                        'db_backup_clean_up_task': 90,
-                        'task_records_clean_up_task': 90,
-                        'temp_file_clean_up_task': 90,
-                        'db_backup_task': 180,
-                        'fmp_caan_project_reconciliation_task': 365,
-                        'confirm_project_locations_task': 365,
-                        'consolidation_target_removal_task': 365,
-                        'consolidate_dirs_edit_task': 365,
-                        'batch_move_edits_task': 365}
+                         'scrape_file_data_task': 365,
+                         'confirm_file_locations_task': 365,
+                         'add_deletion_to_db_task':180,
+                         'add_move_to_db_task': 180,
+                         'add_renaming_to_db_task': 180,
+                         'db_backup_clean_up_task': 90,
+                         'task_records_clean_up_task': 90,
+                         'temp_file_clean_up_task': 90,
+                         'db_backup_task': 180,
+                         'fmp_caan_project_reconciliation_task': 365,
+                         'confirm_project_locations_task': 365,
+                         'consolidation_target_removal_task': 365,
+                         'consolidate_dirs_edit_task': 365,
+                         'batch_move_edits_task': 365,
+                         'batch_process_inbox_task': 365}
 
 main = flask.Blueprint('main', __name__)
 
