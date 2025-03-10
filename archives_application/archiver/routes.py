@@ -117,13 +117,37 @@ def cleanse_locations_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df['filepath'] = df.apply(lambda row: (row['file_server_directories'] + "/" + row['filename']), axis=1)
     return df[['filepath']]
 
-def ignore_inbox_file(filepath):
+def get_current_user_inbox_files():
     """
-    Determines if the file at the path is not one we should be processing.
-    Used in inbox endpoint functions.
+    Returns a list of files in the inbox directory to be processed.
     """
-    return exclude_filenames(filepath) or exclude_extensions(filepath)
 
+    inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
+    user_inbox_path = os.path.join(inbox_path, get_user_handle())
+    if not os.path.exists(user_inbox_path):
+        return []
+
+    user_enqueued_files = flask.session[current_user.email].get('files_enqueued_in_batch', [])
+    inbox_contents = os.listdir(user_inbox_path)
+    inbox_files = []
+    for thing in inbox_contents:
+        thing_path = os.path.join(user_inbox_path, thing)
+        # only process files
+        if not os.path.isfile(thing_path):
+            continue
+        
+        # check if the file should be ignored based on exclusion rules
+        if exclude_filenames(thing_path) or exclude_extensions(thing_path):
+            continue
+        
+        # check if the file has already been enqueued for processing
+        if thing_path in user_enqueued_files:
+            continue
+
+        inbox_files.append(thing_path)
+    
+    return inbox_files
+   
 # TODO refactor to use this function
 def is_test_request():
     """
@@ -1178,8 +1202,7 @@ def inbox_item():
                                             app_obj=flask.current_app)
         
         user_inbox_path = os.path.join(inbox_path, get_user_handle())
-        user_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
-                                    os.path.isfile(os.path.join(user_inbox_path, thing)) and not ignore_inbox_file(thing)]
+        user_inbox_files = get_current_user_inbox_files()
         if not os.path.exists(user_inbox_path):
             os.makedirs(user_inbox_path)
 
@@ -1187,7 +1210,7 @@ def inbox_item():
         # This avoids other users from processing the same file, creating errors.
         if not user_inbox_files():
             general_inbox_files = [t for t in os.listdir(inbox_path) if
-                                   os.path.isfile(os.path.join(inbox_path, t)) and not ignore_inbox_file(t)]
+                                   os.path.isfile(os.path.join(inbox_path, t)) and not (exclude_filenames(t) or exclude_extensions(t))]
 
             # if there are no files to archive in either the user inbox or the archivist inbox we will send the user to
             # the homepage.
@@ -1435,26 +1458,12 @@ def batch_process_inbox():
         user_inbox_path = os.path.join(inbox_path, get_user_handle())
         if not os.path.exists(user_inbox_path):
             os.makedirs(user_inbox_path)
-
-        get_inbox_files = lambda: [thing for thing in os.listdir(user_inbox_path) if
-                                    os.path.isfile(os.path.join(user_inbox_path, thing)) and not ignore_inbox_file(thing)]
-        
-        get_enqueued_files = lambda: flask.session[current_user.email].get('files_enqueued_in_batch', [])
         
         form = archiver_forms.BatchInboxItemsForm()
         # We need to determine which files ave already been enqueued in a batch archiving process and not include them in the form
         # for the user to select again. We also need to remove any files that have been archived (thus not in the inbox) in a batch 
         # process from the session.
-        user_inbox_files = get_inbox_files()
-        if get_enqueued_files():
-            # remove any files that have already been enqueued in a batch archiving process
-            files_enqueued = get_enqueued_files()
-            user_inbox_files = [f for f in user_inbox_files if f not in files_enqueued]
-
-            # remove files that have been archived in a batch process from the session
-            files_enqueued = [f for f in files_enqueued if f in get_inbox_files()]
-            flask.session[current_user.email]['files_enqueued_in_batch'] = files_enqueued
-            
+        user_inbox_files = get_current_user_inbox_files()
 
         # if not user_inbox_files, return to the home page with a message
         if not user_inbox_files:
@@ -1474,7 +1483,7 @@ def batch_process_inbox():
             # get the selected files from the form and add them to the session so they can be removed from the subsequent form render
             selected_files = form.items_to_archive.data
             if selected_files:
-                if not get_enqueued_files():
+                if not flask.session.get(current_user.email).get('files_enqueued_in_batch', None):
                     flask.session[current_user.email]['files_enqueued_in_batch'] = []
                 flask.session[current_user.email]['files_enqueued_in_batch'] += selected_files
 
