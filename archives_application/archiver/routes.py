@@ -1208,7 +1208,7 @@ def inbox_item():
 
         # if no files in the user inbox, move a file from the INBOX directory to the user inbox to be processed.
         # This avoids other users from processing the same file, creating errors.
-        if not user_inbox_files():
+        if not user_inbox_files:
             general_inbox_files = [t for t in os.listdir(inbox_path) if
                                    os.path.isfile(os.path.join(inbox_path, t)) and not (exclude_filenames(t) or exclude_extensions(t))]
 
@@ -1221,10 +1221,10 @@ def inbox_item():
             item_path = os.path.join(inbox_path, general_inbox_files[0])
             shutil.move(item_path, os.path.join(user_inbox_path, general_inbox_files[0]))
 
-        inbox_files = user_inbox_files()
+        inbox_files = get_current_user_inbox_files()
         arch_file_filename = None
         if inbox_files:
-            arch_file_filename = user_inbox_files()[0]
+            arch_file_filename = get_current_user_inbox_files()[0]
         else:
             flask.flash("File has disappeared.", 'info')
             return flask.redirect(flask.url_for('main.home'))
