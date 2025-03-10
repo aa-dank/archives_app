@@ -644,6 +644,7 @@ def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to
                     if destination_path:
                         app_destination_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=destination_path,
                                                                                          app=flask.current_app)
+                        app_destination_path = os.path.join(app_destination_path, some_item)
                     item_path = os.path.join(inbox_path, some_item)
                     if not os.path.exists(item_path):
                         raise Exception(f"Item does not exist: {item_path}")
@@ -657,10 +658,10 @@ def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to
                                                    destination_path=app_destination_path,
                                                    new_filename=some_item,
                                                    notes=notes)
-                    archiving_success = item_to_archive.archive_in_destination()
+                    archiving_success, archiving_error = item_to_archive.archive_in_destination()
 
                     if not archiving_success:
-                        log['errors'].append(f"Error archiving {item_path}")
+                        log['errors'].append(f"Error archiving {item_path}: {archiving_error}")
                         continue
 
                     log["items_to_archived"][some_item]['archived'] = True
@@ -674,7 +675,7 @@ def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to
                                                       destination_directory=item_to_archive.destination_dir,
                                                       file_code = recorded_filing_code,
                                                       file_size = item_size,
-                                                      new_filename=item_to_archive.new_filename)
+                                                      filename=item_to_archive.new_filename)
                     db.session.add(archived_file)
                     db.session.commit()
 

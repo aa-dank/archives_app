@@ -1489,10 +1489,10 @@ def batch_process_inbox():
             if testing:
                 test_task_id = f"{batch_process_inbox_task.__name__}_test_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 new_task_record = WorkerTaskModel(task_id=test_task_id,
-                                                time_enqueued=str(datetime.now()),
-                                                origin='test',
-                                                function_name = batch_process_inbox_task.__name__,
-                                                status= "queued")
+                                                  time_enqueued=str(datetime.now()),
+                                                  origin='test',
+                                                  function_name = batch_process_inbox_task.__name__,
+                                                  status= "queued")
                 db.session.add(new_task_record)
                 db.session.commit()
                 batch_archiving_params['queue_id'] = test_task_id
@@ -1514,8 +1514,9 @@ def batch_process_inbox():
         return web_exception_subroutine(flash_message="Error processing batch archiving request: ",
                                         thrown_exception=e,
                                         app_obj=flask.current_app)
-
-    return flask.render_template('batch_process_inbox.html', title='Batch Process Inbox', form=form)
+    
+    testing_params = None if not testing else {'test': str(bool(testing))}
+    return flask.render_template('batch_process_inbox.html', title='Batch Process Inbox', form=form, values=testing_params)
 
 
 @archiver.route("/api/archived_or_not", methods=['POST'])
