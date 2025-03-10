@@ -4,6 +4,7 @@ from archives_application.archiver.routes import exclude_extensions, exclude_fil
 import flask
 import os
 import time
+import traceback
 from datetime import timedelta, datetime
 from itertools import cycle
 from typing import Callable
@@ -98,7 +99,8 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
             return file_id
         
         except Exception as e:
-            task_results['error'] = str(e)
+            error_msg = f"Error adding file {filepath} to database:\n{str(e)}\nTraceback:\n{traceback.format_exc()}"
+            task_results['error'] = error_msg
             utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_results)
 
 
@@ -603,7 +605,8 @@ def batch_move_edits_task(user_target_path, user_contents_to_move, user_destinat
                 
                 except Exception as e:
                     e_dict = {"Item": os.path.join(user_target_path, some_item),
-                            "Exception": str(e)}
+                              "Exception": str(e),
+                              "Traceback": traceback.format_exc()}
                     log["errors"].append(e_dict)
             db.session.commit()
             utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
@@ -680,7 +683,8 @@ def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to
                     db.session.commit()
 
                     # enqueue a task to add the file to the database
-                    add_file_params = {"filepath": item_path, "archiving": True}
+                    add_file_params = {"filepath": item_to_archive.get_destination_path(),
+                                       "archiving": True}
                     nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                                     enqueued_function=add_file_to_db_task,
                                                                     task_kwargs=add_file_params)
