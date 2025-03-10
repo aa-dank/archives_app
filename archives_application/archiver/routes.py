@@ -144,7 +144,7 @@ def get_current_user_inbox_files():
         if thing_path in user_enqueued_files:
             continue
 
-        inbox_files.append(thing_path)
+        inbox_files.append(thing)
     
     return inbox_files
    
