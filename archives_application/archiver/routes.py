@@ -141,7 +141,7 @@ def get_current_user_inbox_files():
             continue
         
         # check if the file has already been enqueued for processing
-        if thing_path in user_enqueued_files:
+        if thing in user_enqueued_files:
             continue
 
         inbox_files.append(thing)
@@ -1507,7 +1507,9 @@ def batch_process_inbox():
                 batch_archiving_params['queue_id'] = test_task_id
                 batch_archiving_log = batch_process_inbox_task(**batch_archiving_params)
                 batch_archiving_results = utils.serializable_dict(batch_archiving_log)
-                return flask.jsonify(batch_archiving_results)
+                
+                testing_params = {'test': str(bool(testing))}
+                return flask.redirect(flask.url_for('archiver.batch_process_inbox', values=testing_params))
             
             else:
                 nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
@@ -1519,13 +1521,13 @@ def batch_process_inbox():
                 testing_params = None if not testing else {'test': str(bool(testing))}
                 return flask.redirect(flask.url_for('archiver.batch_process_inbox', values=testing_params))
     
+        testing_params = None if not testing else {'test': str(bool(testing))}
+        return flask.render_template('batch_process_inbox.html', title='Batch Process Inbox', form=form, values=testing_params)
+    
     except Exception as e:
         return web_exception_subroutine(flash_message="Error processing batch archiving request: ",
                                         thrown_exception=e,
                                         app_obj=flask.current_app)
-    
-    testing_params = None if not testing else {'test': str(bool(testing))}
-    return flask.render_template('batch_process_inbox.html', title='Batch Process Inbox', form=form, values=testing_params)
 
 
 @archiver.route("/api/archived_or_not", methods=['POST'])
@@ -2148,7 +2150,11 @@ def file_search():
                                                                             app=flask.current_app)
                 search_location_list = utils.FileServerUtils.split_path(search_location)
                 mount_path_index = len(utils.FileServerUtils.split_path(archives_location))
-                search_location_search_term = os.path.join(*search_location_list[mount_path_index:])
+                search_term_location_list = search_location_list[mount_path_index:]
+                # if the list is empty, maybe they entered the root of the archives location or something else incorrectly
+                if not search_term_location_list:
+                    raise ValueError(f"Invalid search location: {search_location}")
+                search_location_search_term = os.path.join(*search_term_location_list)
                 search_query = search_query.filter(FileLocationModel.file_server_directories.like(f"%{search_location_search_term}%"))
 
             search_df = utils.FlaskAppUtils.db_query_to_df(search_query)
