@@ -71,8 +71,8 @@ class ArchivalFile:
         if not split_dest_components[-1] == extension:
             split_dest_components.append(extension)
 
-        prefix_list = [self.project_number, self.file_code]
-        split_dest_components = prefix_list + split_dest_components
+        # previously we had added preppended the project number and file code to the filename here.
+        # Removed 3-14-2025
         destination_filename = ".".join(split_dest_components)
         return destination_filename
 
