@@ -147,8 +147,7 @@ def get_current_user_inbox_files():
         inbox_files.append(thing)
     
     return inbox_files
-   
-# TODO refactor to use this function
+
 def is_test_request():
     """
     Determines if the request is a test request.
@@ -445,11 +444,7 @@ def batch_move_edit():
     # determine if the request is for testing the associated worker task
     # if the testing worker task, the task will be executed on this process and
     # not enqueued to be executed by the worker
-    testing = False
-    if utils.FlaskAppUtils.retrieve_request_param('test', None) \
-        and utils.FlaskAppUtils.retrieve_request_param('test').lower() == 'true' \
-        and utils.FlaskAppUtils.has_admin_role(current_user):
-        testing = True
+    testing = is_test_request()
 
     # retrieve limits to how much can be changed on the server, but if the user has admin credentials,
     # there are no limits and they are set to zero
@@ -701,10 +696,7 @@ def consolidate_dirs():
     # determine if the request is for testing the associated worker task
     # if the testing worker task, the task will be executed on this process and
     # not enqueued to be executed by the worker
-    if utils.FlaskAppUtils.retrieve_request_param('test', None) \
-        and utils.FlaskAppUtils.retrieve_request_param('test').lower() == 'true' \
-        and utils.FlaskAppUtils.has_admin_role(user):
-        testing = True
+    testing = is_test_request()
     
     # retrieve limits to how much can be changed on the server, but if the user has admin credentials,
     # there are no limits and they are set to zero
@@ -2276,15 +2268,11 @@ def scrape_location():
     from archives_application.archiver.archiver_tasks import scrape_location_files_task
     
     try:
-        testing = False
 
         # determine if the request is for testing the associated worker task
         # if the testing worker task, the task will be executed on this process and
         # not enqueued to be executed by the worker
-        if utils.FlaskAppUtils.retrieve_request_param('test') \
-            and utils.FlaskAppUtils.retrieve_request_param('test').lower() == 'true' \
-            and utils.FlaskAppUtils.has_admin_role(current_user):
-            testing = True
+        testing = is_test_request()
 
         form = archiver_forms.ScrapeLocationForm()
         if form.validate_on_submit():
