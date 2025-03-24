@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 {% block content %}
     <div class="content-section">
-        <form method="POST" action="" enctype="multipart/form-data">
+        <form method="POST" action="" enctype="multipart/form-data" id="archive-form-main">
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Inbox Item to Archive</legend>
@@ -90,8 +90,30 @@
                 </div>
             </fieldset>
             <div class="form-group">
-                {{ form.submit(class="btn btn-outline-info") }}
+                {{ form.submit(class="btn btn-outline-info", id="archive-button") }}
             </div>
         </form>
     </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var archiveForm = document.getElementById('archive-form-main');
+        if (archiveForm) {
+            archiveForm.addEventListener('submit', function(event) {
+                // Only change button text if it's not the download button that was clicked
+                if (!event.submitter || event.submitter.id !== 'download_item') {
+                    var button = document.getElementById('archive-button');
+                    if (button) {
+                        button.value = 'Archiving...';  // Change button text
+                        // Disable button to prevent double submission
+                        setTimeout(() => button.disabled = true, 10);
+                    }
+                    // Delay form submission to allow button text change
+                    event.preventDefault();
+                    setTimeout(() => HTMLFormElement.prototype.submit.call(archiveForm), 500);
+                }
+            });
+        }
+    });
+</script>
 {% endblock content %}
