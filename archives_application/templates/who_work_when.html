@@ -1,0 +1,21 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <h2>{{ title }}</h2>
+        <div class="border-bottom mb-4"></div>
+        <div class="row">
+            <div class="col-md-12">
+                <h4>Date: {{ date }}</h4>
+                {% if time %}
+                    <h4>Time: {{ time }}</h4>
+                {% endif %}
+                <div class="table-responsive">
+                    {{ html_table|safe }}
+                </div>
+                <div class="mt-4">
+                    <a class="btn btn-outline-info" href="{{ url_for('timekeeper.timekeeper_admin_interface') }}">Back to Admin</a>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock content %}

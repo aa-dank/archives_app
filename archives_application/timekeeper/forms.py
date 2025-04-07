@@ -1,8 +1,7 @@
-import flask
 from flask_wtf import FlaskForm
 from archives_application.models import *
-from wtforms import SubmitField, TextAreaField, DateField, SelectField, IntegerField
-from wtforms.validators import DataRequired, Email, EqualTo, ValidationError
+from wtforms import SubmitField, TextAreaField, DateField, SelectField, IntegerField, RadioField, TimeField
+from wtforms.validators import DataRequired, ValidationError
 
 
 class TimekeepingForm(FlaskForm):
@@ -27,6 +26,13 @@ class TimeSheetForm(FlaskForm):
             raise ValidationError("Rolling average window must be greater than 1.")
 
 
-class TimeSheetAdminForm(FlaskForm):
-    employee_email = SelectField('Employee Email', validators=[DataRequired()])
+class TimeKeeperAdminForm(FlaskForm):
+    operation = RadioField('Operation', 
+                          choices=[('employee_timesheet', 'View Employee Timesheet'), 
+                                   ('who_work_when', 'View Who Worked When')],
+                          validators=[DataRequired()],
+                          default='employee_timesheet')
+    employee_email = SelectField('Employee Email')
+    selected_date = DateField('Date')
+    selected_time = TimeField('Time (optional)')
     submit = SubmitField('Submit')
