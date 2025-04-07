@@ -2,24 +2,74 @@
 {% block content %}
     <div class="content-section">
         <h2>Timekeeper Administration</h2>
-        <form method="POST" action="" enctype="multipart/form-data", id="timesheet-form-main">
+        <form method="POST" action="" enctype="multipart/form-data" id="timesheet-form-main">
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
-                <legend class="border-bottom mb-4">Choose Employee</legend>
+                <legend class="border-bottom mb-4">Select Operation</legend>
                 <div class="form-group">
-                    {{ form.employee_email.label(class="form-control-label") }}
-                    {% if form.employee_email.errors %}
-                        {{ form.employee_email(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.employee_email.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
+                    {% for option in form.operation %}
+                        <div class="form-check">
+                            {{ option(class="form-check-input") }}
+                            {{ option.label(class="form-check-label") }}
                         </div>
-                    {% else %}
-                        {{ form.employee_email(class="form-control form-control-lg") }}
-                    {% endif %}
+                    {% endfor %}
                 </div>
             </fieldset>
+            
+            <!-- Employee timesheet section -->
+            <div id="employee-section">
+                <fieldset class="form-group">
+                    <legend class="border-bottom mb-4">Choose Employee</legend>
+                    <div class="form-group">
+                        {{ form.employee_email.label(class="form-control-label") }}
+                        {% if form.employee_email.errors %}
+                            {{ form.employee_email(class="form-control form-control-lg is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in form.employee_email.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ form.employee_email(class="form-control form-control-lg") }}
+                        {% endif %}
+                    </div>
+                </fieldset>
+            </div>
+            
+            <!-- Who worked when section -->
+            <div id="whowhen-section">
+                <fieldset class="form-group">
+                    <legend class="border-bottom mb-4">Select Date/Time</legend>
+                    <div class="form-group">
+                        {{ form.selected_date.label(class="form-control-label") }}
+                        {% if form.selected_date.errors %}
+                            {{ form.selected_date(class="form-control form-control-lg is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in form.selected_date.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ form.selected_date(class="form-control form-control-lg") }}
+                        {% endif %}
+                    </div>
+                    <div class="form-group">
+                        {{ form.selected_time.label(class="form-control-label") }}
+                        <small class="text-muted">Optional - leave blank to see all employees working on the selected date</small>
+                        {% if form.selected_time.errors %}
+                            {{ form.selected_time(class="form-control form-control-lg is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in form.selected_time.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ form.selected_time(class="form-control form-control-lg") }}
+                        {% endif %}
+                    </div>
+                </fieldset>
+            </div>
+            
             <div class="form-group">
                 {{ form.submit(class="btn btn-outline-info", id="submit-bttn") }}
             </div>
@@ -28,6 +78,7 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            // Form submission handling
             var timesheet_form = document.getElementById('timesheet-form-main');
             if (timesheet_form) {
                 timesheet_form.addEventListener('submit', function(event) {
@@ -47,6 +98,30 @@
             } else {
                 console.log("Form not found");
             }
+
+            // Toggle form sections based on operation selection
+            function toggleSections() {
+                var operation = document.querySelector('input[name="operation"]:checked').value;
+                var employeeSection = document.getElementById('employee-section');
+                var whowhenSection = document.getElementById('whowhen-section');
+                
+                if (operation === 'employee_timesheet') {
+                    employeeSection.style.display = 'block';
+                    whowhenSection.style.display = 'none';
+                } else if (operation === 'who_work_when') {
+                    employeeSection.style.display = 'none';
+                    whowhenSection.style.display = 'block';
+                }
+            }
+            
+            // Set initial state
+            toggleSections();
+            
+            // Add event listeners to radio buttons
+            var radioButtons = document.querySelectorAll('input[name="operation"]');
+            radioButtons.forEach(function(radio) {
+                radio.addEventListener('change', toggleSections);
+            });
         });
     </script>
 {% endblock content %}

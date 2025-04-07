@@ -13,7 +13,7 @@ from sqlalchemy import and_, func
 from typing import List
 
 
-from .forms import TimekeepingForm, TimeSheetForm, TimeSheetAdminForm
+from .forms import TimekeepingForm, TimeSheetForm, TimeKeeperAdminForm
 from archives_application import utils
 from archives_application.models import UserModel, TimekeeperEventModel, ArchivedFileModel, db
 
@@ -478,12 +478,14 @@ def all_timesheets():
 @timekeeper.route("/timekeeper/admin", methods=['GET', 'POST'])
 @login_required
 @utils.FlaskAppUtils.roles_required(['ADMIN'])
-def choose_employee():
+def timekeeper_admin_interface():
     """
-    Endpoint to display a form for selecting an employee to view their timesheet.
+    Endpoint to display a form for selecting either:
+    1. An employee to view their timesheet, or
+    2. A date/time to view who was working at that time
     """
     try:
-        form = TimeSheetAdminForm()
+        form = TimeKeeperAdminForm()
 
         # Get 'active' employee emails to use in dropdown choices
         is_archivist = lambda user: 'ARCHIVIST' in user.roles.split(",")
@@ -493,22 +495,195 @@ def choose_employee():
         form.employee_email.choices = ['ALL'] + employee_emails
 
         if form.validate_on_submit():
-            # get selected employee id and use it to redirect to correct timesheet endpoint
-            employee_email = form.employee_email.data
+            operation = form.operation.data
+            
+            if operation == 'employee_timesheet':
+                # get selected employee id and use it to redirect to correct timesheet endpoint
+                employee_email = form.employee_email.data
 
-            # if user has not selected 'ALL', they have selected an email account...
-            if not employee_email == 'ALL':
-                employee_id = UserModel.query.filter_by(email=employee_email).first().id
-                return flask.redirect(flask.url_for('timekeeper.user_timesheet', employee_id=employee_id))
-
-            else:
-                return flask.redirect(flask.url_for('timekeeper.all_timesheets'))
-
+                # if user has not selected 'ALL', they have selected an email account...
+                if not employee_email == 'ALL':
+                    employee_id = UserModel.query.filter_by(email=employee_email).first().id
+                    return flask.redirect(flask.url_for('timekeeper.user_timesheet', employee_id=employee_id))
+                else:
+                    return flask.redirect(flask.url_for('timekeeper.all_timesheets'))
+            
+            elif operation == 'who_work_when':
+                # Redirect to who_work_when with the selected date and time
+                selected_date = form.selected_date.data
+                selected_time = form.selected_time.data
+                
+                # Format the date as YYYY-MM-DD
+                date_str = selected_date.strftime('%Y-%m-%d')
+                
+                if selected_time:
+                    # Format the time as HH:MM
+                    time_str = selected_time.strftime('%H:%M')
+                    return flask.redirect(flask.url_for('timekeeper.who_work_when', 
+                                                      date=date_str, 
+                                                      time=time_str))
+                else:
+                    # If no time specified, just use the date
+                    return flask.redirect(flask.url_for('timekeeper.who_work_when', 
+                                                      date=date_str))
 
     except Exception as e:
-        return web_exception_subroutine(flash_message="Error trying to elicit or process employee email for making a timesheet :",
+        return web_exception_subroutine(flash_message="Error processing timekeeper admin form:",
                                           thrown_exception=e, app_obj=flask.current_app)
+    
     return flask.render_template('timekeeper_admin.html', form=form)
+
+@timekeeper.route("/timekeeper/who_work_when", methods=['GET', 'POST'])
+@login_required
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
+def who_work_when():
+    """
+    Shows which employees were working during a specified date/time.
+    
+    This endpoint retrieves timekeeper events for the specified date (and optionally time)
+    and displays which employees were clocked in, their working intervals, and their journal entries.
+    
+    Args:
+        None
+        
+    URL Parameters:
+        date (str): The date to check, in the format 'YYYY-MM-DD'.
+        time (str, optional): The specific time to check, in the format 'HH:MM'.
+        
+    Returns:
+        Response: Renders the 'who_work_when.html' template with a table showing which employees
+        were working during the specified date/time.
+    """
+    try:
+        # Get the date and time from URL parameters
+        date_str = flask.request.args.get('date')
+        time_str = flask.request.args.get('time')
+        
+        if not date_str:
+            flask.flash("No date specified.", 'warning')
+            return flask.redirect(flask.url_for('timekeeper.timekeeper_admin_interface'))
+        
+        # Parse date
+        selected_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        
+        # Start and end of the selected date
+        day_start = datetime.combine(selected_date, time.min)
+        day_end = datetime.combine(selected_date, time.max)
+        
+        # If a specific time is specified, adjust for checking who was working at that time
+        specific_time = None
+        if time_str:
+            hour, minute = map(int, time_str.split(':'))
+            specific_time = datetime.combine(selected_date, time(hour, minute))
+        
+        # Get all timekeeper events for the selected date
+        events_query = TimekeeperEventModel.query.filter(
+            TimekeeperEventModel.datetime >= day_start,
+            TimekeeperEventModel.datetime <= day_end
+        ).order_by(TimekeeperEventModel.user_id, TimekeeperEventModel.datetime)
+        
+        events_df = utils.FlaskAppUtils.db_query_to_df(query=events_query)
+        
+        if events_df.empty:
+            flask.flash(f"No timekeeper events found for {date_str}.", 'info')
+            return flask.redirect(flask.url_for('timekeeper.timekeeper_admin_interface'))
+        
+        # Get all users who have events on this day
+        user_ids = events_df['user_id'].unique()
+        users = UserModel.query.filter(UserModel.id.in_(user_ids)).all()
+        user_map = {user.id: user.email for user in users}
+        
+        # Initialize the results list
+        work_data = []
+        
+        # Process each user's events
+        for user_id in user_ids:
+            user_events = events_df[events_df['user_id'] == user_id].sort_values('datetime')
+            
+            # Ensure events start with clock-in and end with clock-out
+            if user_events.empty or not user_events.iloc[0]['clock_in_event']:
+                # Skip users with incomplete timekeeper events
+                continue
+            
+            if user_events.iloc[-1]['clock_in_event']:
+                # If the last event is a clock-in, we assume they're still working
+                # Add an artificial clock-out at the current time or end of day
+                current_time = datetime.now()
+                if current_time.date() == selected_date:
+                    # If selected date is today, use current time
+                    user_events = pd.concat([user_events, pd.DataFrame([{
+                        'user_id': user_id,
+                        'datetime': current_time,
+                        'clock_in_event': False,
+                        'journal': "Still working"
+                    }])])
+                else:
+                    # If selected date is in the past, use end of day
+                    user_events = pd.concat([user_events, pd.DataFrame([{
+                        'user_id': user_id,
+                        'datetime': day_end,
+                        'clock_in_event': False,
+                        'journal': "Clock-out time unknown"
+                    }])])
+            
+            # Calculate clocked-in intervals
+            intervals = []
+            was_working_during_time = False
+            
+            # Process each pair of clock-in/clock-out events
+            for i in range(0, len(user_events)-1, 2):
+                if i+1 >= len(user_events):
+                    break
+                    
+                clock_in_time = user_events.iloc[i]['datetime']
+                clock_out_time = user_events.iloc[i+1]['datetime']
+                
+                # Format the interval as a string
+                interval = f"{clock_in_time.strftime('%H:%M')} - {clock_out_time.strftime('%H:%M')}"
+                intervals.append(interval)
+                
+                # Check if the user was working during the specified time
+                if specific_time and clock_in_time <= specific_time <= clock_out_time:
+                    was_working_during_time = True
+            
+            # Skip this user if specific time was provided and they weren't working then
+            if specific_time and not was_working_during_time:
+                continue
+                
+            # Compile all journal entries for the user on this day
+            journal_entries = user_events[~user_events['clock_in_event'] & (user_events['journal'] != "")]
+            compiled_journal = " / ".join([entry for entry in journal_entries['journal'].tolist() if entry])
+            
+            # Add user data to results
+            work_data.append({
+                'User': user_map.get(user_id, f"Unknown User (ID: {user_id})"),
+                'Working Intervals': ", ".join(intervals),
+                'Journal': compiled_journal
+            })
+        
+        # Convert to dataframe for easy HTML rendering
+        work_df = pd.DataFrame(work_data)
+        
+        # Generate HTML table
+        if not work_df.empty:
+            html_table = work_df.to_html(index=False, classes="table-hover table-dark")
+        else:
+            html_table = "<p>No employees were working during the specified time.</p>"
+            
+        page_title = f"Employees Working on {date_str}"
+        if time_str:
+            page_title += f" at {time_str}"
+            
+        return flask.render_template('who_work_when.html', 
+                                    title=page_title,
+                                    date=date_str,
+                                    time=time_str,
+                                    html_table=html_table)
+                                    
+    except Exception as e:
+        return web_exception_subroutine(
+            flash_message="Error retrieving working employees:",
+            thrown_exception=e, app_obj=flask.current_app)
 
 
 @timekeeper.route("/archiving_dashboard/<archiver_id>", methods=['GET', 'POST'])
@@ -763,3 +938,4 @@ def archiving_dashboard(archiver_id):
     except Exception as e:
         m = "Error creating or rendering dashboard:\n"
         return web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=current_app)
+

@@ -125,13 +125,13 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
 
         # create a log of the scraping process
         scrape_log = {"Scrape Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
-                    "This Start  Location": start_location,
-                    "Files Added":0,
-                    "File Locations Added":0,
-                    "Files Confirmed":0,
-                    "Errors":[],
-                    "Time Elapsed":0,
-                    "Next Start Location": start_location}
+                      "This Start Location": start_location,
+                      "Files Added":0,
+                      "File Locations Added":0,
+                      "Files Confirmed":0,
+                      "Errors":[],
+                      "Time Elapsed":0,
+                      "Next Start Location": start_location}
         start_time = time.time()
         start_location_found = False
         scrape_time_expired = False
