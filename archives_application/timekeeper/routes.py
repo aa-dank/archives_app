@@ -494,6 +494,20 @@ def timekeeper_admin_interface():
         # add 'ALL' option to email dropdown
         form.employee_email.choices = ['ALL'] + employee_emails
 
+        # Debug - check if the request method is POST
+        if flask.request.method == 'POST':
+            flask.current_app.logger.debug(f"Form submitted with POST method")
+            flask.current_app.logger.debug(f"Form data: {flask.request.form}")
+            
+            # Check if the form validates
+            is_valid = form.validate()
+            flask.current_app.logger.debug(f"Form validation result: {is_valid}")
+            
+            # If there are errors, log them
+            if not is_valid:
+                for fieldname, errors in form.errors.items():
+                    flask.current_app.logger.debug(f"Field {fieldname} has errors: {errors}")
+        
         if form.validate_on_submit():
             operation = form.operation.data
             

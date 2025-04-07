@@ -1,8 +1,7 @@
 from flask_wtf import FlaskForm
 from archives_application.models import *
 from wtforms import SubmitField, TextAreaField, DateField, SelectField, IntegerField, RadioField, TimeField
-from wtforms.validators import DataRequired, ValidationError
-
+from wtforms.validators import DataRequired, Optional, ValidationError
 
 class TimekeepingForm(FlaskForm):
     clock_in = SubmitField('Clock In')
@@ -33,6 +32,23 @@ class TimeKeeperAdminForm(FlaskForm):
                           validators=[DataRequired()],
                           default='employee_timesheet')
     employee_email = SelectField('Employee Email')
-    selected_date = DateField('Date')
-    selected_time = TimeField('Time (optional)')
+    selected_date = DateField('Date', validators=[Optional()])  # Add Optional validator
+    selected_time = TimeField('Time (optional)', validators=[Optional()])  # Add Optional validator
     submit = SubmitField('Submit')
+
+    def validate(self, extra_validators=None):
+        """Custom validation based on selected operation"""
+        # Store original validation result but continue execution
+        is_valid = super().validate(extra_validators=extra_validators)
+        
+        # Custom conditional validation
+        if self.operation.data == 'who_work_when' and not self.selected_date.data:
+            self.selected_date.errors = ["Date is required when viewing who worked when"]
+            return False
+        
+        if self.operation.data == 'employee_timesheet' and not self.employee_email.data:
+            self.employee_email.errors = ["Employee email is required when viewing timesheets"]
+            return False
+        
+        # Return the original validation result after applying our custom rules
+        return is_valid
