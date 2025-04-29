@@ -237,7 +237,9 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
 
                     except Exception as e:
                         utils.FlaskAppUtils.attempt_db_rollback(db)
-                        e_dict = {"Filepath": file, "Exception": str(e)}
+                        e_dict = {"Filepath": file,
+                                  "Exception": str(e),
+                                  "Traceback": traceback.format_exc()}
                         scrape_log["Errors"].append(e_dict)
 
         # update the task entry in the database
@@ -303,8 +305,9 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
                 except Exception as e:
                     utils.FlaskAppUtils.attempt_db_rollback(db)
                     e_dict = {"Location": file_location.file_server_directories,
-                            "filename": file_location.filename,
-                            "Exception": str(e)}
+                              "filename": file_location.filename,
+                              "Exception": str(e),
+                              "Traceback": traceback.format_exc()}
                     confirm_locations_log["Errors"].append(e_dict)
                 
         # update the task entry in the database
@@ -424,7 +427,8 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                 except Exception as e:
                     e_dict = {"Location": root,
                               "filename": file,
-                              "Exception": str(e)}
+                              "Exception": str(e),
+                              "Traceback": traceback.format_exc()}
                     location_scrape_log["Errors"].append(e_dict)
             
             if scrape_location == root and not recursively:
@@ -500,7 +504,9 @@ def consolidate_dirs_edit_task(user_target_path, user_destination_path, user_id,
 
         except Exception as e:
             utils.FlaskAppUtils.attempt_db_rollback(db)
-            log["errors"].append(e)
+            e_dict = {"Exception": str(e),
+                      "Traceback": traceback.format_exc()}
+            log["errors"].append(e_dict)
         
         log = utils.serializable_dict(log)
         utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
@@ -545,7 +551,10 @@ def consolidation_target_removal_task(dependent_tasks: list, target_path: str, q
             os.rmdir(target_path)            
 
         except Exception as e:
-            log["errors"].append(e)
+            e_dict = {"Target Path": target_path,
+                      "Exception": str(e),
+                      "Traceback": traceback.format_exc()}
+            log["errors"].append(e_dict)
         
         log = utils.serializable_dict(log)
         utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
@@ -614,7 +623,10 @@ def batch_move_edits_task(user_target_path, user_contents_to_move, user_destinat
 
         except Exception as e:
             utils.FlaskAppUtils.attempt_db_rollback(db)
-            log["errors"].append(e)
+            log["errors"].append({
+                "Exception": str(e),
+                "Traceback": traceback.format_exc()
+            })
             utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
             return log
 
@@ -689,7 +701,7 @@ def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to
                                                                     enqueued_function=add_file_to_db_task,
                                                                     task_kwargs=add_file_params)
                 except Exception as e:
-                    log['errors'].append(f"Error archiving {item_path}: {str(e)}")
+                    log['errors'].append(f"Error archiving {item_path}:\nException: {str(e)}\nTraceback: {traceback.format_exc()}")
                     continue
             
             utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
@@ -697,7 +709,9 @@ def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to
         
         except Exception as e:
             utils.FlaskAppUtils.attempt_db_rollback(db)
-            log["errors"].append(str(e))
+            e_dict = {"Exception": str(e),
+                        "Traceback": traceback.format_exc()}
+            log["errors"].append(e_dict)
             utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
             return log
                     
