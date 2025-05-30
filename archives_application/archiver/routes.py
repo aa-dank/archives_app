@@ -805,10 +805,9 @@ def upload_file():
     Workflow:
     1. The user navigates to the upload page and is presented with a form to upload a file.
     2. The user selects a file and fills in required metadata such as the destination directory and project number.
-    3. Upon form submission, the file and form data are validated.
-    4. If validation passes, the file is saved to a temporary location and then moved to the archive destination.
-    5. The file's metadata is recorded in the database.
-    6. The user is redirected to the home page with a success message.
+    3. Upon form submission, the file is saved to a temporary location and then moved to the archive destination.
+    4. The file's metadata is recorded in the database.
+    5. The user is redirected to the home page with a success message.
 
     Supported Methods:
     - **GET**: Renders the upload file form for the user.
@@ -817,7 +816,7 @@ def upload_file():
     Form Fields:
     - `project_number` (str, optional): The project number associated with the file.
     - `destination_directory` (str, optional): The filing code directory where the file will be archived.
-    - `destination_path` (str, optional): The full path to the destination directory. If provided, `destination_directory` and `project_number` are ignored.
+    - `destination_path` (str, optional): The full path to the destination directory. If provided, the filing code and project number are ignored.
     - `document_date` (Date, optional): The date of the document associated with the file.
     - `new_filename` (str, optional): The new filename for the file. If not provided, the original filename is used.
     - `upload` (File): The file to upload. Required.
@@ -941,8 +940,8 @@ def upload_file_api():
     Form Data:
         file (FileStorage): The file object to be uploaded.
         project_number (str): The project number associated with the file.
-        destination_dir (str): The destination directory code where the file will be archived.
-        new_filename (str, optional): The new name for the file, if renaming is desired.
+        destination_directory (str): The destination directory code where the file will be archived.
+        destination_path (str, optional): The full path to the destination directory. If provided, overrides project_number and destination_directory.
         notes (str, optional): Any notes to be stored with the file metadata.
         document_date (str, optional): The date associated with the document (format: 'YYYY-MM-DD').
 
@@ -981,8 +980,7 @@ def upload_file_api():
             Form Data:
                 - file: (File) The file to upload.
                 - project_number: "PRJ-2021-001"
-                - destination_dir: "E5 - Correspondence"
-                - new_filename: "meeting_notes.pdf"
+                - destination_directory: "E5 - Correspondence"
                 - notes: "Quarterly meeting notes."
                 - document_date: "2021-07-15"
 
@@ -1022,12 +1020,16 @@ def upload_file_api():
         if uploaded_file.filename == '':
             return flask.Response("No file selected", status=400)
 
-        filing_code = utils.FlaskAppUtils.retrieve_request_param('filing_code')
-        destination = utils.FlaskAppUtils.retrieve_request_param('destination')
-
-        # raise exception if there is not the required parameters in the submitted request.
+        # Get parameters from the request
         project_number = utils.FlaskAppUtils.retrieve_request_param('project_number')
-        if not (destination or (project_number and filing_code)):
+        destination_directory = utils.FlaskAppUtils.retrieve_request_param('destination_directory')
+        destination_path = utils.FlaskAppUtils.retrieve_request_param('destination_path')
+        new_filename = utils.FlaskAppUtils.retrieve_request_param('new_filename')
+        notes = utils.FlaskAppUtils.retrieve_request_param('notes')
+        document_date = utils.FlaskAppUtils.retrieve_request_param('document_date')
+
+        # Validate required parameters (same logic as upload_file)
+        if not ((project_number and destination_directory) or destination_path):
             response_args = flask.request.args.copy()
             response_header_args = flask.request.headers.copy()
             
@@ -1039,7 +1041,7 @@ def upload_file_api():
                 response_args['password'] = ''.join(['*' for _ in range(len(password_val))])
             
             response_text = f"""
-            Need either a destination or project_number and filing_code to archive the file.
+            Missing required fields -- either project_number and destination_directory or destination_path.
             Request args: {response_args}
             """
             return flask.Response(response_text, status=400)
@@ -1049,40 +1051,83 @@ def upload_file_api():
         temp_path = utils.FlaskAppUtils.create_temp_filepath(filename)
         uploaded_file.save(temp_path)
 
-        if project_number:
-            project_number = utils.sanitize_unicode(project_number.strip())
+        # Create ArchivalFile object
+        arch_file = ArchivalFile(
+            current_path=temp_path,
+            project=project_number,
+            notes=notes,
+            destination_dir=destination_directory,
+            document_date=document_date,
+            directory_choices=flask.current_app.config.get('DIRECTORY_CHOICES'),
+            archives_location=flask.current_app.config.get('ARCHIVES_LOCATION')
+        )
 
-        arch_file = ArchivalFile(current_path = temp_path,
-                                 project = project_number,
-                                 new_filename = filename,
-                                 notes = utils.FlaskAppUtils.retrieve_request_param('notes'),
-                                 destination_dir = filing_code,
-                                 directory_choices = flask.current_app.config.get('DIRECTORY_CHOICES'),
-                                 archives_location = flask.current_app.config.get('ARCHIVES_LOCATION'))
-        
-        if destination:
-            app_destination_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=destination,
-                                                                             app=flask.current_app)
+        # If destination_path is provided, use it instead
+        if destination_path:
+            app_destination_path = utils.FlaskAppUtils.user_path_to_app_path(
+                path_from_user=destination_path,
+                app=flask.current_app
+            )
+            
+            # Verify destination_path is a directory
+            if not os.path.isdir(app_destination_path):
+                return flask.Response(f"Destination path is not a directory: {destination_path}", status=400)
+                
             arch_file.cached_destination_path = os.path.join(app_destination_path, arch_file.new_filename)
         
+        # Archive the file
         archiving_successful, archiving_exception = arch_file.archive_in_destination()
         if archiving_successful:
-            # enqueue the task of adding the file to the database
-            add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': False} #TODO add archiving functionality for if the file is being uploaded by archivist
-            nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
-                                                            enqueued_function=add_file_to_db_task,
-                                                            task_kwargs=add_file_kwargs,
-                                                            timeout=None)
-            nq_results = utils.serializable_dict(nq_results)
-            return flask.Response(json.dumps(nq_results), status=200)
-        
+            # Record the archiving event in the database
+            upload_size = os.path.getsize(temp_path)
+            destination_filename = arch_file.assemble_destination_filename()
+            
+            # If a location path was provided we do not record the filing code
+            recorded_filing_code = arch_file.file_code if not destination_path else None
+            
+            # Add the archiving event to the database
+            archived_file = ArchivedFileModel(
+                destination_path=arch_file.get_destination_path(),
+                project_number=arch_file.project_number,
+                date_archived=datetime.now(),
+                document_date=document_date,
+                destination_directory=arch_file.destination_dir,
+                file_code=recorded_filing_code,
+                archivist_id=user.id,
+                file_size=upload_size,
+                notes=arch_file.notes,
+                filename=destination_filename
+            )
+            db.session.add(archived_file)
+            db.session.commit()
+            
+            # Enqueue the task of adding the file to the database
+            add_file_kwargs = {'filepath': arch_file.get_destination_path(), 'archiving': True}
+            nq_results = utils.RQTaskUtils.enqueue_new_task(
+                db=db,
+                enqueued_function=add_file_to_db_task,
+                task_kwargs=add_file_kwargs,
+                timeout=None
+            )
+            
+            # Prepare response with success information
+            response = {
+                "message": "File uploaded successfully",
+                "file_id": archived_file.id,
+                "destination_path": arch_file.get_destination_path(),
+                "task_id": nq_results.get('_id')
+            }
+            
+            return flask.Response(json.dumps(utils.serializable_dict(response)), status=200)
         else:
             raise Exception(
                 f"Following error while trying to archive file, {filename}:\nException: {archiving_exception}")
         
     except Exception as e:
-        return utils.FlaskAppUtils.api_exception_subroutine(response_message="Error processing archiving request:",
-                                        thrown_exception=e)
+        return utils.FlaskAppUtils.api_exception_subroutine(
+            response_message="Error processing archiving request:",
+            thrown_exception=e
+        )
 
 
 @archiver.route("/inbox_item", methods=['GET', 'POST'])
@@ -1864,7 +1909,7 @@ def test_scrape_files():
     scrape_results = scrape_file_data_task(**scrape_params)
     
     # prepare scrape results for JSON serialization
-    scrape_params.pop("exclusion_functions") # remove exclusion_fuctions from scrape_params because it is not JSON serializable
+    scrape_params.pop("exclusion_functions") # remove exclusion_fuctions from scrape_params because it is not JSON serialable
     scrape_params["scrape_time"] = str(scrape_params["scrape_time"])
     scrape_dict = {"scrape_results": scrape_results, "scrape_params": scrape_params}
     return flask.Response(json.dumps(scrape_dict), status=200)
@@ -1965,25 +2010,32 @@ def test_confirm_files():
             - An error occurs while initiating the confirmation task.
 
     Examples:
-        Accessing the endpoint:
+        **Accessing the Scraping Form:**
 
             GET /confirm_file_locations
 
-        Initiating confirmation with URL parameters:
-
-            POST /confirm_file_locations?confirming_time=15
-
-        Initiating confirmation with headers:
-
-            POST /confirm_file_locations
-            Headers:
-                Confirming-Time: 15
-
-        Submitting the form to start confirmation:
+        **Initiating Scraping with Form Data:**
 
             POST /confirm_file_locations
             Form Data:
-                submit: "Start Confirmation"
+                scrape_location: "/archives/project2023"
+                recursive: "True"
+
+        **Initiating Test Scraping via Query Parameters:**
+
+            POST /confirm_file_locations?test=true
+            Form Data:
+                scrape_location: "/archives/project2023"
+                recursive: "False"
+
+        **Initiating Test Scraping via Headers:**
+
+            POST /confirm_file_locations
+            Headers:
+                Test: true
+            Form Data:
+                scrape_location: "/archives/project2023"
+                recursive: "True"
 
     """
 
@@ -2296,6 +2348,7 @@ def scrape_location():
                                                             task_kwargs=scrape_params,
                                                             task_info=scrape_info,
                                                             timeout=3600)
+            
             id = nq_results.get("_id")
             function_call = nq_results.get("description")
             m = f"Scraping task has been successfully enqueued. Function Enqueued: {function_call}"
