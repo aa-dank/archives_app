@@ -1024,7 +1024,6 @@ def upload_file_api():
         project_number = utils.FlaskAppUtils.retrieve_request_param('project_number')
         destination_directory = utils.FlaskAppUtils.retrieve_request_param('destination_directory')
         destination_path = utils.FlaskAppUtils.retrieve_request_param('destination_path')
-        new_filename = utils.FlaskAppUtils.retrieve_request_param('new_filename')
         notes = utils.FlaskAppUtils.retrieve_request_param('notes')
         document_date = utils.FlaskAppUtils.retrieve_request_param('document_date')
 
