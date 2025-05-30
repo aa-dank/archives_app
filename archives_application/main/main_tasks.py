@@ -230,7 +230,7 @@ def db_backup_task(queue_id: str):
 
         except Exception as e:
             # log stack trace and error message
-            log["errors"].append({"error": e, "stack_trace": str(e.__traceback__)})
+            log["errors"].append({"error": str(e), "stack_trace": str(e.__traceback__)})
 
 
         log = {k: str(val) for k, val in log.items() if hasattr(val, '__str__')} # Convert all values to strings to avoid JSON serialization errors

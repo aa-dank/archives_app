@@ -5,6 +5,7 @@ import json
 import os
 import random
 import shutil
+import traceback
 import pandas as pd
 from datetime import timedelta
 from flask_login import login_required, current_user
@@ -38,18 +39,6 @@ def web_exception_subroutine(flash_message, thrown_exception, app_obj):
     flask.flash(flash_message, 'error')
     app_obj.logger.error(thrown_exception, exc_info=True)
     return flask.redirect(flask.url_for('main.home'))
-
-
-def api_exception_subroutine(response_message, thrown_exception):
-    """
-    Subroutine for handling an exception and returning response code to api call.
-    (In contrast to the web_exception_subroutine, which is for handling exceptions in the web app.)
-    @param response_message: message sent with response code
-    @param thrown_exception: exception that broke the 'try' conditional
-    @return:
-    """
-    flask.current_app.logger.error(thrown_exception, exc_info=True)
-    return flask.Response(response_message + "\n" + str(thrown_exception), status=500)
 
 
 def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
@@ -390,7 +379,7 @@ def server_change():
             if str(e) == "'NoneType' object has no attribute 'replace'":
                 m = "No old_path parameter provided: "
 
-            return api_exception_subroutine(response_message=m, thrown_exception=e)
+            return utils.FlaskAppUtils.api_exception_subroutine(response_message=m, thrown_exception=e)
     
     return flask.render_template('server_change.html', title='Make change to file server', form=form)
 
@@ -801,7 +790,7 @@ def consolidate_dirs():
                                                 thrown_exception=e,
                                                 app_obj=flask.current_app)
             else:
-                return api_exception_subroutine(response_message=m, thrown_exception=e)
+                return utils.FlaskAppUtils.api_exception_subroutine(response_message=m, thrown_exception=e)
 
     return flask.render_template('consolidate_edit.html', title='Consolidate Directories', form=form)
             
@@ -1092,7 +1081,7 @@ def upload_file_api():
                 f"Following error while trying to archive file, {filename}:\nException: {archiving_exception}")
         
     except Exception as e:
-        return api_exception_subroutine(response_message="Error processing archiving request:",
+        return utils.FlaskAppUtils.api_exception_subroutine(response_message="Error processing archiving request:",
                                         thrown_exception=e)
 
 
@@ -1581,7 +1570,7 @@ def archived_or_not_api():
         return flask.jsonify(locations_df['filepath'].to_list())
 
     except Exception as e:
-        return api_exception_subroutine(response_message="Error processing request: ",
+        return utils.FlaskAppUtils.api_exception_subroutine(response_message="Error processing request: ",
                                         thrown_exception=e)
 
 
@@ -1782,7 +1771,7 @@ def scrape_files():
             mssg = "Error enqueuing task"
             if e.__class__.__name__ == "ConnectionError":
                 mssg = "Error connecting to Redis. Is Redis running?"
-            return api_exception_subroutine(response_message=mssg, thrown_exception=e)   
+            return utils.FlaskAppUtils.api_exception_subroutine(response_message=mssg, thrown_exception=e)   
         
     return flask.Response("Unauthorized", status=401)
 
@@ -1932,7 +1921,7 @@ def confirm_db_file_locations():
             mssg = "Error enqueuing task"
             if e.__class__.__name__ == "ConnectionError":
                 mssg = "Error connecting to Redis. Is Redis running?"
-            return api_exception_subroutine(response_message=mssg, thrown_exception=e)
+            return utils.FlaskAppUtils.api_exception_subroutine(response_message=mssg, thrown_exception=e)
     
     return flask.Response("Unauthorized", status=401)
 

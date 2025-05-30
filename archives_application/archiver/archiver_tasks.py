@@ -710,7 +710,7 @@ def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to
         except Exception as e:
             utils.FlaskAppUtils.attempt_db_rollback(db)
             e_dict = {"Exception": str(e),
-                        "Traceback": traceback.format_exc()}
+                      "Traceback": traceback.format_exc()}
             log["errors"].append(e_dict)
             utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
             return log

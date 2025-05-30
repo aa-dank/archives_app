@@ -10,6 +10,7 @@ import re
 import redis
 import subprocess
 import sys
+import traceback
 from datetime import datetime
 from flask_login import current_user
 from functools import wraps
@@ -651,6 +652,20 @@ class FlaskAppUtils:
         if not param_value:
             param_value = default_value
         return param_value
+    
+    @staticmethod
+    def api_exception_subroutine(response_message, thrown_exception):
+        """
+        Subroutine for handling an exception and returning response code to api call.
+        (In contrast to the web_exception_subroutine, which is for handling exceptions in the web app.)
+        @param response_message: message sent with response code
+        @param thrown_exception: exception that broke the 'try' conditional
+        @return:
+        """
+        stack_trace = traceback.format_exc()
+        flask.current_app.logger.error(f"{thrown_exception}\n{stack_trace}", exc_info=True)
+        response_body = f"{response_message}\n{thrown_exception}\n\nStack trace:\n{stack_trace}"
+        return flask.Response(response_body, status=500)
 
 
 class FilesUtils:

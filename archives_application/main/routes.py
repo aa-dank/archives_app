@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import subprocess
+import traceback
 import archives_application.app_config as app_config
 import pandas as pd
 from flask_login import current_user
@@ -87,16 +88,6 @@ def backup_database():
     # import task here to avoid circular import
     from archives_application.main.main_tasks import db_backup_task
 
-
-    def api_exception_subroutine(response_message, thrown_exception):
-        """
-        Subroutine for handling an exception and returning response code to api call
-        @param response_message: message sent with response code
-        @param thrown_exception: exception that broke the 'try' conditional
-        @return:
-        """
-        flask.current_app.logger.error(thrown_exception, exc_info=True)
-        return flask.Response(response_message + "\n" + thrown_exception, status=500)
     
     try:
         
@@ -129,7 +120,7 @@ def backup_database():
         return flask.Response("Unauthorized", status=401)
 
     except Exception as e:
-        return api_exception_subroutine("Database Backup Failed", str(e))
+        return FlaskAppUtils.api_exception_subroutine("Database Backup Failed", str(e))
 
 
 @main.route("/admin/maintenance", methods=['GET', 'POST'])
