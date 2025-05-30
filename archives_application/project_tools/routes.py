@@ -3,6 +3,7 @@ import json
 import os
 import numpy as np
 import pandas as pd
+import traceback
 from flask_login import login_required, current_user
 from archives_application import db, bcrypt
 from archives_application import utils
@@ -19,17 +20,6 @@ DEFAULT_TASK_TIMEOUT = 18000 # 5 hours
 
 project_tools = flask.Blueprint('project_tools', __name__)
 
-
-def api_exception_subroutine(response_message, thrown_exception):
-    """
-    Subroutine for handling an exception and returning response code to api call.
-    (In contrast to the web_exception_subroutine, which is for handling exceptions in the web app.)
-    @param response_message: message sent with response code
-    @param thrown_exception: exception that broke the 'try' conditional
-    @return:
-    """
-    flask.current_app.logger.error(thrown_exception, exc_info=True)
-    return flask.Response(response_message + "\n" + str(thrown_exception), status=500)
 
 
 @project_tools.route("/fmp_reconciliation", methods=['GET', 'POST'])
@@ -74,7 +64,7 @@ def filemaker_reconciliation():
     
     except Exception as e:
         m ="Error authenticating user permissions."
-        return api_exception_subroutine(m, e)    
+        return utils.FlaskAppUtils.api_exception_subroutine(m, e)    
 
     if request_is_authenticated:
         # extract fmp_caan_project_reconciliation_task params from request
