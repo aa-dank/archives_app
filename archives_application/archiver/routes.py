@@ -1049,6 +1049,7 @@ def upload_file_api():
         filename = utils.FilesUtils.cleanse_filename(uploaded_file.filename)
         temp_path = utils.FlaskAppUtils.create_temp_filepath(filename)
         uploaded_file.save(temp_path)
+        upload_size = os.path.getsize(temp_path)
 
         # Create ArchivalFile object
         arch_file = ArchivalFile(
@@ -1072,13 +1073,12 @@ def upload_file_api():
             if not os.path.isdir(app_destination_path):
                 return flask.Response(f"Destination path is not a directory: {destination_path}", status=400)
                 
-            arch_file.cached_destination_path = os.path.join(app_destination_path, arch_file.new_filename)
+            arch_file.cached_destination_path = os.path.join(app_destination_path, arch_file.assemble_destination_filename())
         
         # Archive the file
         archiving_successful, archiving_exception = arch_file.archive_in_destination()
         if archiving_successful:
-            # Record the archiving event in the database
-            upload_size = os.path.getsize(temp_path)
+            # Record the archiving event in the database            
             destination_filename = arch_file.assemble_destination_filename()
             
             # If a location path was provided we do not record the filing code
