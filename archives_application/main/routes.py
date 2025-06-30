@@ -220,9 +220,34 @@ def change_config_settings():
     
     def clean_new_val_list_entry(list_val):
         """
-        This function takes a string that is supposed to be a list and cleans it up.
+        Cleans and normalizes a string entry that will become part of a list.
+        
+        This function removes unwanted characters from the beginning and end of a string
+        that was extracted from user input intended to be converted into a list. It handles
+        common formatting artifacts like quotes, commas, and newline characters that may
+        appear when users enter list data in various formats.
+        
+        Args:
+            list_val (str): The string value to be cleaned. Typically represents one
+                          item from a comma-separated or newline-separated list.
+        
+        Returns:
+            str: The cleaned string with leading/trailing unwanted characters removed.
+        
+        Example:
+            >>> clean_new_val_list_entry('"A - General",')
+            'A - General'
+            >>> clean_new_val_list_entry("'B - Administrative Reviews'\\n")
+            'B - Administrative Reviews'
+            >>> clean_new_val_list_entry(',C - Consultants,')
+            'C - Consultants'
+        
+        Note:
+            This function is specifically designed for processing configuration list
+            entries like DIRECTORY_CHOICES where users may input data with various
+            formatting styles (quoted strings, trailing commas, etc.).
         """
-        chars_to_remove = ['"', "'"]
+        chars_to_remove = ['"', "'", ",", "\n", "\r"]
         list_val = list_val.strip()
         list_val = list_val[1:] if list_val[0] in chars_to_remove else list_val
         list_val = list_val[:-1] if list_val[-1] in chars_to_remove else list_val
@@ -255,8 +280,14 @@ def change_config_settings():
                         new_val = new_val[1:] if new_val[0] == '[' else new_val
                         new_val = new_val[:-1] if new_val[-1] == ']' else new_val
 
-                        # may need to remove leading and trailing quotes from each element
-                        new_val = [clean_new_val_list_entry(x) for x in new_val.split(",") if x != '']
+                        # Check if input contains newlines - if so, split on newlines instead of commas
+                        if '\n' in new_val:
+                            # split on newlines
+                            new_val = [clean_new_val_list_entry(x) for x in new_val.split("\n") if x != '']
+                        else:
+                            # may need to remove leading and trailing quotes from each element
+                            new_val = [clean_new_val_list_entry(x) for x in new_val.split(",") if x != '']
+                    
                     config_dict[k]['VALUE'] = new_val
 
             with open(config_filepath, 'w') as config_file:
