@@ -1296,7 +1296,7 @@ def inbox_item():
             flask.session[current_user.email]['temporary files'].append(preview_image_url)
 
         form = archiver_forms.InboxItemForm()
-        form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
+        form.destination_directory.choices = sorted(flask.current_app.config.get('DIRECTORY_CHOICES'))
 
         # If the flask.session has data previously entered in this form, then re-enter it into the form before rendering
         # it in html.

@@ -224,34 +224,43 @@ def change_config_settings():
         
         This function removes unwanted characters from the beginning and end of a string
         that was extracted from user input intended to be converted into a list. It handles
-        common formatting artifacts like quotes, commas, and newline characters that may
+        common formatting artifacts like quotes and newline characters that may
         appear when users enter list data in various formats.
         
         Args:
             list_val (str): The string value to be cleaned. Typically represents one
-                          item from a comma-separated or newline-separated list.
+                        item from a comma-separated or newline-separated list.
         
         Returns:
             str: The cleaned string with leading/trailing unwanted characters removed.
         
         Example:
-            >>> clean_new_val_list_entry('"A - General",')
+            >>> clean_new_val_list_entry('"A - General"')
             'A - General'
             >>> clean_new_val_list_entry("'B - Administrative Reviews'\\n")
             'B - Administrative Reviews'
-            >>> clean_new_val_list_entry(',C - Consultants,')
+            >>> clean_new_val_list_entry('C - Consultants')
             'C - Consultants'
         
         Note:
             This function is specifically designed for processing configuration list
             entries like DIRECTORY_CHOICES where users may input data with various
-            formatting styles (quoted strings, trailing commas, etc.).
+            formatting styles (quoted strings, trailing newlines, etc.).
+            Commas are preserved as they may be part of the actual content.
         """
-        chars_to_remove = ['"', "'", ",", "\n", "\r"]
+        # Remove quotes and newlines, but preserve commas as they're part of the content
+        chars_to_remove = ['"', "'", "\n", "\r"]
         list_val = list_val.strip()
-        list_val = list_val[1:] if list_val[0] in chars_to_remove else list_val
-        list_val = list_val[:-1] if list_val[-1] in chars_to_remove else list_val
-        return list_val
+        
+        # Remove leading unwanted characters
+        while list_val and list_val[0] in chars_to_remove:
+            list_val = list_val[1:]
+        
+        # Remove trailing unwanted characters  
+        while list_val and list_val[-1] in chars_to_remove:
+            list_val = list_val[:-1]
+        
+        return list_val.strip()
 
     config_dict = {}
     config_filepath = flask.current_app.config.get('CONFIG_JSON_PATH')
@@ -296,7 +305,6 @@ def change_config_settings():
             # restart the application workers
             worker_restart_results = restart_app_workers()
             # if the worker restart command failed, raise an error
-            print(worker_restart_results) # TODO remove this line
             if worker_restart_results.returncode != 0:
                 raise ValueError(f"Error restarting application workers: {worker_restart_results.stderr}")
 
