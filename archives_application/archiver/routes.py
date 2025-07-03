@@ -843,7 +843,7 @@ def upload_file():
 
     form = archiver_forms.UploadFileForm()
     # set filing code choices from app config
-    form.destination_directory.choices = flask.current_app.config.get('DIRECTORY_CHOICES')
+    form.destination_directory.choices = sorted(flask.current_app.config.get('DIRECTORY_CHOICES'))
     if form.validate_on_submit():
         try:
             archival_filename = form.upload.data.filename
