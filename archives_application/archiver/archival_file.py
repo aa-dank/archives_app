@@ -75,25 +75,66 @@ class ArchivalFile:
         # Removed 3-14-2025
         destination_filename = ".".join(split_dest_components)
         return destination_filename
+    
+    @staticmethod
+    def _get_intermediate_code(code_prefix: str):
+        """Extract intermediate code from sub-codes like
+        'F7.1' -> 'F7 - '
+        'F7 - ' -> 'F7 - '
+        'F7 - Drawings and Specifications' -> 'F7 - '
+        'F - ' -> None
+        """
+        code_prefix = code_prefix.rstrip(" - ").strip()
+        
+        if "." in code_prefix:
+            return code_prefix.split(".")[0] + " - "
+        
+        # if there is not a digit in code_prefix, return None
+        if not any(char.isdigit() for char in code_prefix):
+            return None
+        
+        # return the code prefix with a trailing space dash space
+        return code_prefix + " - "
 
-
-    def nested_large_template_destination_dir(self):
+    def destination_hierarchy_parent_dir(self):
         """
         eg  "E - Program and Design\E5 - Correspondence"
 
         :return:
         """
         # TODO handle situation when there is a cached_destination_path but no destination_dir_name
+        if not self.destination_dir:
+            return ''
 
         nested_dirs = self.destination_dir
         if nested_dirs[1].isdigit():
             # a directory from self.directory_choices is parent directory if it shares same first char and doesn't have a
-            # digit in second char position
+            # digit in second char position eg "E - " is a parent directory of "E5 - "
             is_parent_dir = lambda child_dir, dir: dir[0] == child_dir[0] and not dir[1].isdigit()
             parent_dir = [dir for dir in self.directory_choices if is_parent_dir(nested_dirs, dir)][0]
-            nested_dirs = os.path.join(parent_dir, nested_dirs)
+            nested_dirs = parent_dir if  parent_dir else ''
         return str(nested_dirs)
-
+    
+    def destination_hierarchy_intermediate_dir(self):
+        """
+        Returns the intermediate directory for the destination hierarchy.
+        This is used to determine the parent directory for the destination file.
+        
+        :return: str - The intermediate directory name
+        """
+        if not self.destination_dir:
+            return ''
+        
+        prefix = self._get_intermediate_code(self.destination_dir)
+        if not prefix:
+            return ''
+        
+        # get the entry from self.directory_choices that matches the prefix
+        matching_dirs = [dir for dir in self.directory_choices if dir.startswith(prefix)]
+        if not matching_dirs:
+            return ''
+        # TODO assuming there is only one matching directory
+        return matching_dirs[0]
 
     def get_destination_path(self):
         """
@@ -132,7 +173,7 @@ class ArchivalFile:
             - This method determines the path but does not create any directories or files
         """
 
-        def list_of_child_dirs(parent_directory_path):
+        def list_of_child_dirs(parent_directory_path: str):
             """sub-function for getting a list of just the child directories given a parent directory path"""
             return [dir for dir in os.listdir(parent_directory_path) if
                     not os.path.isfile(os.path.join(parent_directory_path, dir))]
@@ -171,8 +212,11 @@ class ArchivalFile:
                 destination_dir_parent_dir_prefix = destination_dir_parent_dir.split(" ")[0] + " - "  # eg "F - ", "G - ", etc
                 parent_dirs = [dir_name for dir_name in new_path_dirs if
                                dir_name.upper().startswith(destination_dir_parent_dir_prefix.upper())]
+                intermediate_code_prefix = get_intermediate_code(destination_dir_parent_dir_prefix)
+
+                # if no parent directory exists in the destination project folder that corresponds to the parent
+                # directory of destination directory in a large template path...
                 if len(parent_dirs) > 0:
-                    # TODO cause we're lazy we'll just assume parent_dirs is only len = 1. Maybe should handle other situations?
                     new_path = os.path.join(new_path, parent_dirs[0])
                     new_path_dirs = [dir_name for dir_name in os.listdir(new_path) if
                                      not os.path.isfile(os.path.join(new_path, dir_name))]
@@ -183,6 +227,18 @@ class ArchivalFile:
                         new_path = os.path.join(new_path, existing_destination_dirs[0])
 
                     else:
+                        if intermediate_code_prefix:
+                            existing_intermediate_dirs = [dir_name for dir_name in new_path_dirs if
+                                                        dir_name.upper().startswith(intermediate_code_prefix.upper())]
+                            if existing_intermediate_dirs:
+                                # if there is a directory that matches the intermediate code prefix, we will use it
+                                new_path = os.path.join(new_path, existing_intermediate_dirs[0])
+                            
+                            # if no intermediate code prefix directory exists, we will create one
+                            else:
+                                # retrieve intermediate directory 
+                                intermediate_code_dir = 
+                                os.makedirs(intermediate_code_dir, exist_ok=True)
                         new_path = os.path.join(new_path, destination_dir)
 
                 # if there is no directory in the destination project folder that corresponds to the parent directory of
@@ -279,7 +335,7 @@ class ArchivalFile:
                 if len(dirs_matching_prefix) == 0:
                     new_path = os.path.join(new_path, project_num_prefix)
                     new_path = os.path.join(new_path, self.project_number)
-                    new_path = os.path.join(new_path, self.nested_large_template_destination_dir())
+                    new_path = os.path.join(new_path, self.destination_hierarchy_parent_dir(), self.destination_hierarchy_intermediate_dir()))
                     new_path = os.path.join(new_path, self.assemble_destination_filename())
                     self.cached_destination_path = new_path
                     return new_path
@@ -302,7 +358,7 @@ class ArchivalFile:
                 if len(dirs_matching_proj_num) == 0:
                     new_path = os.path.join(new_path, self.project_number)
                     new_path = path_from_project_num_dir_to_destination(new_path,
-                                                                        self.nested_large_template_destination_dir(),
+                                                                        self.destination_hierarchy_parent_dir(),
                                                                         self.assemble_destination_filename())
                     self.cached_destination_path = new_path
                     return self.cached_destination_path
@@ -310,7 +366,7 @@ class ArchivalFile:
                 if len(dirs_matching_proj_num) == 1:
                     new_path = os.path.join(new_path, dirs_matching_proj_num[0])
                     new_path = path_from_project_num_dir_to_destination(new_path,
-                                                                        self.nested_large_template_destination_dir(),
+                                                                        self.destination_hierarchy_parent_dir(),
                                                                         self.assemble_destination_filename())
                     self.cached_destination_path = new_path
                     return self.cached_destination_path
@@ -334,7 +390,7 @@ class ArchivalFile:
                     new_path = os.path.join(new_path, dirs_matching_proj_num[0])
 
                 new_path = path_from_project_num_dir_to_destination(path_to_project_num_dir=new_path,
-                                                                    large_template_destination=self.nested_large_template_destination_dir(),
+                                                                    large_template_destination=self.destination_hierarchy_parent_dir(),
                                                                     destination_filename=self.assemble_destination_filename())
                 self.cached_destination_path = new_path
                 return self.cached_destination_path
