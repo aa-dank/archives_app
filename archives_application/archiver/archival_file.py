@@ -241,12 +241,14 @@ class ArchivalFile:
                 # directory of destination directory in a large template path...
                 if len(parent_dirs) > 0:
                     new_path = os.path.join(new_path, parent_dirs[0])
-                    new_path_dirs = [dir_name for dir_name in os.listdir(new_path) if
-                                     not os.path.isfile(os.path.join(new_path, dir_name))]
+                    new_path_dirs = list_of_child_dirs(new_path)
                     existing_destination_dirs = [dir_name for dir_name in new_path_dirs if
                                                  dir_name.upper().startswith(destination_dir_prefix)]
                     if existing_destination_dirs:
-                        # again, assuming only one dir matches the destination dir prefix:
+                        # if there is a directory that matches the destination dir prefix, we combine it with the
+                        # parent directory and use it as the new path. The destination filename will be appended in
+                        # the final return statement of this function.
+                        # TODO assumes only one dir matches the destination dir prefix:
                         new_path = os.path.join(new_path, existing_destination_dirs[0])
 
                     else:
@@ -260,15 +262,37 @@ class ArchivalFile:
                             # if no intermediate code prefix directory exists, we will create one
                             else:
                                 # retrieve intermediate directory 
-                                intermediate_code_dir = 
+                                intermediate_code_dir = _
                                 os.makedirs(intermediate_code_dir, exist_ok=True)
-                        new_path = os.path.join(new_path, destination_dir)
+                        
+                        else:
+                            # if there is no intermediate code prefix, look if a destination directory exists
+                            existing_destination_dirs = [dir_name for dir_name in new_path_dirs if
+                                                         dir_name.upper().startswith(destination_dir_prefix)]
+                            if existing_destination_dirs:
+                                # if there is a directory that matches the destination dir prefix, we combine it with the
+                                # parent directory and use it as the new path. The destination filename will be appended in
+                                # the final return statement of this function.
+                                # TODO assumes only one dir matches the destination dir prefix:
+                                new_path = os.path.join(new_path, existing_destination_dirs[0])
+                            
+                            else:
+                                new_path = os.path.join(new_path, destination_dir)
 
                 # if there is no directory in the destination project folder that corresponds to the parent directory of
                 # destination directory in a large template path...
                 else:
+                    
                     # check for existing equivalents of destination directory
                     new_path_dirs = list_of_child_dirs(new_path)
+                    if intermediate_code_prefix:
+                        existing_intermediate_dirs = [dir_name for dir_name in new_path_dirs if
+                                                      dir_name.upper().startswith(intermediate_code_prefix.upper())]
+                        if existing_intermediate_dirs:
+                            # if there is a directory that matches the intermediate code prefix, we will use it
+                            new_path = os.path.join(new_path, existing_intermediate_dirs[0])
+                            new_path_dirs = list_of_child_dirs(new_path)
+
                     existing_destination_dirs = [dir_name for dir_name in new_path_dirs if
                                                  dir_name.upper().startswith(destination_dir_prefix)]
                     if existing_destination_dirs:
@@ -283,7 +307,7 @@ class ArchivalFile:
                                                                             destination_dir_structure=destination_dir_structure,
                                                                             destination_filename=destination_filename)
 
-            # if the destination_dir_name doesn't have a project template dir parent...
+            # else if the destination directory is not a large template child directory...
             else:
                 existing_destination_dirs = [dir_name for dir_name in new_path_dirs if
                                              dir_name.upper().startswith(destination_dir_prefix)]
