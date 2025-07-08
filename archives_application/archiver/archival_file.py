@@ -152,6 +152,17 @@ class ArchivalFile:
         d. Navigates through the hierarchy to find or determine the appropriate filing location
         e. Builds the final path including the destination filename
         
+        The method now supports a three-level nested directory structure:
+        - Parent directory (e.g., "F - Bid Documents and Contract Award")
+        - Intermediate directory (e.g., "F7 - Bid Summary Forms")
+        - Destination directory (e.g., "F7.1 - Bid Protest")
+        
+        The algorithm intelligently navigates existing directory structures, looking for:
+        1. First, if the destination directory already exists directly in the project directory
+        2. If not, it checks for the intermediate directory and navigates into it
+        3. If not, it checks for the parent directory and navigates the hierarchy
+        4. For any level that doesn't exist, it creates the appropriate directory structure
+        
         The method handles several edge cases:
         - Multiple directories matching the same project number (raises an exception)
         - No existing directories for the project (constructs a proposed path with new directories)
@@ -168,10 +179,13 @@ class ArchivalFile:
                     indicating potential duplicates in the archives
         
         Notes:
-            - The method uses nested_large_template_destination_dir() and assemble_destination_filename()
-            to determine the destination directory structure and filename
+            - The method uses destination_hierarchy_parent_dir(), destination_hierarchy_intermediate_dir() 
+            and assemble_destination_filename() to determine the destination directory structure and filename
             - The algorithm prioritizes existing directory structures when available
             - This method determines the path but does not create any directories or files
+            (actual directory creation happens in archive_in_destination())
+            - For subcodes (like F7.1), files are placed in a properly nested structure
+            (F - Bid Documents/F7 - Bid Summary Forms/F7.1 - Bid Protest)
         """
 
         def list_of_child_dirs(parent_directory_path: str):
@@ -179,30 +193,8 @@ class ArchivalFile:
             return [dir for dir in os.listdir(parent_directory_path) if
                     not os.path.isfile(os.path.join(parent_directory_path, dir))]
         
-        def destination_dir_hierarchy_relative_path():
-            """
-            Constructs the relative path to the destination directory hierarchy based on the destination_dir.
-            This is used to determine the parent directory for the destination file.
-            """
-            
-            if not self.destination_dir:
-                return ''
-            
-            if self.destination_dir == self.destination_hierarchy_parent_dir():
-                return self.destination_hierarchy_parent_dir()
-            
-            if self.destination_dir == self.destination_hierarchy_intermediate_dir():
-                return os.path.join(self.destination_hierarchy_parent_dir(),
-                                    self.destination_hierarchy_intermediate_dir())
-            
-            
-            return os.path.join(self.destination_hierarchy_parent_dir(),
-                                self.destination_hierarchy_intermediate_dir(),
-                                self.destination_dir)
-        
 
-        def path_from_project_num_dir_to_destination(path_to_project_num_dir: str, destination_dir_structure: str,
-                                                     destination_filename: str):
+        def path_from_project_num_dir_to_destination(path_to_project_num_dir: str, destination_filename: str):
             """
             Sub-routine for constructing the remainder of the destination path after building the path up to the
             directory corresponding to the archive file project number.
@@ -213,133 +205,96 @@ class ArchivalFile:
             :param destination_filename: given by ArchivalFile.assemble_destination_filename()
             :return: string final destination path
             """
+            def existing_parent_dir(some_path):
+                parent_dir_prefix = self.destination_hierarchy_parent_dir().split(" ")[0] + " - "
+                path_child_dirs = list_of_child_dirs(some_path)
+                existing_parent_dirs = [dir_name for dir_name in path_child_dirs if dir_name.upper().startswith(parent_dir_prefix.upper())]
+                if len(existing_parent_dirs) > 0:
+                    return existing_parent_dirs[0]
+                return None
+            
+            def existing_intermediate_dir(some_path):
+                intermediate_destination_dir = self.destination_hierarchy_intermediate_dir()
+                if intermediate_destination_dir:
+                    intermediate_destination_dir_prefix = intermediate_destination_dir.split(" ")[0] + " - "
+                    path_child_dirs = list_of_child_dirs(some_path)
+                    existing_intermediate_dirs = [dir_name for dir_name in path_child_dirs if dir_name.upper().startswith(intermediate_destination_dir_prefix.upper())]
+                    if len(existing_intermediate_dirs) > 0:
+                        return existing_intermediate_dirs[0]
+                return None
+            
+            def existing_destination_dir(some_path):
+                destination_dir_prefix = self.destination_dir.split(" ")[0] + " - "
+                path_child_dirs = list_of_child_dirs(some_path)
+                existing_destination_dirs = [dir_name for dir_name in path_child_dirs if dir_name.upper().startswith(destination_dir_prefix.upper())]
+                if len(existing_destination_dirs) > 0:
+                    return existing_destination_dirs[0]
+                return None
+        
 
-            new_path = path_to_project_num_dir
+            new_path = path_to_project_num_dir.copy()
+            # first ceck if the destination directory is already in the directory
+            existing_destination_dir = existing_destination_dir(new_path)
+            if existing_destination_dir:
+                new_path = os.path.join(new_path, existing_destination_dir)
+                new_path = os.path.join(new_path, destination_filename)
+                return new_path
+            
+            # if the destination directory is not in the path, we will look for an intermediate directory
+            intermediate_destination_dir = existing_intermediate_dir(new_path)
+            if intermediate_destination_dir:
+                new_path = os.path.join(new_path, intermediate_destination_dir)
+                
+                existing_destination_dir = existing_destination_dir(new_path)
+                if existing_destination_dir:
+                    new_path = os.path.join(new_path, existing_destination_dir)
 
-            # if the path to the dir corresponding to the project number doesn't exist, just return the completed
-            # destination filepath
-            if not os.path.exists(new_path):
-                new_path = os.path.join(new_path, destination_dir_structure)
-                return os.path.join(new_path, destination_filename)
-
-            new_path_dirs = list_of_child_dirs(new_path)
-            destination_dir = utils.FileServerUtils.split_path(destination_dir_structure)[-1]
-            destination_dir_prefix = destination_dir.split(" ")[0] + " - "  # eg "F5 - ", "G12 - ", "H - ", etc
-            destination_dir_parent_dir = utils.FileServerUtils.split_path(destination_dir_structure)[0]
-
-            # if the destination directory is a large template child directory...
-            if not destination_dir_parent_dir == destination_dir_structure:
-
-                # need to extrapolate the parent directory prefix given the desired destination directory. eg for
-                # destination "F5 - Drawings and Specifications" the parent directory prefix is "F - "
-                destination_dir_parent_dir_prefix = destination_dir_parent_dir.split(" ")[0] + " - "  # eg "F - ", "G - ", etc
-                parent_dirs = [dir_name for dir_name in new_path_dirs if
-                               dir_name.upper().startswith(destination_dir_parent_dir_prefix.upper())]
-                intermediate_code_prefix = self._get_intermediate_code(destination_dir_parent_dir_prefix)
-
-                # if no parent directory exists in the destination project folder that corresponds to the parent
-                # directory of destination directory in a large template path...
-                if len(parent_dirs) > 0:
-                    new_path = os.path.join(new_path, parent_dirs[0])
-                    new_path_dirs = list_of_child_dirs(new_path)
-                    existing_destination_dirs = [dir_name for dir_name in new_path_dirs if
-                                                 dir_name.upper().startswith(destination_dir_prefix)]
-                    if existing_destination_dirs:
-                        # if there is a directory that matches the destination dir prefix, we combine it with the
-                        # parent directory and use it as the new path. The destination filename will be appended in
-                        # the final return statement of this function.
-                        # TODO assumes only one dir matches the destination dir prefix:
-                        new_path = os.path.join(new_path, existing_destination_dirs[0])
-
-                    else:
-                        if intermediate_code_prefix:
-                            existing_intermediate_dirs = [dir_name for dir_name in new_path_dirs if
-                                                        dir_name.upper().startswith(intermediate_code_prefix.upper())]
-                            if existing_intermediate_dirs:
-                                # if there is a directory that matches the intermediate code prefix, we will use it
-                                new_path = os.path.join(new_path, existing_intermediate_dirs[0])
-                            
-                            # if no intermediate code prefix directory exists, we will create one
-                            else:
-                                # retrieve intermediate directory 
-                                intermediate_code_dir = _
-                                os.makedirs(intermediate_code_dir, exist_ok=True)
-                        
-                        else:
-                            # if there is no intermediate code prefix, look if a destination directory exists
-                            existing_destination_dirs = [dir_name for dir_name in new_path_dirs if
-                                                         dir_name.upper().startswith(destination_dir_prefix)]
-                            if existing_destination_dirs:
-                                # if there is a directory that matches the destination dir prefix, we combine it with the
-                                # parent directory and use it as the new path. The destination filename will be appended in
-                                # the final return statement of this function.
-                                # TODO assumes only one dir matches the destination dir prefix:
-                                new_path = os.path.join(new_path, existing_destination_dirs[0])
-                            
-                            else:
-                                new_path = os.path.join(new_path, destination_dir)
-
-                # if there is no directory in the destination project folder that corresponds to the parent directory of
-                # destination directory in a large template path...
                 else:
+                    new_path = os.path.join(new_path, self.destination_dir)
+                    new_path = os.path.join(new_path, destination_filename)
+                    return new_path
+                
+            # if the destination directory and intermediate directory are not in the path, we will look for a parent directory
+            existing_parent_dir = existing_parent_dir(new_path)
+            if existing_parent_dir:
+                new_path = os.path.join(new_path, existing_parent_dir)
+                
+                # look for destination directory in the parent directory
+                existing_destination_dir = existing_destination_dir(new_path)
+                if existing_destination_dir:
+                    new_path = os.path.join(new_path, existing_destination_dir)
+                    new_path = os.path.join(new_path, destination_filename)
+                    return new_path
+                
+                # look for intermediate directory in the parent directory
+                intermediate_destination_dir = existing_intermediate_dir(new_path)
+                if intermediate_destination_dir:
+                    new_path = os.path.join(new_path, intermediate_destination_dir)
                     
-                    # check for existing equivalents of destination directory
-                    new_path_dirs = list_of_child_dirs(new_path)
-                    if intermediate_code_prefix:
-                        existing_intermediate_dirs = [dir_name for dir_name in new_path_dirs if
-                                                      dir_name.upper().startswith(intermediate_code_prefix.upper())]
-                        if existing_intermediate_dirs:
-                            # if there is a directory that matches the intermediate code prefix, we will use it
-                            new_path = os.path.join(new_path, existing_intermediate_dirs[0])
-                            new_path_dirs = list_of_child_dirs(new_path)
-
-                    existing_destination_dirs = [dir_name for dir_name in new_path_dirs if
-                                                 dir_name.upper().startswith(destination_dir_prefix)]
-                    if existing_destination_dirs:
-                        new_path = os.path.join(new_path, existing_destination_dirs[0])
-                    else:
-                        project_num_dirs = [dir for dir in new_path_dirs if dir.lower().startswith(self.project_number)]
-                        if not project_num_dirs:
-                            new_path = os.path.join(new_path, destination_dir_structure)
-                        else:
-                            new_path = os.path.join(new_path, project_num_dirs[0])
-                            return path_from_project_num_dir_to_destination(path_to_project_num_dir=new_path,
-                                                                            destination_dir_structure=destination_dir_structure,
-                                                                            destination_filename=destination_filename)
-
-            # else if the destination directory is not a large template child directory...
-            else:
-                existing_destination_dirs = [dir_name for dir_name in new_path_dirs if
-                                             dir_name.upper().startswith(destination_dir_prefix)]
-                if existing_destination_dirs:
-                    # again, assuming there is only one destination dir. Could be more sophisticated about this.
-                    new_path = os.path.join(new_path, existing_destination_dirs[0])
-                else:
-                    file_num_dirs = [dir for dir in new_path_dirs if
-                                     dir.lower().startswith(self.project_number.lower())]
-                    if not file_num_dirs:
-                        new_path = os.path.join(new_path, destination_dir_structure)
-                    else:
-                        # If there are multiple directories that match the project number, how should we go about
-                        # deciding which one is the next part of destination path?
-                        next_dir = ''
-                        for next_dir in file_num_dirs:
-                            # if the next dir and project number are the same we use this next_dir.
-                            if len(next_dir) == len(self.project_number):
-                                break
-
-                            # if the character after project_number in the next_dir string is in this list, we will use this directory
-                            char_after_number = next_dir[len(self.project_number):][0]
-                            if char_after_number in [' ', ':']:
-                                break
-                            # if no next_dir breaks the loop, automatically use last entry from file_num_dirs
-
-                        new_path = os.path.join(new_path, next_dir)
-                        return path_from_project_num_dir_to_destination(path_to_project_num_dir=new_path,
-                                                                        destination_dir_structure=destination_dir_structure,
-                                                                        destination_filename=destination_filename)
-
-            return os.path.join(new_path, destination_filename)
+                    existing_destination_dir = existing_destination_dir(new_path)
+                    if existing_destination_dir:
+                        new_path = os.path.join(new_path, existing_destination_dir)
+                        new_path = os.path.join(new_path, destination_filename)
+                        return new_path
+                    
+                    # if no destination directory exists, we will create it
+                    new_path = os.path.join(new_path, self.destination_dir)
+                    new_path = os.path.join(new_path, destination_filename)
+                    return new_path
+                
+                # if no intermediate directory exists, we will create it
+                new_path = os.path.join(new_path, self.destination_hierarchy_intermediate_dir(), 
+                                        self.destination_dir)
+                new_path = os.path.join(new_path, destination_filename)
+                return new_path
+            
+            # if no parent directory exists, we will create it
+            new_path = os.path.join(new_path, self.destination_hierarchy_parent_dir(),
+                                    self.destination_hierarchy_intermediate_dir(),
+                                    self.destination_dir)
+            new_path = os.path.join(new_path, destination_filename)
+            return new_path
+            
 
         ############### Start of get_destination_path() #################
         if not self.cached_destination_path:
@@ -382,7 +337,10 @@ class ArchivalFile:
                 if len(dirs_matching_prefix) == 0:
                     new_path = os.path.join(new_path, project_num_prefix)
                     new_path = os.path.join(new_path, self.project_number)
-                    new_path = os.path.join(new_path, destination_dir_hierarchy_relative_path())
+                    new_path = os.path.join(new_path,
+                                            self.destination_hierarchy_parent_dir(),
+                                            self.destination_hierarchy_intermediate_dir(),
+                                            self.destination_dir),
                     new_path = os.path.join(new_path, self.assemble_destination_filename())
                     self.cached_destination_path = new_path
                     return new_path
@@ -404,17 +362,16 @@ class ArchivalFile:
                 # if no dirs are equivalent to the project number
                 if len(dirs_matching_proj_num) == 0:
                     new_path = os.path.join(new_path, self.project_number)
-                    new_path = path_from_project_num_dir_to_destination(new_path,
-                                                                        destination_dir_hierarchy_relative_path(),
-                                                                        self.assemble_destination_filename())
+                    new_path = path_from_project_num_dir_to_destination(path_to_project_num_dir=new_path,
+                                                                        destination_filename=self.assemble_destination_filename())
                     self.cached_destination_path = new_path
                     return self.cached_destination_path
+                
                 # if we do find a dir that corresponds with the project number...
                 if len(dirs_matching_proj_num) == 1:
                     new_path = os.path.join(new_path, dirs_matching_proj_num[0])
-                    new_path = path_from_project_num_dir_to_destination(new_path,
-                                                                        destination_dir_hierarchy_relative_path(),
-                                                                        self.assemble_destination_filename())
+                    new_path = path_from_project_num_dir_to_destination(path_to_project_num_dir=new_path,
+                                                                        destination_filename=self.assemble_destination_filename())
                     self.cached_destination_path = new_path
                     return self.cached_destination_path
 
@@ -437,12 +394,10 @@ class ArchivalFile:
                     new_path = os.path.join(new_path, dirs_matching_proj_num[0])
 
                 new_path = path_from_project_num_dir_to_destination(path_to_project_num_dir=new_path,
-                                                                    destination_dir_structure=destination_dir_hierarchy_relative_path(),
                                                                     destination_filename=self.assemble_destination_filename())
                 self.cached_destination_path = new_path
                 return self.cached_destination_path
-
-
+            
             self.cached_destination_path = new_path
         return self.cached_destination_path
 
