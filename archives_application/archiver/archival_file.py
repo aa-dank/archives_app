@@ -110,8 +110,8 @@ class ArchivalFile:
             # a directory from self.directory_choices is parent directory if it shares same first char and doesn't have a
             # digit in second char position eg "E - " is a parent directory of "E5 - "
             is_parent_dir = lambda child_dir, dir: dir[0] == child_dir[0] and not dir[1].isdigit()
-            parent_dir = [dir for dir in self.directory_choices if is_parent_dir(nested_dirs, dir)][0]
-            nested_dirs = parent_dir if  parent_dir else ''
+            parent_dirs = [dir for dir in self.directory_choices if is_parent_dir(self.destination_dir, dir)]
+            nested_dirs = parent_dirs[0] if  parent_dirs else ''
             return str(nested_dirs)
         
         return ''
@@ -133,7 +133,10 @@ class ArchivalFile:
         # get the entry from self.directory_choices that matches the prefix
         matching_dirs = [dir for dir in self.directory_choices if dir.startswith(prefix)]
         if not matching_dirs:
-            return ''
+            raise Exception(
+                f"No matching intermediate directory found for prefix '{prefix}' in directory choices: {self.directory_choices}"
+            )
+        
         # TODO assuming there is only one matching directory
         return matching_dirs[0]
 
@@ -232,22 +235,26 @@ class ArchivalFile:
                 return None
         
 
-            new_path = path_to_project_num_dir.copy()
+            new_path = path_to_project_num_dir
             # first ceck if the destination directory is already in the directory
-            existing_destination_dir = existing_destination_dir(new_path)
-            if existing_destination_dir:
-                new_path = os.path.join(new_path, existing_destination_dir)
+            existing_dest_dir = existing_destination_dir(new_path)
+            if existing_dest_dir:
+                new_path = os.path.join(new_path, existing_dest_dir)
                 new_path = os.path.join(new_path, destination_filename)
                 return new_path
             
             # if the destination directory is not in the path, we will look for an intermediate directory
-            intermediate_destination_dir = existing_intermediate_dir(new_path)
-            if intermediate_destination_dir:
-                new_path = os.path.join(new_path, intermediate_destination_dir)
+            intermediate_dest_dir = existing_intermediate_dir(new_path)
+            if intermediate_dest_dir:
+                new_path = os.path.join(new_path, intermediate_dest_dir)
                 
-                existing_destination_dir = existing_destination_dir(new_path)
-                if existing_destination_dir:
-                    new_path = os.path.join(new_path, existing_destination_dir)
+                existing_dest_dir = existing_destination_dir(new_path)
+                # if existing destination directory equivalent exists, we will use it,
+                # otherwise we will create a new destination directory
+                if existing_dest_dir:
+                    new_path = os.path.join(new_path, existing_dest_dir)
+                    new_path = os.path.join(new_path, destination_filename)
+                    return new_path
 
                 else:
                     new_path = os.path.join(new_path, self.destination_dir)
@@ -255,25 +262,25 @@ class ArchivalFile:
                     return new_path
                 
             # if the destination directory and intermediate directory are not in the path, we will look for a parent directory
-            existing_parent_dir = existing_parent_dir(new_path)
-            if existing_parent_dir:
-                new_path = os.path.join(new_path, existing_parent_dir)
+            existing_destination_parent_dir = existing_parent_dir(new_path)
+            if existing_destination_parent_dir:
+                new_path = os.path.join(new_path, existing_destination_parent_dir)
                 
                 # look for destination directory in the parent directory
-                existing_destination_dir = existing_destination_dir(new_path)
-                if existing_destination_dir:
-                    new_path = os.path.join(new_path, existing_destination_dir)
+                existing_dest_dir = existing_destination_dir(new_path)
+                if existing_dest_dir:
+                    new_path = os.path.join(new_path, existing_dest_dir)
                     new_path = os.path.join(new_path, destination_filename)
                     return new_path
                 
                 # look for intermediate directory in the parent directory
-                intermediate_destination_dir = existing_intermediate_dir(new_path)
-                if intermediate_destination_dir:
-                    new_path = os.path.join(new_path, intermediate_destination_dir)
+                intermediate_dest_dir = existing_intermediate_dir(new_path)
+                if intermediate_dest_dir:
+                    new_path = os.path.join(new_path, intermediate_dest_dir)
                     
-                    existing_destination_dir = existing_destination_dir(new_path)
-                    if existing_destination_dir:
-                        new_path = os.path.join(new_path, existing_destination_dir)
+                    existing_dest_dir = existing_destination_dir(new_path)
+                    if existing_dest_dir:
+                        new_path = os.path.join(new_path, existing_dest_dir)
                         new_path = os.path.join(new_path, destination_filename)
                         return new_path
                     
@@ -340,7 +347,7 @@ class ArchivalFile:
                     new_path = os.path.join(new_path,
                                             self.destination_hierarchy_parent_dir(),
                                             self.destination_hierarchy_intermediate_dir(),
-                                            self.destination_dir),
+                                            self.destination_dir)
                     new_path = os.path.join(new_path, self.assemble_destination_filename())
                     self.cached_destination_path = new_path
                     return new_path
