@@ -236,6 +236,16 @@ class ArchivalFile:
         
 
             new_path = path_to_project_num_dir
+
+            # if new_path doesn't exist we will just add directory structure and filename to new_path and return it
+            if not os.path.exists(new_path):
+                new_path = os.path.join(new_path,
+                                        self.destination_hierarchy_parent_dir(),
+                                        self.destination_hierarchy_intermediate_dir(),
+                                        self.destination_dir)
+                new_path = os.path.join(new_path, destination_filename)
+                return new_path
+
             # first ceck if the destination directory is already in the directory
             existing_dest_dir = existing_destination_dir(new_path)
             if existing_dest_dir:
