@@ -28,7 +28,7 @@ def filemaker_reconciliation():
     The purpose of this endpoint is to ensure that any changes made to the FileMaker database are reflected in the
     application database. This is done by comparing the FileMaker database to the application database and making
     changes to the application database as needed.
-    Request parameters can be sent in either th url or request headers.
+    Request parameters can be sent in either the url or request headers.
     Request parameters:
         user: email of the user making the request (Required)
         password: password of the user making the request (Required)
@@ -254,3 +254,54 @@ def caan_drawings(caan):
     caan = CAANModel.query.filter(CAANModel.caan == caan).first()
 
     return flask.render_template('caan_drawings.html', caan=caan.caan, caan_name=caan.name, drawings_confirmed_table=has_drawings_html, drawings_maybe_table=maybe_drawings_html)
+
+
+@project_tools.route("/api/project_location", methods=['GET'])
+def project_location():
+    """
+    API endpoint to retrieve the file server location for a given project.
+    
+    Query Parameters:
+        project (str): The project number to look up.
+        
+    Returns:
+        Response: JSON response containing the project location path.
+                 Returns 404 if project is not found.
+                 Returns 400 if project parameter is missing.
+    """
+    
+    try:
+        project_num = utils.FlaskAppUtils.retrieve_request_param("project")
+        
+        if not project_num:
+            return flask.Response("Missing required parameter: project", status=400)
+        
+        # Query the database for the project
+        project = ProjectModel.query.filter_by(number=project_num).first()
+        
+        if not project:
+            return flask.Response(f"Project {project_num} not found in database.", status=404)
+        
+        if not project.file_server_location:
+            return flask.Response(f"No file server location found for project {project_num}.", status=404)
+        
+        # Convert database path to user-friendly path
+        user_archives_location = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+        user_path = utils.FileServerUtils.user_path_from_db_data(
+            file_server_directories=project.file_server_location,
+            user_archives_location=user_archives_location
+        )
+        
+        response_data = {
+            "project_number": project.number,
+            "project_name": project.name,
+            "file_server_location": user_path
+        }
+        
+        return flask.Response(json.dumps(response_data), status=200)
+        
+    except Exception as e:
+        return utils.FlaskAppUtils.api_exception_subroutine(
+            response_message="Error retrieving project location:",
+            thrown_exception=e
+        )
