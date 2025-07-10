@@ -126,7 +126,8 @@ class ArchivalFile:
         if not self.destination_dir or not self.destination_hierarchy_parent_dir():
             return ''
         
-        prefix = self._get_intermediate_code(self.destination_dir)
+        destination_dir_prefix = self.destination_dir.split(" ")[0] + " - "
+        prefix = self._get_intermediate_code(destination_dir_prefix)
         if not prefix:
             return ''
         
