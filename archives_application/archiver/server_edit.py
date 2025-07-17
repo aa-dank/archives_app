@@ -91,6 +91,33 @@ class ServerEdit:
                 'data_effected': self.data_effected,
                 'files_effected': self.files_effected}
 
+    def _check_against_limits(self, files_limit, effected_data_limit):
+        """
+        Checks if the number of files and the amount of data affected by the change is within the limits set by the files_limit and effected_data_limit parameters.
+        If either of these limits is breached, an exception is raised.
+        """
+        if effected_data_limit and self.data_effected and self.data_effected > effected_data_limit:
+            raise Exception(
+                f"ServerEdit data limit breached. Too much data effected by change type '{self.change_type}'.\nOld path: {self.old_path}\nNew path: {self.new_path}")
+
+        if files_limit and self.files_effected and self.files_effected > files_limit:
+            raise Exception(
+                f"ServerEdit file limit breached. Too many files effected by change type '{self.change_type}.'\nOld path: {self.old_path}\nNew path: {self.new_path}")
+    
+    @staticmethod
+    def _add_int_to_filename(filename: str, int_to_add: int):
+        """
+        Adds an integer to the filename before the file extension.
+        :param filename: str: The filename to which the integer is to be added.
+        :param int_to_add: int: The integer to add to the filename.
+        """
+        unique_suffix = f"_({int_to_add})"
+        filename_parts = filename.split('.')
+        if len(filename_parts) == 1:
+            return filename + unique_suffix
+        
+        return '.'.join(filename_parts[:-1]) + unique_suffix + '.' + filename
+
     def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=15):
         """
         This function executes the server change that was specified during the creation of the ServerEdit object. The change can be of the following types:
@@ -111,20 +138,6 @@ class ServerEdit:
         :return: Dictionary containing the results of the enqueuing task.
         :rtype: dict
         """
-
-        def check_against_limits():
-            """
-            Checks if the number of files and the amount of data affected by the change is within the limits set by the files_limit and effected_data_limit parameters.
-            If either of these limits is breached, an exception is raised.
-            """
-            if effected_data_limit and self.data_effected and self.data_effected > effected_data_limit:
-                raise Exception(
-                    f"ServerEdit data limit breached. Too much data effected by change type '{self.change_type}'.\nOld path: {self.old_path}\nNew path: {self.new_path}")
-
-            if files_limit and self.files_effected and self.files_effected > files_limit:
-                raise Exception(
-                    f"ServerEdit file limit breached. Too many files effected by change type '{self.change_type}.'\nOld path: {self.old_path}\nNew path: {self.new_path}")
-
 
         def on_rmtree_error(func, path, exc_info):
             """
@@ -156,18 +169,6 @@ class ServerEdit:
                                                       timeout=timeout,
                                                       task_info=task_info)
         
-        def add_int_to_filename(filename: str, int_to_add: int):
-            """
-            Adds an integer to the filename before the file extension.
-            :param filename: str: The filename to which the integer is to be added.
-            :param int_to_add: int: The integer to add to the filename.
-            """
-            unique_suffix = f"_({int_to_add})"
-            filename_parts = filename.split('.')
-            if len(filename_parts) == 1:
-                return filename + unique_suffix
-            
-            return '.'.join(filename_parts[:-1]) + unique_suffix + '.' + filename
         
         # If the change type is 'DELETE'
         if self.change_type.upper() == 'DELETE':
@@ -188,7 +189,7 @@ class ServerEdit:
                                         db=flask.current_app.extensions['sqlalchemy'])
 
             # make sure change is not in excess of limits set
-            check_against_limits()
+            self._check_against_limits(files_limit, effected_data_limit)
 
             # remove directory and contents
             shutil.rmtree(self.old_path, onerror=on_rmtree_error)
@@ -218,7 +219,7 @@ class ServerEdit:
                                             db=flask.current_app.extensions['sqlalchemy'])
 
             # make sure change is not in excess of limits set
-            check_against_limits()
+            self._check_against_limits(files_limit, effected_data_limit)
             if old_path == self.new_path:            
                 self.change_executed = True
                 self.files_effected = 0
@@ -246,12 +247,12 @@ class ServerEdit:
                     unique_filename_suffix_int = 0
                     while os.path.exists(destination_path):
                         unique_filename_suffix_int += 1
-                        new_filename = add_int_to_filename(filename, unique_filename_suffix_int)
+                        new_filename = self._add_int_to_filename(filename, unique_filename_suffix_int)
                         destination_path = os.path.join(self.new_path, new_filename)
                     
                     self.new_path = destination_path
                     self.data_effected = os.path.getsize(self.old_path)
-                    check_against_limits()
+                    self._check_against_limits(files_limit, effected_data_limit)
                     shutil.copyfile(src=self.old_path, dst=destination_path)
                     os.remove(self.old_path)
                     self.change_executed = True
@@ -260,7 +261,7 @@ class ServerEdit:
                     # make sure change is not in excess of limits set
                     self._get_quantity_effected(dir_path=self.old_path,
                                                 db=flask.current_app.extensions['sqlalchemy'])
-                    check_against_limits()
+                    self._check_against_limits(files_limit, effected_data_limit)
 
                     # cannot move a directory within itself
                     if self.new_path.startswith(self.old_path):
