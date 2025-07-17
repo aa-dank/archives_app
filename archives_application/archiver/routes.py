@@ -260,6 +260,8 @@ def server_change():
     old_path = None
     edit_type = None
     user_email = None
+    user = None
+    user_is_admin = False
 
     # Check if the request includes user credentials or is from a logged in user. 
     request_is_authenticated = False
@@ -273,6 +275,8 @@ def server_change():
         # If there is a matching user to the request parameter, the password matches and that account has admin role...
         if user and bcrypt.check_password_hash(user.password, password_param) and has_correct_permissions(user=user):
             request_is_authenticated = True
+            user_email = user.email
+            user_is_admin = utils.FlaskAppUtils.has_admin_role(user)
             new_path = utils.FlaskAppUtils.retrieve_request_param('new_path')
             if new_path:
                 new_path = parse.unquote(new_path)
@@ -280,11 +284,12 @@ def server_change():
             if old_path:
                 old_path = parse.unquote(old_path)
             edit_type = utils.FlaskAppUtils.retrieve_request_param('edit_type')
-            user_email = user.email
+            
 
     elif current_user:
         if current_user.is_authenticated and has_correct_permissions(current_user):
             request_is_authenticated = True
+            user_is_admin = utils.FlaskAppUtils.has_admin_role(current_user)
 
     if not request_is_authenticated:
         return flask.Response("Unauthorized", status=401)
@@ -295,6 +300,10 @@ def server_change():
     data_limit = flask.current_app.config.get('SERVER_CHANGE_DATA_LIMIT')
     archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
     
+    # if either the user or current user has admin credentials, there are no limits
+    if user_is_admin:
+        files_limit, data_limit = 0, 0
+
     # if this is a user using the form to elicit a server change, we will validate the form
     # and retrieve ServerEdit object params
     if form_request:
@@ -306,10 +315,6 @@ def server_change():
                 return flask.redirect(flask.url_for('archiver.server_change'))
 
             user_email = current_user.email
-            
-            # if the user has admin credentials, there are no limits
-            if utils.FlaskAppUtils.has_admin_role(current_user):
-                files_limit, data_limit = 0, 0
 
             # If the user entered a path to delete
             if form.path_delete.data:
@@ -502,7 +507,6 @@ def batch_move_edit():
                     # distinguis between directories and files in case a directory and file have the same name
                     choose_contents = True
 
-                    
                     choices_form = archiver_forms.BatchMoveEditForm()
                     choices_form.contents_to_move.choices = contents_choices
                     choices_form.asset_path.data = user_asset_path
@@ -512,9 +516,9 @@ def batch_move_edit():
                 if form.contents_to_move.data and form.contents_to_move.data != []:
                     contents_to_move = form.contents_to_move.data
                     batch_move_params = {"user_target_path": user_asset_path,
-                                        "user_destination_path": user_destination_path,
-                                        "user_id": current_user.id,
-                                        "user_contents_to_move": contents_to_move}
+                                         "user_destination_path": user_destination_path,
+                                         "user_id": current_user.id,
+                                         "user_contents_to_move": contents_to_move}
                     
                     # if test call, execute the batch task on this process and return the results.
                     # Allows for simpler debugging of the task function.
