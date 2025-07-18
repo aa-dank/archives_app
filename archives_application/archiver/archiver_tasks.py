@@ -115,7 +115,7 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
     :param file_server_root_index: The index of the file server root in the file server path.
     :param exclusion_functions: A list of functions that take a file path as input and return True if the file
     should be excluded from the scraping process.
-    :param scrape_time: The amount of time to spend scraping file data.
+    :param scrape_time: The amount of time to spend scraping file data measured in seconds.
     :param queue_id: The id of task in the worker queue.
     """
     

@@ -1120,7 +1120,6 @@ def upload_file_api():
                 "destination_path": arch_file.get_destination_path(),
                 "task_id": nq_results.get('_id')
             }
-            
             return flask.Response(json.dumps(utils.serializable_dict(response)), status=200)
         else:
             raise Exception(
@@ -1696,7 +1695,7 @@ def retrieve_location_to_start_scraping():
         location = os.path.join(location, previous_scrape_location)
     return location
 
-
+    
 @archiver.route("/scrape_files", methods=['GET', 'POST'])
 @archiver.route("/api/scrape_files", methods=['GET', 'POST'])
 def scrape_files():
@@ -1711,6 +1710,7 @@ def scrape_files():
 
     Query Parameters:
         start_path (str, optional): The server path from which to start scraping files. Defaults to the root archive path.
+        scrape_time (int, optional): The duration in minutes for which the scraping task should run. Defaults to 60 minutes.
         recursive (bool, optional): Whether to recursively scrape subdirectories. Defaults to True.
 
     Headers:
@@ -1745,7 +1745,7 @@ def scrape_files():
 
         Initiating scraping with URL parameters:
 
-            POST /scrape_files?start_path=/archives/project&recursive=false
+            POST /scrape_files?start_path=/archives/project&scrape_time=30&recursive=false
 
         Initiating scraping with headers:
 
@@ -1767,6 +1767,7 @@ def scrape_files():
     # Check if the request includes user credentials or is from a logged in user. 
     # User needs to have ADMIN role.
     request_is_authenticated = False
+    scrape_location = None
     user_param = utils.FlaskAppUtils.retrieve_request_param('user', None)
     if user_param:
         password_param = utils.FlaskAppUtils.retrieve_request_param('password')
@@ -1777,6 +1778,7 @@ def scrape_files():
             and bcrypt.check_password_hash(user.password, password_param) \
             and utils.FlaskAppUtils.has_admin_role(user):
             request_is_authenticated = True
+            scrape_location = utils.FlaskAppUtils.retrieve_request_param('start_path', None)
 
     elif current_user:
         if current_user.is_authenticated \
@@ -1787,21 +1789,23 @@ def scrape_files():
     if request_is_authenticated:
         try:
             # Retrieve scrape parameters
-            scrape_location = retrieve_location_to_start_scraping()
-            scrape_time = 8
+            if not scrape_location:
+                scrape_location = utils.FlaskAppUtils.retrieve_request_param('start_path', None)
+
+            scrape_time = 60  # default scrape time measured in minutes
             file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get("ARCHIVES_LOCATION")))
-            if utils.FlaskAppUtils.retrieve_request_param('scrape_time'):
+            if utils.FlaskAppUtils.retrieve_request_param('scrape_time', None):
                 scrape_time = int(utils.FlaskAppUtils.retrieve_request_param('scrape_time'))
             scrape_time = timedelta(minutes=scrape_time)
             # Create our own job id to pass to the task so it can manipulate and query its own representation 
             # in the database and Redis.
             scrape_job_id = f"{scrape_file_data_task.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
             scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
-                            "start_location": scrape_location,
-                            "file_server_root_index": file_server_root_index,
-                            "exclusion_functions": [exclude_extensions, exclude_filenames],
-                            "scrape_time": scrape_time,
-                            "queue_id": scrape_job_id}
+                             "start_location": scrape_location,
+                             "file_server_root_index": file_server_root_index,
+                             "exclusion_functions": [exclude_extensions, exclude_filenames],
+                             "scrape_time": scrape_time,
+                             "queue_id": scrape_job_id}
             
             # set the result_ttl to 12 hours (43200 seconds) so that the results are not deleted from Redis
             nq_call_kwargs = {'result_ttl': 43200}
@@ -2227,6 +2231,7 @@ def file_search():
             
       
 @archiver.route("/scrape_location", methods=['GET', 'POST'])
+@archiver.route("/api/scrape_location", methods=['GET', 'POST'])
 def scrape_location():
     """Initiates scraping of a specific file server location to synchronize with the database.
 
@@ -2312,21 +2317,55 @@ def scrape_location():
     from archives_application.archiver.archiver_tasks import scrape_location_files_task
     
     try:
-
         # determine if the request is for testing the associated worker task
         # if the testing worker task, the task will be executed on this process and
         # not enqueued to be executed by the worker
         testing = is_test_request()
 
+        # Check if this is an API request with user credentials
+        request_is_authenticated = False
+        form_request = True
+        user_param = utils.FlaskAppUtils.retrieve_request_param('user', None)
+        
+        if user_param:
+            form_request = False
+            password_param = utils.FlaskAppUtils.retrieve_request_param('password')
+            user = UserModel.query.filter_by(email=user_param).first()
+
+            # Authenticate user with provided credentials
+            if user and bcrypt.check_password_hash(user.password, password_param):
+                request_is_authenticated = True
+                
+        elif current_user and current_user.is_authenticated:
+            request_is_authenticated = True
+            
+        # If API request is not authenticated, return 401
+        if not form_request and not request_is_authenticated:
+            return flask.Response("Unauthorized", status=401)
+
         form = archiver_forms.ScrapeLocationForm()
-        if form.validate_on_submit():
-            search_location = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=form.scrape_location.data,
+        
+        # Process form submission or API request
+        if form.validate_on_submit() or (not form_request and request_is_authenticated):
+            # Get parameters from form or request
+            if form_request:
+                scrape_location_path = form.scrape_location.data
+                recursive = form.recursive.data
+            else:
+                scrape_location_path = utils.FlaskAppUtils.retrieve_request_param('scrape_location')
+                recursive_param = utils.FlaskAppUtils.retrieve_request_param('recursive', 'True')
+                recursive = recursive_param.lower() in ['true', 't', 'yes', 'y', '1', 'True', True, 'Yes', 'YES', 'TRUE']
+                
+                if not scrape_location_path:
+                    return flask.Response("Missing required parameter: scrape_location", status=400)
+            
+            search_location = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=scrape_location_path,
                                                                         app=flask.current_app)
             
             scrape_params = {'scrape_location': search_location,
-                            'recursively': form.recursive.data,
+                            'recursively': recursive,
                             'confirm_data': True}
-            scrape_info = {'paprameters': scrape_params}
+            scrape_info = {'parameters': scrape_params}
             
             # if the request is for testing the worker task, we will execute the task on this process
             if testing:
@@ -2343,9 +2382,13 @@ def scrape_location():
                 scrape_results = scrape_location_files_task(**scrape_params)
                 scrape_info['results'] = scrape_results
                 scrape_info['task_id'] = test_job_id
+                
+                # Return JSON for API requests, redirect for form requests
+                if not form_request:
+                    return flask.jsonify(scrape_info)
                 return flask.jsonify(scrape_info)
             
-            
+            # Enqueue the task for asynchronous processing
             nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                             enqueued_function=scrape_location_files_task,
                                                             task_kwargs=scrape_params,
@@ -2354,14 +2397,34 @@ def scrape_location():
             
             id = nq_results.get("_id")
             function_call = nq_results.get("description")
+            
+            # Return different responses for API vs. web form requests
+            if not form_request:
+                response_data = {
+                    "message": "Scraping task successfully enqueued",
+                    "task_id": id,
+                    "function": function_call,
+                    "parameters": utils.serializable_dict(scrape_params)
+                }
+                return flask.jsonify(response_data)
+            
+            # Web form response
             m = f"Scraping task has been successfully enqueued. Function Enqueued: {function_call}"
             flask.flash(m, 'success')
             testing_params = {} if not testing else {'test': str(bool(testing))}
             return flask.redirect(flask.url_for('archiver.scrape_location', values=testing_params))
         
+        # If this is an API request but no parameters were provided, return an error
+        if not form_request:
+            return flask.Response("Missing required parameters", status=400)
+            
         return flask.render_template('scrape_location.html', form=form)
     
     except Exception as e:
-        return web_exception_subroutine(flash_message="Error scraping location: ",
+        if form_request:
+            return web_exception_subroutine(flash_message="Error scraping location: ",
                                         thrown_exception=e,
                                         app_obj=flask.current_app)
+        else:
+            return utils.FlaskAppUtils.api_exception_subroutine(response_message="Error scraping location: ",
+                                                             thrown_exception=e)
