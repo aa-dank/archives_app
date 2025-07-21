@@ -259,6 +259,11 @@ class ArchivalFile:
             if intermediate_dest_dir:
                 new_path = os.path.join(new_path, intermediate_dest_dir)
                 
+                # Check if the intermediate directory is the same as the destination directory
+                if intermediate_dest_dir.upper().startswith(self.destination_dir.split(" ")[0].upper() + " - "):
+                    new_path = os.path.join(new_path, destination_filename)
+                    return new_path
+                
                 existing_dest_dir = existing_destination_dir(new_path)
                 # if existing destination directory equivalent exists, we will use it,
                 # otherwise we will create a new destination directory
