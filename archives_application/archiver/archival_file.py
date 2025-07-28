@@ -111,8 +111,8 @@ class ArchivalFile:
             # digit in second char position eg "E - " is a parent directory of "E5 - "
             is_parent_dir = lambda child_dir, dir: dir[0] == child_dir[0] and not dir[1].isdigit()
             parent_dirs = [dir for dir in self.directory_choices if is_parent_dir(self.destination_dir, dir)]
-            nested_dirs = parent_dirs[0] if  parent_dirs else ''
-            return str(nested_dirs)
+            matching_parent_dir = parent_dirs[0] if  parent_dirs else ''
+            return str(matching_parent_dir)
         
         return ''
     
@@ -127,6 +127,10 @@ class ArchivalFile:
             return ''
         
         destination_dir_prefix = self.destination_dir.split(" ")[0] + " - "
+        # if the destination_dir is a parent directory or intermediate directory, return empty string
+        if not destination_dir_prefix[1].isdigit() or not '.' in destination_dir_prefix:
+            return ''
+
         prefix = self._get_intermediate_code(destination_dir_prefix)
         if not prefix:
             return ''
@@ -258,11 +262,6 @@ class ArchivalFile:
             intermediate_dest_dir = existing_intermediate_dir(new_path)
             if intermediate_dest_dir:
                 new_path = os.path.join(new_path, intermediate_dest_dir)
-                
-                # Check if the intermediate directory is the same as the destination directory
-                if intermediate_dest_dir.upper().startswith(self.destination_dir.split(" ")[0].upper() + " - "):
-                    new_path = os.path.join(new_path, destination_filename)
-                    return new_path
                 
                 existing_dest_dir = existing_destination_dir(new_path)
                 # if existing destination directory equivalent exists, we will use it,

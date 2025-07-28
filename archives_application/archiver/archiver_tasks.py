@@ -3,6 +3,7 @@ from archives_application.models import ArchivedFileModel, FileLocationModel, Fi
 from archives_application.archiver.routes import exclude_extensions, exclude_filenames
 import flask
 import os
+import random
 import time
 import traceback
 from datetime import timedelta, datetime
@@ -138,6 +139,9 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
         start_location_root_found = False
         root_dirs_paths = [os.path.join(archives_location, d) for d in os.listdir(archives_location) if os.path.isdir(os.path.join(archives_location, d))]
         
+        # if no start location is provided, we will start from a random root directory
+        if not start_location:
+            start_location = random.choice(root_dirs_paths)
 
         # iterate through the root of the file share to find the root directory to start scrape from
         for root_dir in cycle(root_dirs_paths):
