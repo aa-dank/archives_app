@@ -227,12 +227,29 @@ class ServerEdit:
                 return {'change_executed': self.change_executed}
                 
             try:
+                # if the new path already exists, throw an exception
+                if os.path.exists(self.new_path):
+                    raise Exception(f"Cannot rename to a path that already exists: {self.new_path}")
+                
                 os.rename(self.old_path, self.new_path)
                 self.change_executed = True
                 enqueueing_results = enqueue_change_task(self.add_renaming_to_db_task)
                 enqueueing_results['change_executed'] = self.change_executed
+            except OSError as e:
+                e_msg = ""
+                if e.errno == errno.ENOTEMPTY:
+                    e_msg = "Cannot rename a directory that is not empty: {self.old_path}"
+                elif e.errno == errno.EACCES:
+                    e_msg = "Cannot rename a directory that is not empty: {self.old_path}. It might be in use by another process."
+                elif e.errno == errno.ENOTDIR:
+                    e_msg = f"Cannot rename a file that is not a directory: {self.old_path}. It might be in use by another process."
+                else:
+                    e_msg = f"Cannot rename the file or directory: {self.old_path}. It might be in use by another process."
+                e_msg += f"\n{e}"
+
+                raise Exception(e_msg)
             except Exception as e:
-                raise Exception(f"There was an issue trying to change the name. If it is permissions issue, consider that it might be someone using a directory that would be changed \n{e}")
+                raise Exception(f"Exception trying to rename the file or directory:\n{e}")
 
             return enqueueing_results
 
