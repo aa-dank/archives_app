@@ -715,30 +715,28 @@ class FilesUtils:
         preview_filename = ".".join(pdf_filename.split(".")[:-1])
         preview_filename += ".png"
         output_path = os.path.join(image_destination, preview_filename)
-        fitz_doc = None
         try:
-            # use pymupdf to get pdf data for pillow Image object
-            fitz_doc = fitz.open(pdf_path)
-            if fitz_doc.page_count == 0:
-                raise ValueError("No pages in pdf")
-            
-            page_pix_map = fitz_doc.load_page(0).get_pixmap()
-            page_img = Image.frombytes("RGB", [page_pix_map.width, page_pix_map.height], page_pix_map.samples)
+            with fitz.open(pdf_path) as fitz_doc:
+                if fitz_doc.page_count == 0:
+                    raise ValueError("No pages in pdf")
+                
+                page_pix_map = fitz_doc.load_page(0).get_pixmap()
+                page_img = Image.frombytes("RGB", [page_pix_map.width, page_pix_map.height], page_pix_map.samples)
 
-            # if the preview image is beyond our max_width we resize it to that max_width
-            if page_img.width > max_width:
-                max_width_percent = (max_width / float(page_img.size[0]))
-                hsize = int((float(page_img.size[1]) * float(max_width_percent)))
-                page_img = page_img.resize((max_width, hsize), Image.LANCZOS)
+                # free C-level memory for the pixmap immediately
+                del page_pix_map
 
-            page_img.save(output_path)
+                # if the preview image is beyond our max_width we resize it to that max_width
+                if page_img.width > max_width:
+                    max_width_percent = (max_width / float(page_img.size[0]))
+                    hsize = int((float(page_img.size[1]) * float(max_width_percent)))
+                    page_img = page_img.resize((max_width, hsize), Image.LANCZOS)
+
+                page_img.save(output_path)
         
         except Exception as e:
             raise e
 
-        finally:
-            if fitz_doc:
-                fitz_doc.close()
         return output_path
 
     @staticmethod

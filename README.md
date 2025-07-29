@@ -33,7 +33,7 @@ An application that provides services related to a UCSC PPDO file server contain
 - **Git**: For cloning the repository.
 - **Samba**: For network storage access to the file server.
 
-### Setup Steps
+
 
 
     
