@@ -1,3 +1,5 @@
+# /archives_application/utils.py
+
 import fitz
 import flask
 import flask_sqlalchemy
@@ -44,6 +46,11 @@ def sanitize_unicode(text, replacement=''):
     return cleaned_text
 
 def is_valid_email(potential_email: str):
+    """
+    Validates an email address using a regular expression.
+    :param potential_email: The email address to validate.
+    :return: A re.Match object if the email is valid, None otherwise.
+    """
     email_regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
     return re.fullmatch(email_regex, potential_email)
 
@@ -367,7 +374,7 @@ class FileServerUtils:
                 if len(dirs_matching_proj_num) == 1:
                     project_path = os.path.join(project_path, dirs_matching_proj_num[0])
                     return project_path, project_path_created
-                
+            
             if len(dirs_matching_proj_num) == 1:
                         project_path = os.path.join(project_path, dirs_matching_proj_num[0])
                         return project_path, project_path_created
@@ -612,6 +619,10 @@ class FlaskAppUtils:
 
     @staticmethod
     def debug_printing(to_print):
+        """
+        Prints a timestamped debug message to stderr.
+        :param to_print: The message or object to output for debugging.
+        """
         dt_stamp = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
         print(dt_stamp + "\n" + str(to_print), file=sys.stderr)
 
@@ -695,6 +706,11 @@ class FilesUtils:
 
     @staticmethod
     def cleanse_filename(proposed_filename: str):
+        """
+        Cleanses a proposed filename by removing newlines, illegal filesystem characters, and non-ASCII (unicode) characters.
+        :param proposed_filename: The filename to cleanse.
+        :return: The cleaned filename safe for use on most file systems.
+        """
         clean_filename = proposed_filename.replace('\n', '')
         clean_filename = "".join(i for i in clean_filename if i not in "\/:*?<>|")
         clean_filename = clean_filename.strip()
@@ -704,10 +720,12 @@ class FilesUtils:
     @staticmethod
     def pdf_preview_image(pdf_path, image_destination, max_width=1080):
         """
-
-        :param pdf_path:
-        :param image_destination:
-        :return:
+        Generates a PNG preview image for the first page of a PDF file.
+        :param pdf_path: Path to the source PDF file.
+        :param image_destination: Directory to save the generated PNG preview.
+        :param max_width: Maximum width of the output image in pixels; image is resized if wider.
+        :return: Path to the generated PNG file.
+        :raises ValueError: If the PDF has no pages.
         """
         
         # Turn the pdf filename into equivalent png filename and create destination path
