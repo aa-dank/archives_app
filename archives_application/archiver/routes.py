@@ -1702,8 +1702,7 @@ def scrape_files():
     """Initiates the scraping of file data from the archives server.
 
     This endpoint starts a background task to scrape files from the archives server, reconcile database records,
-    and update the database with any new files found. It's useful for recording changes made directly to the file server
-    that are not yet reflected in the application's database.
+    and update the database with any new files found. It's used for keeping the database in sync with the file server.
 
     Args:
         None
@@ -1789,8 +1788,9 @@ def scrape_files():
     if request_is_authenticated:
         try:
             # Retrieve scrape parameters
+            scrape_location = utils.FlaskAppUtils.retrieve_request_param('start_path', None)
             if not scrape_location:
-                scrape_location = utils.FlaskAppUtils.retrieve_request_param('start_path', None)
+                scrape_location = retrieve_location_to_start_scraping()
 
             scrape_time = 60  # default scrape time measured in minutes
             file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get("ARCHIVES_LOCATION")))
