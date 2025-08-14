@@ -255,6 +255,14 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
 
 
 def confirm_file_locations_task(archive_location: str, confirming_time: timedelta, queue_id: str):
+    """
+    Reconciles file location entries in the database with the actual filesystem.
+
+    :param archive_location: str: The root archives directory to check file existence.
+    :param confirming_time: timedelta: Time duration to run the confirmation process.
+    :param queue_id: str: The id of this task in the worker queue.
+    :return: dict: A log summarizing missing, removed, and confirmed file locations and any errors.
+    """
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
         utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
