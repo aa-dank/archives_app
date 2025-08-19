@@ -7,7 +7,6 @@ import json
 import os
 import random
 import shutil
-import traceback
 import pandas as pd
 from datetime import timedelta
 from flask_login import login_required, current_user
