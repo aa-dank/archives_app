@@ -1,4 +1,5 @@
-import flask
+# archives_application/users/forms.py
+
 from flask_wtf import FlaskForm
 from archives_application.models import *
 from wtforms import StringField, PasswordField, SubmitField, BooleanField, SelectField, SelectMultipleField

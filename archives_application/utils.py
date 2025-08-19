@@ -1,4 +1,4 @@
-# /archives_application/utils.py
+# archives_application/utils.py
 
 import fitz
 import flask

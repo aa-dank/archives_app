@@ -1,5 +1,5 @@
-import flask
-import json
+# archives_application/main/forms.py
+
 from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField, TextAreaField
 
