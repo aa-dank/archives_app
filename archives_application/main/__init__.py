@@ -1,0 +1,1 @@
+# archives_application/main/__init__.py

@@ -1,3 +1,5 @@
+# archives_application/__init__.py
+
 import os
 import flask
 import glob
@@ -14,7 +16,7 @@ from urllib3.exceptions import InsecureRequestWarning
 from oauthlib.oauth2 import WebApplicationClient
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-VERSION = '1.9.6'
+VERSION = '1.9.7'
 
 # Suppress only the InsecureRequestWarning.
 # https://urllib3.readthedocs.io/en/latest/advanced-usage.html#ssl-warnings
