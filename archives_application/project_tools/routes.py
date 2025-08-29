@@ -93,7 +93,6 @@ def filemaker_reconciliation():
         
 
 @project_tools.route("/test/fmp_reconciliation", methods=['GET', 'POST'])
-@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def test_fmp_reconciliation():
     """
     Endpoint for testing the task that reconciles the application database with the FileMaker database.
@@ -112,25 +111,54 @@ def test_fmp_reconciliation():
         Response: A JSON response with the results of the reconciliation and confirmation tasks.
     """
     from archives_application.project_tools.project_tools_tasks import fmp_caan_project_reconciliation_task, confirm_project_locations_task
+
+    roles_allowed = ['ADMIN']
+    has_correct_permissions = lambda user: any([role in user.roles.split(",") for role in roles_allowed]) 
+    request_is_authenticated = False
+
+    # Check if the request includes user credentials or is from a logged in user.
+    user_param = utils.FlaskAppUtils.retrieve_request_param('user', None)
+    if user_param:
+        password_param = utils.FlaskAppUtils.retrieve_request_param('password')
+        user = UserModel.query.filter_by(email=user_param).first()
+
+        # If there is a matching user to the request parameter, the password matches and that account has admin role...
+        if user and bcrypt.check_password_hash(user.password, password_param) and has_correct_permissions(user=user):
+            request_is_authenticated = True
+
+    elif current_user:
+        if current_user.is_authenticated and has_correct_permissions(current_user):
+            user = current_user
+            request_is_authenticated = True
+
+    if not request_is_authenticated:
+        return flask.Response("Unauthorized", status=401)
+    
     results = {"confirm_results":{},
                "reconciliation_results":{}}
-    recon_job_id = f"{fmp_caan_project_reconciliation_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
-    new_task_record = WorkerTaskModel(task_id=recon_job_id,
-                                      time_enqueued=str(datetime.now()),
-                                      origin="test",
-                                      function_name=fmp_caan_project_reconciliation_task.__name__,
-                                      status="queued")
-    db.session.add(new_task_record)
-    db.session.commit()
     
     to_confirm = utils.FlaskAppUtils.retrieve_request_param('confirm_locations')
     to_confirm = True if (to_confirm and to_confirm.lower() == "true") else False
     update_existing = utils.FlaskAppUtils.retrieve_request_param('update_projects')
     update_existing = True if (update_existing and update_existing.lower() == "true") else False
-    reconciliation_results = fmp_caan_project_reconciliation_task(queue_id=recon_job_id,
-                                                                  confirm_locations=False, # call this seperately
-                                                                  update_existing=update_existing)
-    results["reconciliation_results"] = reconciliation_results
+    if not to_confirm and not update_existing:
+        return flask.Response("Bad Request: Must confirm locations or update projects", status=400)
+    
+    
+    if update_existing:
+        recon_job_id = f"{fmp_caan_project_reconciliation_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
+        new_task_record = WorkerTaskModel(task_id=recon_job_id,
+                                          time_enqueued=str(datetime.now()),
+                                          origin="test",
+                                          function_name=fmp_caan_project_reconciliation_task.__name__,
+                                          status="queued")
+        db.session.add(new_task_record)
+        db.session.commit()
+        reconciliation_results = fmp_caan_project_reconciliation_task(queue_id=recon_job_id,
+                                                                    confirm_locations=False, # call this seperately
+                                                                    update_existing=update_existing)
+        results["reconciliation_results"] = reconciliation_results
+
     if to_confirm:
         # get list of projects with existing locations to confirm
         to_confirm_foundset = ProjectModel.query.filter(ProjectModel.file_server_location.isnot(None)).all()
