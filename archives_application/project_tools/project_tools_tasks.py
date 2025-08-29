@@ -214,7 +214,6 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 if confirm_locations and not db_project_df.empty:
                     
                     to_confirm_db = db_project_df[~db_project_df['number'].isin(missing_from_fm['number'])]
-                    locations_confirmed = 0
                     projects_to_confirm = to_confirm_db['number'].tolist()
                     confirmation_task_kwargs = {"projects_list": projects_to_confirm}
                     nq_kwargs = {"timeout": DEFAULT_TASK_TIMEOUT}
