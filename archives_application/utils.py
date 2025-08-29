@@ -195,19 +195,19 @@ class FileServerUtils:
         return split_other_path(path)
 
     @staticmethod
-    def prefixes_from_project_number(project_no: str):
+    def prefixes_from_project_number(project_number: str):
         """
         returns root directory prefix for given project number.
         eg project number 10638 returns 106xx, project number 9805A returns 98xx
         :param project_no: string project number
         :return: project directory root directory prefix for choosing correct root directory
         """
-        project_no = project_no.split("-")[0]
-        project_no = ''.join(i for i in project_no if i.isdigit())
-        prefix = project_no[:3]
-        if len(project_no) <= 4:
-            prefix = project_no[:2]
-        return prefix + 'xx', project_no
+        project_no_prefix = project_number.split("-")[0]
+        project_no_prefix = ''.join(i for i in project_no_prefix if i.isdigit())
+        xx_level_prefix = project_no_prefix[:3]
+        if len(xx_level_prefix) <= 4:
+            xx_level_prefix = project_no_prefix[:2]
+        return xx_level_prefix + 'xx', project_no_prefix
 
     @staticmethod
     def file_code_from_destination_dir(destination_dir_name):
@@ -339,7 +339,7 @@ class FileServerUtils:
             if len(dirs_matching_prefix) > 1:
                 raise ArchivesPathException(f"More than one directory starts with the same project number prefix, {project_num_prefix} in the location {project_path}.")
 
-            # if there is now project number or prefix directory at the 'xx' level, it will need to be made
+            # if there is no project number or prefix directory at the 'xx' level, it will need to be made
             if len(dirs_matching_prefix) == 0:
                 if create_new_project_dir:
                     project_path = os.path.join(project_path, project_num_prefix)
