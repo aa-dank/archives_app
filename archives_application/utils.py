@@ -26,21 +26,65 @@ from archives_application.models import WorkerTaskModel, UserModel
 
 def contains_unicode(text):
     """
-    Checks if a string contains unicode characters.
+    Determine whether the provided text contains any non-ASCII (i.e., outside the 0x00–0x7F range) characters.
+
+    A character is considered "Unicode" for the purpose of this function if it is not representable
+    in standard 7‑bit ASCII. This is often useful when normalizing filenames, validating user input
+    destined for legacy systems, or deciding whether additional encoding/cleansing steps are required.
+
+    Args:
+        text (str): The input string to inspect. If None or not a string, False is returned.
+
+    Returns:
+        bool: True if at least one non-ASCII character is present; False otherwise.
+
+    Examples:
+        >>> contains_unicode("Project_123")
+        False
+        >>> contains_unicode("Café")
+        True
+        >>> contains_unicode("Δvalue")
+        True
+        >>> contains_unicode("")
+        False
+
+    Notes:
+        - The implementation uses a regex matching any character outside the ASCII range.
+        - This does not validate encoding; it only inspects code points in the Python string.
     """
     pattern = re.compile(r'[^\x00-\x7F]+')
     return bool(pattern.search(text))
 
 def sanitize_unicode(text, replacement=''):
     """
-    replaces unicode characters in a string with the replacement string.
-    Default is to remove the unicode characters.
-    """
-    
-    # Create a regular expression pattern to match Unicode characters
-    pattern = re.compile(r'[^\x00-\x7F]+')
+    Replace non-ASCII (Unicode) characters in a string with a replacement value.
 
-    # Use the sub() function to remove or replace Unicode characters
+    This utility is intended for contexts (filenames, legacy systems, logs) that
+    require strict 7-bit ASCII. Any character outside the range 0x00–0x7F is removed
+    or substituted.
+
+    Args:
+        text (str): Input string to cleanse. If None, an empty string is returned.
+        replacement (str): String to insert in place of each non-ASCII character.
+                           Defaults to '' (removal).
+
+    Returns:
+        str: The cleansed string containing only ASCII characters plus any replacements.
+
+    Examples:
+        >>> sanitize_unicode("Café")
+        'Caf'
+        >>> sanitize_unicode("Café", replacement='?')
+        'Caf?'
+        >>> sanitize_unicode("Δ-value-№42")
+        '-value-42'
+
+    Notes:
+        - Does not normalize composed/decomposed Unicode; it only strips bytes outside ASCII.
+        - Use unicodedata.normalize() beforehand if canonical form matters.
+        - Safe for filenames, but further filtering of reserved characters may still be required.
+    """
+    pattern = re.compile(r'[^\x00-\x7F]+')
     cleaned_text = pattern.sub(replacement, text)
 
     return cleaned_text
@@ -56,7 +100,34 @@ def is_valid_email(potential_email: str):
 
 def serializable_dict(some_dict: dict):
     """
-    Converts a dictionary to a dictionary of strings, which can be serialized to json.
+    Convert a dictionary's values to JSON-serializable (string) representations.
+
+    Datetime objects are formatted as 'YYYY-MM-DD HH:MM:SS'. All other values are
+    coerced to str() to ensure compatibility with JSON encoders that expect only
+    primitive types.
+
+    Args:
+        some_dict (dict): Input dictionary with arbitrary value types.
+
+    Returns:
+        dict: New dictionary with same keys; values converted to strings
+              (datetimes formatted explicitly).
+
+    Examples:
+        >>> from datetime import datetime
+        >>> serializable_dict({'id': 7, 'when': datetime(2023, 9, 1, 14, 30), 'ok': True})
+        {'id': '7', 'when': '2023-09-01 14:30:00', 'ok': 'True'}
+
+    Caveats:
+        - Type information is lost after coercion (e.g., ints, bools, None become strings).
+        - If downstream consumers rely on original types, keep the original dict.
+        - For timezone-aware datetimes, no conversion to UTC is performed; they are
+          stringified as-is after .strftime() (which drops tz info). Normalize first
+          if needed.
+
+    Alternatives:
+        - For richer typing preservation, implement a custom JSONEncoder instead of
+          coercing everything here.
     """
     serial_dict = {k: v.strftime('%Y-%m-%d %H:%M:%S') if isinstance(v, datetime) else str(v) for k, v in some_dict.items()}
     return serial_dict
@@ -561,7 +632,6 @@ class FlaskAppUtils:
         
         return temp_path
 
-    
     @staticmethod
     def db_query_to_df(query: flask_sqlalchemy.query.Query, dataframe_size_limit= None, query_count_concern_threshold = 100000):
         """
@@ -677,6 +747,53 @@ class FlaskAppUtils:
         flask.current_app.logger.error(f"{thrown_exception}\n{stack_trace}", exc_info=True)
         response_body = f"{response_message}\n{thrown_exception}\n\nStack trace:\n{stack_trace}"
         return flask.Response(response_body, status=500)
+    
+    @staticmethod
+    def web_exception_subroutine(flash_message: str, thrown_exception: Exception, app_obj: flask.Flask):
+        """
+        Handle an exception arising during a standard (non-API) web request and provide a consistent UX
+        plus centralized logging.
+
+        This helper:
+          1. Appends the string form of the exception to the supplied flash_message.
+          2. Emits a Flask flash with category 'error' (for display in the UI).
+          3. Logs the full exception (with traceback) to the provided application's logger.
+          4. Redirects the user to the 'main.home' endpoint.
+
+        Args:
+            flash_message (str): A human-readable base message describing the context or failure.
+            thrown_exception (Exception): The caught exception instance to report/log.
+            app_obj (flask.Flask): The current Flask application object whose logger will record the error.
+
+        Returns:
+            flask.wrappers.Response: A redirect response object pointing to the home page.
+
+        Side Effects:
+            - Adds a flash message to the user's session.
+            - Writes an error log entry (with traceback) to the application logger.
+
+        Typical Usage Pattern:
+            try:
+                # risky operation
+                ...
+            except Exception as e:
+                return FlaskAppUtils.web_exception_subroutine(
+                    flash_message="Failed generating report",
+                    thrown_exception=e,
+                    app_obj=flask.current_app
+                )
+
+        Security Consideration:
+            The full exception string is appended to the flashed message. If exceptions may contain
+            sensitive data, sanitize or generalize before passing here.
+
+        Notes:
+            Designed for interactive browser flows. For JSON / API contexts prefer api_exception_subroutine().
+        """
+        flash_message = flash_message + f": {thrown_exception}"
+        flask.flash(flash_message, 'error')
+        app_obj.logger.error(thrown_exception, exc_info=True)
+        return flask.redirect(flask.url_for('main.home'))
 
 
 class FilesUtils:
@@ -796,8 +913,39 @@ class FilesUtils:
 
     @staticmethod
     def get_hash(filepath, hash_algo=hashlib.sha1):
-        """"
-        This function takes a filepath and a hash algorithm as input and returns the hash of the file at the filepath
+        """
+        Compute a cryptographic (or checksum) hash digest of a file's byte content.
+
+        The file is read incrementally in fixed-size chunks to avoid loading large files
+        entirely into memory. By default SHA-1 is used, but any hashlib-compatible constructor
+        (e.g., hashlib.md5, hashlib.sha256) can be supplied.
+
+        Args:
+            filepath (str | os.PathLike): Path to the file whose contents will be hashed.
+            hash_algo (Callable[[], 'hashlib._Hash']): A zero-argument callable returning a hash object
+                supporting .update(bytes) and .hexdigest(). Defaults to hashlib.sha1.
+
+        Returns:
+            str: The hexadecimal string digest of the file contents.
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+            PermissionError: If the file cannot be read due to OS permissions.
+            OSError: For other I/O related errors encountered during reading.
+
+        Examples:
+            >>> FilesUtils.get_hash("document.pdf")
+            'd3486ae9136e7856bc42212385ea797094475802'
+            >>> FilesUtils.get_hash("image.png", hashlib.sha256)
+            '3b1f6a9b7b2d...'
+
+        Performance Notes:
+            - Chunk size is currently 1024 bytes; adjust if profiling shows benefit for large files.
+            - The function streams the file; memory footprint remains small regardless of file size.
+
+        Security Notes:
+            - SHA-1 is no longer recommended for collision resistance in security-sensitive contexts.
+              Prefer hashlib.sha256 or stronger for integrity/security validation.
         """
         def chunk_reader(fobj, chunk_size=1024):
             """ Generator that reads a file in chunks of bytes """
