@@ -28,21 +28,6 @@ archiver = flask.Blueprint('archiver', __name__)
 EXCLUDED_FILENAMES = ['Thumbs.db', 'thumbs.db', 'desktop.ini']
 EXCLUDED_FILE_EXTENSIONS = ['DS_Store', '.ini', '.git']
 
-
-def web_exception_subroutine(flash_message, thrown_exception, app_obj):
-    """
-    Sub-process for handling patterns
-    @param flash_message:
-    @param thrown_exception:
-    @param app_obj:
-    @return:
-    """
-    flash_message = flash_message + f": {str(thrown_exception)}"
-    flask.flash(flash_message, 'error')
-    app_obj.logger.error(thrown_exception, exc_info=True)
-    return flask.redirect(flask.url_for('main.home'))
-
-
 def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
     """
     Removes a file from the server and deletes the entry from the database
@@ -378,9 +363,11 @@ def server_change():
         except Exception as e:
             m = "Error processing or executing change: "
             if form_request:
-                return web_exception_subroutine(flash_message=m,
-                                                thrown_exception=e,
-                                                app_obj=flask.current_app)
+                return utils.FlaskAppUtils.web_exception_subroutine(
+                    flash_message=m,
+                    thrown_exception=e,
+                    app_obj=flask.current_app
+                    )
             
             # for AttributeError("'NoneType' object has no attribute 'replace'")
             if str(e) == "'NoneType' object has no attribute 'replace'":
@@ -580,10 +567,12 @@ def batch_move_edit():
         
         except Exception as e:
             m = "Error processing or executing batch move"
-            return web_exception_subroutine(flash_message=m,
-                                            thrown_exception=e,
-                                            app_obj=flask.current_app)
-        
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message=m,
+                thrown_exception=e,
+                app_obj=flask.current_app
+            )
+
     return flask.render_template('batch_move.html', title='Batch Move', form=form, choose_contents=choose_contents)
 
 
@@ -792,9 +781,12 @@ def consolidate_dirs():
             m = "Error processing or executing batch change"
             
             if form_request:
-                return web_exception_subroutine(flash_message=m,
-                                                thrown_exception=e,
-                                                app_obj=flask.current_app)
+                return utils.FlaskAppUtils.web_exception_subroutine(
+                    flash_message=m,
+                    thrown_exception=e,
+                    app_obj=flask.current_app
+                )
+            
             else:
                 return utils.FlaskAppUtils.api_exception_subroutine(response_message=m, thrown_exception=e)
 
@@ -926,9 +918,11 @@ def upload_file():
 
         except Exception as e:
             m = "Error occurred while trying to read form data, move the asset, or record asset info in database: "
-            return web_exception_subroutine(flash_message=m,
-                                            thrown_exception=e,
-                                            app_obj=flask.current_app)
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message=m,
+                thrown_exception=e,
+                app_obj=flask.current_app
+            )
 
     return flask.render_template('upload_file.html', title='Upload File to Archive', form=form)
 
@@ -1227,10 +1221,12 @@ def inbox_item():
         inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
         if not os.path.exists(inbox_path):
             m = "The archivist inbox directory does not exist."
-            return web_exception_subroutine(flash_message=m,
-                                            thrown_exception=FileNotFoundError(f"Missing path: {inbox_path}"),
-                                            app_obj=flask.current_app)
-        
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message=m,
+                thrown_exception=FileNotFoundError(f"Missing path: {inbox_path}"),
+                app_obj=flask.current_app
+            )
+
         user_inbox_path = os.path.join(inbox_path, get_user_handle())
         user_inbox_files = get_current_user_inbox_files()
         if not os.path.exists(user_inbox_path):
@@ -1274,9 +1270,11 @@ def inbox_item():
             
             except Exception as e:
                 m = f"Issue creating preview image for the pdf file, {arch_file_filename}\n(hint: Use 'Upload File' and/or check if the pdf is corrupted.)"
-                return web_exception_subroutine(flash_message=m,
-                                                thrown_exception=e,
-                                                app_obj=flask.current_app)
+                return utils.FlaskAppUtils.web_exception_subroutine(
+                    flash_message=m,
+                    thrown_exception=e,
+                    app_obj=flask.current_app
+                )
 
         # if the file is a tiff, create a preview image that can be rendered in html
         tiff_file_extensions = ['tif', 'tiff']
@@ -1324,9 +1322,11 @@ def inbox_item():
             TypeError with unexpected Nonetype object may suggest the application is requiring a restart.
             Addtional info --> Inbox path type: {str(type(flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")))}, User handle type: {str(type(get_user_handle()))}
             Error:"""
-        return web_exception_subroutine(flash_message=m,
-                                        thrown_exception=e,
-                                        app_obj=flask.current_app)
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message=m,
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
 
     try:
         if form.validate_on_submit():
@@ -1422,17 +1422,21 @@ def inbox_item():
                 return flask.redirect(flask.url_for('archiver.inbox_item'))
             else:
                 message = f'Failed to archive file:{arch_file.current_path} Destination: {arch_file.get_destination_path()} Error:'
-                return web_exception_subroutine(flash_message=message,
-                                                thrown_exception=archiving_exception,
-                                                app_obj=flask.current_app)
+                return utils.FlaskAppUtils.web_exception_subroutine(
+                    flash_message=message,
+                    thrown_exception=archiving_exception,
+                    app_obj=flask.current_app
+                )
 
         return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename,
                                      preview_image=preview_image_url)
 
     except Exception as e:
-        return web_exception_subroutine(flash_message="Issue archiving document: ",
-                                        thrown_exception=e,
-                                        app_obj=flask.current_app)
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="Issue archiving document: ",
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
 
 @archiver.route("/batch_process_inbox", methods=['GET', 'POST'])
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
@@ -1481,10 +1485,12 @@ def batch_process_inbox():
         inbox_path = flask.current_app.config.get("ARCHIVIST_INBOX_LOCATION")
         if not os.path.exists(inbox_path):
             m = "The archivist inbox directory does not exist."
-            return web_exception_subroutine(flash_message=m,
-                                            thrown_exception=FileNotFoundError(f"Missing path: {inbox_path}"),
-                                            app_obj=flask.current_app)
-        
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message=m,
+                thrown_exception=FileNotFoundError(f"Missing path: {inbox_path}"),
+                app_obj=flask.current_app
+            )
+
         user_inbox_path = os.path.join(inbox_path, get_user_handle())
         if not os.path.exists(user_inbox_path):
             os.makedirs(user_inbox_path)
@@ -1555,9 +1561,11 @@ def batch_process_inbox():
         return flask.render_template('batch_process_inbox.html', title='Batch Process Inbox', form=form, values=testing_params)
     
     except Exception as e:
-        return web_exception_subroutine(flash_message="Error processing batch archiving request: ",
-                                        thrown_exception=e,
-                                        app_obj=flask.current_app)
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="Error processing batch archiving request: ",
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
 
 
 @archiver.route("/api/archived_or_not", methods=['POST'])
@@ -1670,9 +1678,11 @@ def archived_or_not():
 
         except Exception as e:
             os.remove(temp_path)
-            return web_exception_subroutine(flash_message="Error looking for instances of file on Server.",
-                                              thrown_exception=e,
-                                              app_obj=flask.current_app)
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message="Error looking for instances of file on Server.",
+                thrown_exception=e,
+                app_obj=flask.current_app
+            )
 
     return flask.render_template('archived_or_not.html', title='Determine if File Already Archived', form=form)
 
@@ -2175,10 +2185,12 @@ def file_search():
         
         except Exception as e:
             message = f"Error retrieving search results:\n{e}"
-            return web_exception_subroutine(flash_message=message,
-                                            thrown_exception=e,
-                                            app_obj=flask.current_app)
-    
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message=message,
+                thrown_exception=e,
+                app_obj=flask.current_app
+            )
+
     if form.validate_on_submit():
         try:
             archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
@@ -2225,10 +2237,12 @@ def file_search():
             return search_results_html
             
         except Exception as e:
-            web_exception_subroutine(flash_message="Error processing query, searching database, and/or processing search results: ",
-                                     thrown_exception=e,
-                                     app_obj=flask.current_app)
-    
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message="Error processing query, searching database, and/or processing search results: ",
+                thrown_exception=e,
+                app_obj=flask.current_app
+            )
+
     return flask.render_template('file_search.html', form=form)
             
       
@@ -2424,9 +2438,13 @@ def scrape_location():
     
     except Exception as e:
         if form_request:
-            return web_exception_subroutine(flash_message="Error scraping location: ",
-                                        thrown_exception=e,
-                                        app_obj=flask.current_app)
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message="Error scraping location: ",
+                thrown_exception=e,
+                app_obj=flask.current_app
+            )
         else:
-            return utils.FlaskAppUtils.api_exception_subroutine(response_message="Error scraping location: ",
-                                                             thrown_exception=e)
+            return utils.FlaskAppUtils.api_exception_subroutine(
+                response_message="Error scraping location: ",
+                thrown_exception=e
+            )
