@@ -50,7 +50,55 @@ def get_previous_sunday(start_date: datetime):
         return previous_sunday
 
 def hours_worked_in_day(day: datetime.date, user_id: int):
+    """
+    Calculate total hours a user worked on a given calendar day and validate clock in/out pairing.
 
+    This function inspects all TimekeeperEventModel records for the specified user whose
+    timestamps fall within [day 00:00:00, (day + 1) 00:00:00). It:
+      1. Determines whether every clock-in event is followed by a corresponding clock-out
+         (i.e., events strictly alternate starting with a clock-in and ending with a clock-out).
+      2. Sums the elapsed time between each valid clock-in / subsequent clock-out pair.
+      3. Halts accumulation early if an inconsistency is detected (e.g., two consecutive clock-ins,
+         missing final clock-out, or first event is a clock-out).
+
+    Args:
+        day (datetime.date): The day (local server date) for which to compute hours worked.
+        user_id (int): The user identifier whose time events are evaluated.
+
+    Returns:
+        tuple:
+            hours_worked (float): Total hours worked for the day (precision in fractional hours).
+                                 If entries are incomplete, this may exclude trailing unmatched time-in.
+            clock_ins_have_clock_outs (bool): True if the day's sequence is complete and well-formed
+                                              (alternating, ending in a clock-out). False otherwise.
+
+    Event Validation Rules:
+        - A valid sequence must:
+            * Contain at least one pair.
+            * Begin with a clock-in event (clock_in_event == True).
+            * Alternate strictly: IN, OUT, IN, OUT, ...
+            * End with a clock-out event (clock_in_event == False).
+        - Any deviation sets clock_ins_have_clock_outs = False and may truncate accumulation.
+
+    Edge Cases:
+        - No events found: returns (0, True) meaning zero hours and nothing malformed.
+        - Single clock-in without clock-out: returns (0, False).
+        - Overlapping or duplicate IN/IN or OUT/OUT: returns (partial_hours, False).
+
+    Examples:
+        >>> from datetime import date
+        >>> hours, complete = hours_worked_in_day(date(2024, 9, 1), 7)
+        >>> hours  # e.g. 7.5
+        7.5
+        >>> complete  # sequence was valid
+        True
+
+    Notes:
+        - Time differences are computed using naive datetimes as stored; no timezone adjustments applied.
+        - Precision: seconds converted to fractional hours (seconds / 3600).
+        - This function does not modify database state.
+
+    """
     def clocked_out_everytime(event_type_col: pd.Series):
         """
         Checks that clock_in_event column is alternating. that the last event was a clock out event.
@@ -804,8 +852,61 @@ def archiving_dashboard(archiver_id):
         max_data = max(agg_df["file_size"].max(), agg_df["size_rolling_avg"].max())        
         return bars_df, lines_df, max_data, mb_ticks, files_ticks
     
-
     def metrics_plot_file(lines_df: pd.DataFrame, bars_df: pd.DataFrame, mb_ticks, file_count_ticks, file_destination: str, archiver_name: str = None):
+        """
+        Render and persist a dual-axis archiving metrics plot (bars + overlayed rolling-average lines).
+
+        The function:
+          - Clears any existing Matplotlib state.
+          - Creates a primary y-axis (file counts scaled units) with grouped bars for:
+              * '# of Files'
+              * 'MB of Files' (volume normalized & rescaled to file-count axis units)
+          - Overlays point/line plots (rolling averages) for:
+              * N Day Rolling Average File Count
+              * N Day Rolling Average Data Volume (MB) (also normalized & rescaled)
+          - Adds a secondary y-axis with tick labels representing megabytes (MB) using mb_ticks array.
+          - Saves the completed figure to file_destination and returns that path.
+
+        Args:
+            lines_df (pd.DataFrame): Long-form dataframe for line/point plots. Required columns:
+                ['Date', 'Files', 'measure_type'] where 'measure_type' matches legend labels.
+            bars_df (pd.DataFrame): Long-form dataframe for bar plots. Required columns:
+                ['Date', 'Files', 'measure_type'] with exactly two bar group categories.
+            mb_ticks (Iterable[float|int]): Ordered tick values for the secondary MB axis.
+            file_count_ticks (Iterable[float|int]): Ordered tick values for the primary (files) axis.
+            file_destination (str): Filesystem path (including filename) where the PNG will be written.
+            archiver_name (str|None): Optional archivist name for dynamic title; if None a generic title is used.
+
+        Returns:
+            str: The same file_destination path after successful save.
+
+        Side Effects:
+            - Writes a PNG file to disk (overwrites if existing).
+            - Mutates global Matplotlib state via plt.clf().
+
+        Assumptions / Requirements:
+            - 'Date' values are already ordered as desired for x-axis presentation.
+            - seaborn and matplotlib have been imported (sns, plt).
+            - Color palettes and measure_type string replacements already applied upstream.
+            - Provided tick arrays (mb_ticks, file_count_ticks) span the displayed data domain.
+
+        Error Handling:
+            - Propagates any filesystem or Matplotlib exceptions (e.g., permission errors).
+
+        Example (conceptual):
+            metrics_plot_file(
+                lines_df=lines_long,
+                bars_df=bars_long,
+                mb_ticks=[0, 50, 100, 150],
+                file_count_ticks=[0, 20, 40, 60],
+                file_destination='/tmp/archiving_metrics.png',
+                archiver_name='Alice'
+            )
+
+        Notes:
+            - Function does not return the figure object to keep API simple.
+            - For embedding in web responses, ensure the temp directory is cleaned up later.
+        """
         plt.clf()
         sns.set_theme(style="darkgrid")
         _, ax1 = plt.subplots(figsize=(30,10))
