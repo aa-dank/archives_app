@@ -1,0 +1,38 @@
+{% set hide_sidebar = True %}
+{% extends "layout.html" %}
+{% block content %}
+<div class="content-section">
+	<h2>CAAN Search Results</h2>
+	<p>
+		<a href="{{ url_for('project_tools.caan_search') }}" class="btn btn-sm btn-secondary">New Search</a>
+	</p>
+	{% if query %}
+		<p>Search terms: <strong>{{ query }}</strong></p>
+	{% endif %}
+	{% if table_list %}
+	<div class="table-responsive">
+		<table class="table table-sm table-striped table-hover">
+			<thead class="thead-light">
+				<tr>
+					<th style="width:10%">CAAN</th>
+					<th style="width:25%">Name</th>
+					<th>Description</th>
+				</tr>
+			</thead>
+			<tbody>
+			{% for row in table_list %}
+				<tr>
+					<td><a href="{{ url_for('project_tools.caan_drawings', caan=row.caan) }}">{{ row.caan }}</a></td>
+					<td>{{ row.name }}</td>
+					<td>{{ row.description }}</td>
+				</tr>
+			{% endfor %}
+			</tbody>
+		</table>
+	</div>
+	<p class="text-muted">{{ table_list|length }} result{{ '' if table_list|length == 1 else 's' }}.</p>
+	{% else %}
+		<p>No results.</p>
+	{% endif %}
+</div>
+{% endblock content %}

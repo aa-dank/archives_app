@@ -10,24 +10,7 @@ from archives_application.models import *
 from archives_application import utils
 from archives_application.users.forms import *
 
-
-#TODO we should probably create a dataclass for individual info about a user. Now it is saved in a dictionary
-
 users = flask.Blueprint('users', __name__)
-
-
-def web_exception_subroutine(flash_message, thrown_exception, app_obj):
-    """
-    Sub-process for handling patterns
-    @param flash_message:
-    @param thrown_exception:
-    @param app_obj:
-    @return:
-    """
-    flash_message = flash_message + f": {thrown_exception}"
-    flask.flash(flash_message, 'error')
-    app_obj.logger.error(thrown_exception, exc_info=True)
-    return flask.redirect(flask.url_for('main.home'))
 
 
 def get_google_provider_urls():
@@ -85,8 +68,11 @@ def google_auth():
         return flask.redirect(request_uri)
 
     except Exception as e:
-        return web_exception_subroutine(flash_message="Error during authentication with Google: ",
-                                          thrown_exception=e, app_obj=flask.current_app)
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="Error during authentication with Google: ",
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
 
 
 @users.route("/google_auth/callback")
@@ -162,8 +148,11 @@ def callback():
         return flask.redirect(flask.url_for('main.home'))
 
     except Exception as e:
-        return web_exception_subroutine(flash_message='Error during Google Authentication Callback: ',
-                                          thrown_exception=e, app_obj=flask.current_app)
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message='Error during Google Authentication Callback: ',
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
 
 @users.route("/google_auth/register", methods=['GET', 'POST'])
 def google_register():
@@ -189,8 +178,11 @@ def google_register():
             flask.flash(f'Account created for {new_user_email}!', 'success')
             return flask.redirect(flask.url_for('main.home'))
         except Exception as e:
-            return web_exception_subroutine(flash_message="Error while iniating google registration workflow: ",
-                                              thrown_exception=e, app_obj=flask.current_app)
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message="Error while initiating google registration workflow: ",
+                thrown_exception=e,
+                app_obj=flask.current_app
+            )
 
     return flask.render_template('google_register.html', title='Register', form=form)
 
@@ -235,8 +227,11 @@ def new_account_registeration():
             return flask.redirect(flask.url_for('users.login'))
 
         except Exception as e:
-            return web_exception_subroutine(flash_message="Error occured while creating a new account:",
-                                              thrown_exception=e, app_obj=flask.current_app)
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message="Error occured while creating a new account:",
+                thrown_exception=e,
+                app_obj=flask.current_app
+            )
 
     return flask.render_template('register.html', title='Register', form=form)
 
@@ -274,9 +269,12 @@ def login():
                 return flask.redirect(flask.url_for('main.home'))
 
         except Exception as e:
-            
-            return web_exception_subroutine(flash_message="Error while processing user login: ",
-                                              thrown_exception=e, app_obj=flask.current_app)
+
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message="Error while processing user login: ",
+                thrown_exception=e,
+                app_obj=flask.current_app
+            )
 
     return flask.render_template('login.html', title='Login', form=form)
 
