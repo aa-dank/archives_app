@@ -13,26 +13,11 @@ from flask_login import login_required, current_user
 from matplotlib import ticker
 from sqlalchemy import func
 
-
 from .forms import TimekeepingForm, TimeSheetForm, TimeKeeperAdminForm
 from archives_application import utils
 from archives_application.models import UserModel, TimekeeperEventModel, ArchivedFileModel, db
 
 timekeeper = flask.Blueprint('timekeeper', __name__)
-
-
-def web_exception_subroutine(flash_message, thrown_exception, app_obj):
-    """
-    Sub-process for handling patterns
-    @param flash_message:
-    @param thrown_exception:
-    @param app_obj:
-    @return:
-    """
-    flash_message = flash_message + f": {thrown_exception}"
-    flask.flash(flash_message, 'error')
-    app_obj.logger.error(thrown_exception, exc_info=True)
-    return flask.redirect(flask.url_for('main.home'))
 
 def temp_file_url(filename: str): 
     """
@@ -206,8 +191,11 @@ def timekeeper_event():
         clocked_in = is_clocked_in(user_id=current_user_id)
 
     except Exception as e:
-        return web_exception_subroutine(flash_message="Error when checking if user is clocked in",
-                                          thrown_exception=e, app_obj=flask.current_app)
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="Error when checking if user is clocked in",
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
 
     if form.validate_on_submit():
         if clocked_in:
@@ -228,8 +216,11 @@ def timekeeper_event():
 
 
                 except Exception as e:
-                    return web_exception_subroutine(flash_message="Error recording user clock-out event",
-                                                      thrown_exception=e, app_obj=flask.current_app)
+                    return utils.FlaskAppUtils.web_exception_subroutine(
+                        flash_message="Error recording user clock-out event",
+                        thrown_exception=e,
+                        app_obj=flask.current_app
+                    )
 
         else:
             if form.clock_in.data:
@@ -246,8 +237,11 @@ def timekeeper_event():
                     
                     return flask.redirect(flask.url_for('main.home'))
                 except Exception as e:
-                    return web_exception_subroutine(flash_message="Error recording user clock-in event",
-                                                      thrown_exception=e, app_obj=flask.current_app)
+                    return utils.FlaskAppUtils.web_exception_subroutine(
+                        flash_message="Error recording user clock-in event",
+                        thrown_exception=e,
+                        app_obj=flask.current_app
+                    )
 
     return flask.render_template('timekeeper.html', title='Timekeeper', form=form,  clocked_in=clocked_in,
                                  id=current_user_id)
@@ -387,9 +381,11 @@ def user_timesheet(employee_id):
         archivist_dict = {'email': employee.email, 'id': employee.id}
 
     except Exception as e:
-        web_exception_subroutine(flash_message=f"Error trying to get user info from the database for user id {employee_id}",
-                                 thrown_exception=e,
-                                 app_obj=flask.current_app)
+        utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message=f"Error trying to get user info from the database for user id {employee_id}",
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
 
     try:
         # if user has submitted the form, get the start and end dates from the form
@@ -406,8 +402,11 @@ def user_timesheet(employee_id):
                 flask.flash("No timekeeper events found for the selected date range.", 'info')
 
     except Exception as e:
-        web_exception_subroutine(flash_message="Error creating table of hours worked: ",
-                                   thrown_exception=e, app_obj=flask.current_app)
+        utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="Error creating table of hours worked: ",
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
 
     archivist_dict["daily_html_table"] = timesheet_df.to_html(index=False, classes="table-hover table-dark")
     archivist_dict["weekly_html_table"] = weekly_summary_df.to_html(index=False, classes="table-hover table-dark")
@@ -449,10 +448,12 @@ def all_timesheets():
                       UserModel.query.filter(UserModel.roles.contains('ARCHIVIST'), UserModel.active.is_(True))]
 
     except Exception as e:
-        return web_exception_subroutine(
+        return utils.FlaskAppUtils.web_exception_subroutine(
             flash_message="Error retrieving active archivists from database:",
-            thrown_exception=e, app_obj=flask.current_app)
-    
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
+
     try:
         timesheet_df = pd.DataFrame()
         start_date = None
@@ -470,8 +471,11 @@ def all_timesheets():
             archivist_dict["weekly_html_table"] = archivist_dict["weekly_summary_df"].to_html(index=False, classes="table-hover table-dark")
 
     except Exception as e:
-        web_exception_subroutine(flash_message="Error creating individualized timesheet tables: ",
-                                   thrown_exception=e, app_obj=flask.current_app)
+        utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="Error creating individualized timesheet tables: ",
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
 
     return flask.render_template('timesheet_tables.html', title="Timesheets", form=form, archivist_info_list=archivists)
 
@@ -529,9 +533,12 @@ def timekeeper_admin_interface():
                                                       date=date_str))
 
     except Exception as e:
-        return web_exception_subroutine(flash_message="Error processing timekeeper admin form:",
-                                          thrown_exception=e, app_obj=flask.current_app)
-    
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="Error processing timekeeper admin form:",
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
+
     return flask.render_template('timekeeper_admin.html', form=form)
 
 @timekeeper.route("/timekeeper/who_work_when", methods=['GET', 'POST'])
@@ -682,9 +689,11 @@ def who_work_when():
                                     html_table=html_table)
                                     
     except Exception as e:
-        return web_exception_subroutine(
+        return utils.FlaskAppUtils.web_exception_subroutine(
             flash_message="Error retrieving working employees:",
-            thrown_exception=e, app_obj=flask.current_app)
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
 
 
 @timekeeper.route("/archiving_dashboard/<archiver_id>", methods=['GET', 'POST'])
@@ -841,10 +850,12 @@ def archiving_dashboard(archiver_id):
                 return flask.Response("Unauthorized", status=401)
 
     except Exception as e:
-        web_exception_subroutine(flash_message="Error checking user roles:",
-                                 thrown_exception=e,
-                                 app_obj=current_app)    
-    
+        utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="Error checking user roles:",
+            thrown_exception=e,
+            app_obj=current_app
+        )
+
     try:
         default_chart_window = 30 # measured in days
         rolling_avg_window = 10 # measured in days
@@ -938,5 +949,9 @@ def archiving_dashboard(archiver_id):
 
     except Exception as e:
         m = "Error creating or rendering dashboard:\n"
-        return web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=current_app)
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message=m,
+            thrown_exception=e,
+            app_obj=current_app
+        )
 
