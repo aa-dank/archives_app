@@ -190,12 +190,42 @@ def test_fmp_reconciliation():
     results = utils.serializable_dict(results)
     return flask.Response(json.dumps(results), status=200)
 
-
 @project_tools.route("/caan_search", methods=['GET', 'POST'])
 def caan_search():
-    """
-    Provides an interface for searching for Caan entries in the system to ultimately navigate to caan_drawings endpoint for each
-    of the caan foundset.
+    """CAAN search endpoint.
+
+    Provides a web form for users to locate CAAN records (by number, name, or description) and optionally
+    jump directly to the drawings view for a specific CAAN. The endpoint supports both initial form
+    rendering (GET) and search submission (POST).
+
+    Workflow:
+            1. User visits the page (GET) and is shown a form with two inputs:
+                    - ``enter_caan``: Exact CAAN value. If supplied on submit, user is redirected immediately to
+                        the corresponding ``/caan_drawings/<caan>`` page without running a broader search.
+                    - ``search_query``: Free‑text terms separated by whitespace. Each term is matched (case‑insensitive)
+                        against CAAN number, name, OR description. All terms must match at least one of the three
+                        fields (logical AND across terms; logical OR across fields per term).
+            2. If only ``search_query`` is supplied, a filtered result set is produced and rendered in
+                    ``caan_search_results.html``. Each CAAN in the results links to its drawings page.
+            3. If no matches are found, the form is re-rendered with an informational flash message.
+
+    Form Fields (``CAANSearchForm``):
+            enter_caan (StringField): Optional direct navigation shortcut.
+            search_query (StringField): Space‑delimited search terms; required unless ``enter_caan`` provided.
+            submit (SubmitField): Triggers search or redirect.
+
+    Returns:
+            - GET: Renders ``caan_search.html`` with empty form.
+            - POST (exact CAAN provided): Redirect to ``project_tools.caan_drawings``.
+            - POST (search terms): Renders ``caan_search_results.html`` with ``table_list`` (list of dicts:
+                ``caan``, ``name``, ``description``) and original ``query`` string.
+            - POST (no results): Re-renders ``caan_search.html`` with flash message.
+            - On exception: Redirect via ``web_exception_subroutine`` with an error flash.
+
+    Notes:
+            - A safety result limit could be added in future if the CAAN table grows large.
+            - For more advanced relevance ranking, consider migrating to full‑text search (e.g., PostgreSQL
+                ``to_tsvector``) if performance becomes an issue.
     """
     form = CAANSearchForm()
     if form.validate_on_submit():
