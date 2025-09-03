@@ -1,0 +1,54 @@
+{% set hide_sidebar = True %}
+{% extends "layout.html" %}
+{% block content %}
+<div class="content-section">
+	<form method="POST" action="" id="caan-search-form">
+		{{ form.hidden_tag() }}
+		<fieldset class="form-group">
+			<legend class="border-bottom mb-4">CAAN Search</legend>
+			<p>Search for CAAN entries by number, name, or description. Entering an exact CAAN number will jump directly to its drawings page.</p>
+			<div class="form-group">
+				<h6>{{ form.enter_caan.label(class="form-control-label") }}</h6>
+				<p class="text-muted">Exact CAAN (optional direct navigation)</p>
+				{% if form.enter_caan.errors %}
+					{{ form.enter_caan(class="form-control form-control-lg is-invalid", placeholder="e.g. 7199") }}
+					<div class="invalid-feedback">
+						{% for error in form.enter_caan.errors %}<span>{{ error }}</span>{% endfor %}
+					</div>
+				{% else %}
+					{{ form.enter_caan(class="form-control form-control-lg", placeholder="e.g. 7199") }}
+				{% endif %}
+			</div>
+			<div class="form-group">
+				<h6>{{ form.search_query.label(class="form-control-label") }}</h6>
+				<p class="text-muted">Terms are matched (case-insensitive) against CAAN number, name, and description. Multiple words are combined with AND logic.</p>
+				{% if form.search_query.errors %}
+					{{ form.search_query(class="form-control form-control-lg is-invalid", placeholder="e.g. bridge renovation coastal") }}
+					<div class="invalid-feedback">
+						{% for error in form.search_query.errors %}<span>{{ error }}</span>{% endfor %}
+					</div>
+				{% else %}
+					{{ form.search_query(class="form-control form-control-lg", placeholder="e.g. bridge renovation coastal") }}
+				{% endif %}
+			</div>
+		</fieldset>
+		<div class="form-group">
+			{{ form.submit(class="btn btn-outline-info", id="caan-search-button") }}
+		</div>
+	</form>
+</div>
+<script>
+	document.addEventListener('DOMContentLoaded', function () {
+		var form = document.getElementById('caan-search-form');
+		if (form) {
+			form.addEventListener('submit', function (e) {
+				var btn = document.getElementById('caan-search-button');
+				if (btn && !btn.disabled) {
+					btn.value = 'Searching...';
+					setTimeout(function(){ btn.disabled = true; }, 10);
+				}
+			});
+		}
+	});
+</script>
+{% endblock content %}

@@ -3,13 +3,14 @@
 import flask
 import json
 import os
-import numpy as np
 import pandas as pd
-import traceback
-from flask_login import login_required, current_user
+from datetime import datetime
+from flask_login import current_user
 from archives_application import db, bcrypt
 from archives_application import utils
-from archives_application.models import *
+from archives_application.models import UserModel, ProjectModel, CAANModel, WorkerTaskModel
+from archives_application.project_tools.forms import CAANSearchForm
+from sqlalchemy import or_, and_
 
 
 FILEMAKER_API_VERSION = 'v1'
@@ -21,8 +22,6 @@ VERIFY_FILEMAKER_SSL = False
 DEFAULT_TASK_TIMEOUT = 18000 # 5 hours
 
 project_tools = flask.Blueprint('project_tools', __name__)
-
-
 
 @project_tools.route("/fmp_reconciliation", methods=['GET', 'POST'])
 def filemaker_reconciliation():
@@ -178,6 +177,95 @@ def test_fmp_reconciliation():
     results = utils.serializable_dict(results)
     return flask.Response(json.dumps(results), status=200)
 
+@project_tools.route("/caan_search", methods=['GET', 'POST'])
+def caan_search():
+    """CAAN search endpoint.
+
+    Provides a web form for users to locate CAAN records (by number, name, or description) and optionally
+    jump directly to the drawings view for a specific CAAN. The endpoint supports both initial form
+    rendering (GET) and search submission (POST).
+
+    Workflow:
+            1. User visits the page (GET) and is shown a form with two inputs:
+                    - ``enter_caan``: Exact CAAN value. If supplied on submit, user is redirected immediately to
+                        the corresponding ``/caan_drawings/<caan>`` page without running a broader search.
+                    - ``search_query``: Free‑text terms separated by whitespace. Each term is matched (case‑insensitive)
+                        against CAAN number, name, OR description. All terms must match at least one of the three
+                        fields (logical AND across terms; logical OR across fields per term).
+            2. If only ``search_query`` is supplied, a filtered result set is produced and rendered in
+                    ``caan_search_results.html``. Each CAAN in the results links to its drawings page.
+            3. If no matches are found, the form is re-rendered with an informational flash message.
+
+    Form Fields (``CAANSearchForm``):
+            enter_caan (StringField): Optional direct navigation shortcut.
+            search_query (StringField): Space‑delimited search terms; required unless ``enter_caan`` provided.
+            submit (SubmitField): Triggers search or redirect.
+
+    Returns:
+            - GET: Renders ``caan_search.html`` with empty form.
+            - POST (exact CAAN provided): Redirect to ``project_tools.caan_drawings``.
+            - POST (search terms): Renders ``caan_search_results.html`` with ``table_list`` (list of dicts:
+                ``caan``, ``name``, ``description``) and original ``query`` string.
+            - POST (no results): Re-renders ``caan_search.html`` with flash message.
+            - On exception: Redirect via ``web_exception_subroutine`` with an error flash.
+
+    Notes:
+            - A safety result limit could be added in future if the CAAN table grows large.
+            - For more advanced relevance ranking, consider migrating to full‑text search (e.g., PostgreSQL
+                ``to_tsvector``) if performance becomes an issue.
+    """
+    form = CAANSearchForm()
+    if form.validate_on_submit():
+        try:
+            # direct navigation if an exact CAAN provided
+            if form.enter_caan.data:
+                return flask.redirect(flask.url_for('project_tools.caan_drawings', caan=form.enter_caan.data.strip()))
+
+            if not form.search_query.data:
+                raise ValueError("Missing search query")
+
+            raw_query = form.search_query.data.strip()
+            terms = [t for t in raw_query.split() if t]
+
+            base_query = CAANModel.query
+            if terms:
+                term_filters = []
+                for term in terms:
+                    pattern = f"%{term}%"
+                    term_filters.append(
+                        or_(
+                            CAANModel.caan.ilike(pattern),
+                            CAANModel.name.ilike(pattern),
+                            CAANModel.description.ilike(pattern)
+                        )
+                    )
+                base_query = base_query.filter(and_(*term_filters))
+
+            results = (base_query
+                       .order_by(CAANModel.caan.asc())
+                       .all())
+
+            if not results:
+                flask.flash("No results found", "info")
+                return flask.render_template('caan_search.html', form=form)
+
+            table_list = [
+                {
+                    'caan': r.caan,
+                    'name': r.name or '',
+                    'description': r.description or ''
+                } for r in results
+            ]
+            return flask.render_template('caan_search_results.html', form=form, table_list=table_list, query=raw_query)
+        except Exception as e:
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message="CAAN Search Failed",
+                thrown_exception=e,
+                app_obj=flask.current_app
+            )
+
+    return flask.render_template('caan_search.html', form=form)
+
 
 @project_tools.route("/caan_drawings/<caan>", methods=['GET', 'POST'])
 def caan_drawings(caan):
@@ -233,57 +321,63 @@ def caan_drawings(caan):
         
         return None
     
-    # check if the caan value exists in the database
-    caan_query = CAANModel.query.filter(CAANModel.caan == caan)
-    if caan_query.count() == 0:
-        return flask.Response(f"CAAN {caan} not found in database.", status=404)
+    try:
+        # check if the caan value exists in the database
+        caan_query = CAANModel.query.filter(CAANModel.caan == caan)
+        if caan_query.count() == 0:
+            return flask.Response(f"CAAN {caan} not found in database.", status=404)
 
-    # get all projects for a caan
-    caan_projects_query = ProjectModel.query.filter(ProjectModel.caans.any(CAANModel.caan == caan))
-    caan_projects_df = utils.FlaskAppUtils.db_query_to_df(query=caan_projects_query)
+        # get all projects for a caan
+        caan_projects_query = ProjectModel.query.filter(ProjectModel.caans.any(CAANModel.caan == caan))
+        caan_projects_df = utils.FlaskAppUtils.db_query_to_df(query=caan_projects_query)
 
-    # if there are no projects for the caan, return a 404
-    if caan_projects_df.empty:
-        return flask.Response(f"No projects found for CAAN {caan}.", status=404)
+        # if there are no projects for the caan, return a 404
+        if caan_projects_df.empty:
+            return flask.Response(f"No projects found for CAAN {caan}.", status=404)
 
-    # split projects into those with drawings and those without
-    has_drawings_groups = caan_projects_df.groupby('drawings')
-    if True in has_drawings_groups.groups.keys():
-        has_drawings_df = has_drawings_groups.get_group(True)
+        # split projects into those with drawings and those without
+        has_drawings_groups = caan_projects_df.groupby('drawings')
+        if True in has_drawings_groups.groups.keys():
+            has_drawings_df = has_drawings_groups.get_group(True)
 
-    else:
-        has_drawings_df = pd.DataFrame()
+        else:
+            has_drawings_df = pd.DataFrame()
 
-    row_drawing_location = lambda row: project_drawing_location(project_location=row["file_server_location"],
-                                                                archives_location=flask.current_app.config.get("ARCHIVES_LOCATION"),
-                                                                network_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION'))
-    html_col_widths = {"Number": "10%", "Name": "35%", "Location": "55%"}
-    
-    # get all file locations for projects with drawings
-    maybe_drawings_html, has_drawings_html = None, None
-    if not has_drawings_df.empty:
-        has_drawings_df.sort_values(by=["number"], inplace=True)
-        has_drawings_df["Location"] = has_drawings_df.apply(row_drawing_location, axis=1)
-        has_drawings_df = has_drawings_df[["number", "name", "Location"]]
-        has_drawings_df.columns = has_drawings_df.columns.str.capitalize()
-        has_drawings_html = utils.html_table_from_df(df=has_drawings_df,
-                                                     path_columns=["Location"],
-                                                     column_widths=html_col_widths)
+        row_drawing_location = lambda row: project_drawing_location(project_location=row["file_server_location"],
+                                                                    archives_location=flask.current_app.config.get("ARCHIVES_LOCATION"),
+                                                                    network_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION'))
+        html_col_widths = {"Number": "10%", "Name": "35%", "Location": "55%"}
+        
+        # get all file locations for projects with drawings
+        maybe_drawings_html, has_drawings_html = None, None
+        if not has_drawings_df.empty:
+            has_drawings_df.sort_values(by=["number"], inplace=True)
+            has_drawings_df["Location"] = has_drawings_df.apply(row_drawing_location, axis=1)
+            has_drawings_df = has_drawings_df[["number", "name", "Location"]]
+            has_drawings_df.columns = has_drawings_df.columns.str.capitalize()
+            has_drawings_html = utils.html_table_from_df(df=has_drawings_df,
+                                                        path_columns=["Location"],
+                                                        column_widths=html_col_widths)
 
-    maybe_drawings_df = caan_projects_df[caan_projects_df["drawings"].isnull()]
-    if not maybe_drawings_df.empty:
-        maybe_drawings_df.sort_values(by=["number"], inplace=True)
-        maybe_drawings_df["Location"] = maybe_drawings_df.apply(row_drawing_location, axis=1)
-        maybe_drawings_df = maybe_drawings_df[["number", "name", "Location"]]
-        maybe_drawings_df.columns = maybe_drawings_df.columns.str.capitalize()
-        maybe_drawings_html = utils.html_table_from_df(df=maybe_drawings_df,
-                                                       path_columns=["Location"],
-                                                       column_widths=html_col_widths)
-    
-    # retrieve caan data
-    caan = CAANModel.query.filter(CAANModel.caan == caan).first()
+        maybe_drawings_df = caan_projects_df[caan_projects_df["drawings"].isnull()]
+        if not maybe_drawings_df.empty:
+            maybe_drawings_df.sort_values(by=["number"], inplace=True)
+            maybe_drawings_df["Location"] = maybe_drawings_df.apply(row_drawing_location, axis=1)
+            maybe_drawings_df = maybe_drawings_df[["number", "name", "Location"]]
+            maybe_drawings_df.columns = maybe_drawings_df.columns.str.capitalize()
+            maybe_drawings_html = utils.html_table_from_df(df=maybe_drawings_df,
+                                                        path_columns=["Location"],
+                                                        column_widths=html_col_widths)
+        
+        # retrieve caan data
+        caan = CAANModel.query.filter(CAANModel.caan == caan).first()
 
-    return flask.render_template('caan_drawings.html', caan=caan.caan, caan_name=caan.name, drawings_confirmed_table=has_drawings_html, drawings_maybe_table=maybe_drawings_html)
+        return flask.render_template('caan_drawings.html', caan=caan.caan, caan_name=caan.name, drawings_confirmed_table=has_drawings_html, drawings_maybe_table=maybe_drawings_html)
+    except Exception as e:
+        return utils.FlaskAppUtils.api_exception_subroutine(
+            response_message="Error retrieving CAAN drawings:",
+            thrown_exception=e
+        )
 
 
 @project_tools.route("/api/project_location", methods=['GET'])
