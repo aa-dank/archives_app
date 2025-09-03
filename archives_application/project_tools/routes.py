@@ -23,19 +23,6 @@ DEFAULT_TASK_TIMEOUT = 18000 # 5 hours
 
 project_tools = flask.Blueprint('project_tools', __name__)
 
-def web_exception_subroutine(flash_message: str, thrown_exception: Exception, app_obj: flask.Flask):
-    """
-    Sub-process for handling patterns
-    @param flash_message:
-    @param thrown_exception:
-    @param app_obj:
-    @return:
-    """
-    flash_message = flash_message + f": {thrown_exception}"
-    flask.flash(flash_message, 'error')
-    app_obj.logger.error(thrown_exception, exc_info=True)
-    return flask.redirect(flask.url_for('main.home'))
-
 @project_tools.route("/fmp_reconciliation", methods=['GET', 'POST'])
 def filemaker_reconciliation():
     """
@@ -271,7 +258,11 @@ def caan_search():
             ]
             return flask.render_template('caan_search_results.html', form=form, table_list=table_list, query=raw_query)
         except Exception as e:
-            return web_exception_subroutine("CAAN Search Failed", e, flask.current_app)
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message="CAAN Search Failed",
+                thrown_exception=e,
+                app_obj=flask.current_app
+            )
 
     return flask.render_template('caan_search.html', form=form)
 

@@ -561,7 +561,6 @@ class FlaskAppUtils:
         
         return temp_path
 
-    
     @staticmethod
     def db_query_to_df(query: flask_sqlalchemy.query.Query, dataframe_size_limit= None, query_count_concern_threshold = 100000):
         """
@@ -677,6 +676,20 @@ class FlaskAppUtils:
         flask.current_app.logger.error(f"{thrown_exception}\n{stack_trace}", exc_info=True)
         response_body = f"{response_message}\n{thrown_exception}\n\nStack trace:\n{stack_trace}"
         return flask.Response(response_body, status=500)
+    
+    @staticmethod
+    def web_exception_subroutine(flash_message: str, thrown_exception: Exception, app_obj: flask.Flask):
+        """
+        Sub-process for handling patterns
+        @param flash_message:
+        @param thrown_exception:
+        @param app_obj:
+        @return:
+        """
+        flash_message = flash_message + f": {thrown_exception}"
+        flask.flash(flash_message, 'error')
+        app_obj.logger.error(thrown_exception, exc_info=True)
+        return flask.redirect(flask.url_for('main.home'))
 
 
 class FilesUtils:

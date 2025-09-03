@@ -11,9 +11,9 @@ import archives_application.app_config as app_config
 import pandas as pd
 from flask_login import current_user
 from archives_application.main import forms
-from archives_application.utils import html_table_from_df, FlaskAppUtils, RQTaskUtils
 from archives_application import db, bcrypt
 from archives_application.models import *
+from archives_application import utils
 
 # This dictionary is used to determine how long to keep task records in the database
 TASK_RECORD_LIFESPANS = {'add_file_to_db_task': 90,
@@ -34,22 +34,6 @@ TASK_RECORD_LIFESPANS = {'add_file_to_db_task': 90,
                          'batch_process_inbox_task': 365}
 
 main = flask.Blueprint('main', __name__)
-
-
-
-def web_exception_subroutine(flash_message, thrown_exception, app_obj):
-    """
-    Sub-process for handling patterns
-    @param flash_message:
-    @param thrown_exception:
-    @param app_obj:
-    @return:
-    """
-    flash_message = flash_message + f": {thrown_exception}"
-    flask.flash(flash_message, 'error')
-    app_obj.logger.error(thrown_exception, exc_info=True)
-    return flask.redirect(flask.url_for('main.home'))
-
 
 @main.route("/")
 @main.route("/home")
@@ -95,25 +79,25 @@ def backup_database():
         
         # first determine if the request is being made by an admin user
         authenticated_to_make_request = False
-        user_param = FlaskAppUtils.retrieve_request_param('user', None)
+        user_param = utils.FlaskAppUtils.retrieve_request_param('user', None)
         if user_param:
-            password_param = FlaskAppUtils.retrieve_request_param('password')
+            password_param = utils.FlaskAppUtils.retrieve_request_param('password')
             user = UserModel.query.filter_by(email=user_param).first()
 
             # If there is a matching user to the request parameter, the password matches and that account has admin role...
-            if user and bcrypt.check_password_hash(user.password, password_param) and FlaskAppUtils.has_admin_role(user):
+            if user and bcrypt.check_password_hash(user.password, password_param) and utils.FlaskAppUtils.has_admin_role(user):
                 authenticated_to_make_request = True
 
         elif current_user:
-            if current_user.is_authenticated and FlaskAppUtils.has_admin_role(current_user):
+            if current_user.is_authenticated and utils.FlaskAppUtils.has_admin_role(current_user):
                 authenticated_to_make_request = True
 
         if authenticated_to_make_request:
-            nk_result = RQTaskUtils.enqueue_new_task(db=db,
+            nk_result = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                      enqueued_function=db_backup_task,
                                                      timeout=60)
             job_id = nk_result["task_id"]
-            if FlaskAppUtils.retrieve_request_param('user'):
+            if utils.FlaskAppUtils.retrieve_request_param('user'):
                 return flask.Response(f"Database Back-up Task Enqueued. Job ID: {job_id}", status=200)
             
             flask.flash("Database Back-up Task Enqueued.", 'info')
@@ -122,7 +106,7 @@ def backup_database():
         return flask.Response("Unauthorized", status=401)
 
     except Exception as e:
-        return FlaskAppUtils.api_exception_subroutine("Database Backup Failed", str(e))
+        return utils.FlaskAppUtils.api_exception_subroutine("Database Backup Failed", str(e))
 
 
 @main.route("/admin/maintenance", methods=['GET', 'POST'])
@@ -163,13 +147,13 @@ def app_maintenance():
     custodian = AppCustodian(temp_file_lifespan=3,
                              task_records_lifespan_map=TASK_RECORD_LIFESPANS,
                              db_backup_file_lifespan=2)
-    user_param = FlaskAppUtils.retrieve_request_param('user', None)
+    user_param = utils.FlaskAppUtils.retrieve_request_param('user', None)
     if user_param:
-        password_param = FlaskAppUtils.retrieve_request_param('password')
+        password_param = utils.FlaskAppUtils.retrieve_request_param('password')
         user = UserModel.query.filter_by(email=user_param).first()
 
         # If there is a matching user to the request parameter, the password matches and that account has admin role...
-        if user and bcrypt.check_password_hash(user.password, password_param) and FlaskAppUtils.has_admin_role(user):
+        if user and bcrypt.check_password_hash(user.password, password_param) and utils.FlaskAppUtils.has_admin_role(user):
             task_enqueueing_result = custodian.enqueue_maintenance_tasks(db=db)
             task_enqueueing_result = str_dictionary_values(task_enqueueing_result)
             return flask.Response(response=json.dumps(task_enqueueing_result),
@@ -177,7 +161,7 @@ def app_maintenance():
                                   mimetype="application/json")
         
     elif current_user:
-        if current_user.is_authenticated and FlaskAppUtils.has_admin_role(current_user):
+        if current_user.is_authenticated and utils.FlaskAppUtils.has_admin_role(current_user):
             task_enqueueing_result = custodian.enqueue_maintenance_tasks(db=db)
             task_enqueueing_result = str_dictionary_values(task_enqueueing_result)
             return flask.Response(response=json.dumps(task_enqueueing_result),
@@ -191,7 +175,7 @@ def app_maintenance():
 
 
 @main.route("/admin/config", methods=['GET', 'POST'])
-@FlaskAppUtils.roles_required(['ADMIN'])
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def change_config_settings():
     """Allows admin users to change application configuration settings within the app.
 
@@ -275,7 +259,7 @@ def change_config_settings():
         form = dynamic_form_class()
     except Exception as e:
         m = 'An error occurred opening the config file and creating a form from it:'
-        return web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
+        return utils.FlaskAppUtils.web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
 
     if form.validate_on_submit():
         try:
@@ -312,7 +296,7 @@ def change_config_settings():
 
             # restart the application
             restart_params = {'delay': 15}
-            app_restart_nq_result = RQTaskUtils.enqueue_new_task(db=db,
+            app_restart_nq_result = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                                  enqueued_function=restart_app_task,
                                                                  task_kwargs=restart_params)
             
@@ -320,15 +304,17 @@ def change_config_settings():
             return flask.redirect(flask.url_for('main.home'))
 
         except Exception as e:
-            return web_exception_subroutine(flash_message="Error processing form responses into json config file: ",
-                                            thrown_exception=e,
-                                            app_obj=flask.current_app)
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message="Error processing form responses into json config file: ",
+                thrown_exception=e,
+                app_obj=flask.current_app
+                )
 
     return flask.render_template('change_config_settings.html', title='Change Config File', form=form, settings_dict=config_dict)
 
 
 @main.route("/test/logging", methods=['GET', 'POST'])
-@FlaskAppUtils.roles_required(['ADMIN'])
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def test_logging():
     """Generates test log messages at various levels for debugging purposes.
 
@@ -352,7 +338,7 @@ def test_logging():
 
 
 @main.route("/test/database_info")
-@FlaskAppUtils.roles_required(['ADMIN'])
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def get_db_info():
     """Displays the current database URI, connection pool status, and tests connectivity.
     
@@ -397,7 +383,7 @@ def get_db_info():
 
 
 @main.route("/test/see_config")
-@FlaskAppUtils.roles_required(['ADMIN'])
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def get_app_config():
     """Endpoint function to see the current configuration of the runnning application.
     Useful for debugging and checking the current state of the application, sanity checks, etc.
@@ -426,7 +412,7 @@ def get_app_config():
     return flask.jsonify(info)
 
 @main.route("/test/rq", methods=['GET', 'POST'])
-@FlaskAppUtils.roles_required(['ADMIN'])
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def test_rq_connection():
     """Tests the connection to the RQ (Redis Queue) task queue.
 
@@ -441,11 +427,10 @@ def test_rq_connection():
     
     except Exception as e:
         m = "Error connecting to the redis queue: "
-        return web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
+        return utils.FlaskAppUtils.web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
     
-
 @main.route("/test/file_server_access")
-@FlaskAppUtils.roles_required(['ADMIN'])
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def test_file_server_access():
     """
     Tests file server access permissions for various locations.
@@ -558,7 +543,7 @@ def test_file_server_access():
     return flask.jsonify(result)
 
 @main.route("/admin/sql_logging", methods=['GET', 'POST'])
-@FlaskAppUtils.roles_required(['ADMIN'])
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def toggle_sql_logging():
     """The purpose of this endpoint is to toggle the logging of sql statements to the console.
     This is useful for debugging, but should not be left on in production.
@@ -648,7 +633,11 @@ def endpoints_index():
             except Exception as e:
                 # Handle exceptions during Excel file generation
                 flash_message = 'An error occurred while generating the Excel file'
-                return web_exception_subroutine(flash_message, e, flask.current_app)
+                return utils.FlaskAppUtils.web_exception_subroutine(
+                    flash_message=flash_message,
+                    thrown_exception=e,
+                    app_obj=flask.current_app
+                )
         else:
             # Continue with original behavior
             try:
@@ -658,8 +647,8 @@ def endpoints_index():
                     'Endpoint': '15%',
                     'Docstring': '65%'
                 }
-                df_html = html_table_from_df(
-                    df,
+                df_html = utils.html_table_from_df(
+                    df-df,
                     column_widths=column_widths,
                     html_columns=['Docstring', 'URL']
                 )
@@ -672,9 +661,17 @@ def endpoints_index():
             except Exception as e:
                 # Handle exceptions during HTML rendering
                 flash_message = 'An error occurred while rendering the endpoints index page'
-                return web_exception_subroutine(flash_message, e, flask.current_app)
-    
+                return utils.FlaskAppUtils.web_exception_subroutine(
+                    flash_message=flash_message,
+                    thrown_exception=e,
+                    app_obj=flask.current_app
+                )
+
     except Exception as e:
         # Handle any other exceptions
         flash_message = 'An unexpected error occurred'
-        return web_exception_subroutine(flash_message, e, flask.current_app)
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message=flash_message,
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
