@@ -294,11 +294,13 @@ def confirm_project_locations_task(queue_id: str, projects_list: list):
                         project_location, _ = utils.FileServerUtils.path_to_project_dir(project_number=project_number,
                                                                                         archives_location=archives_location)
                         if project_location:
-                            project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")) + 1:]
-                            project.file_server_location = project_location
                             confirmed_projects += 1
                             task_log['projects confirmed']['count'] = confirmed_projects
-                            db.session.commit()
+                            project_location = project_location[len(flask.current_app.config.get("ARCHIVES_LOCATION")) + 1:]
+                            if project.file_server_location != project_location:
+                                logging.info(f"Updating location for project {project.number} from {project.file_server_location} to {project_location}")
+                                project.file_server_location = project_location
+                                db.session.commit()
                             
                             # every 200 confirmed projects, update the task entry
                             if confirmed_projects % 200 == 0:
