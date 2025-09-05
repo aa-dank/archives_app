@@ -648,7 +648,7 @@ def endpoints_index():
                     'Docstring': '65%'
                 }
                 df_html = utils.html_table_from_df(
-                    df-df,
+                    df=df,
                     column_widths=column_widths,
                     html_columns=['Docstring', 'URL']
                 )
