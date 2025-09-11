@@ -13,7 +13,7 @@
                 {% else %}
                    <div class="form-group">
                     {{ form.journal.label(class="form-control-label") }}
-                       <p>Use the journal to briefly record what was worked on in a succinct few sentences. Though it is brief, details like project number, print requester, etc are useful. This is also a good place to record why there would be any discrepancies between hours logged here and the hours claimed on CruzPay timesheet.</p>
+                       <p>Use the journal to briefly record what you worked on in a few concise sentences. Details such as project number, print requester, or other identifiers are helpful. You can also note reasons for any discrepancies between hours logged here and hours claimed on the CruzPay timesheet.</p>
                     {% if form.journal.errors %}
                         {{ form.journal(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -34,7 +34,7 @@
                 {% endif %}
         </form>
     <div>
-        <a href={{url_for('timekeeper.user_timesheet', employee_id=id)}}>View your timesheet here.</a>
+    <a href="{{ url_for('timekeeper.user_timesheet', employee_id=id) }}">View your timesheet.</a>
     </div>
     </div>
 {% endblock content %}

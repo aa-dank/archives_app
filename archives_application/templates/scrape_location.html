@@ -5,10 +5,10 @@
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Scrape File Data</legend>
-                <p>This tool reconciles discrepancies between the file server and this app's database. Useful for recording changes made to the file server in Windows Explorer.</p>
+                <p>This tool reconciles discrepancies between the file server and this application's database. It is useful for recording changes made directly on the file server (e.g., via Windows Explorer).</p>
                 <div class="form-group">
                     <h6>{{ form.scrape_location.label(class="form-control-label") }}</h6>
-                    <p>(Case sensitive. Copy this from Windows File Explorer address bar.)</p>
+                    <p>(Case sensitive. Copy this from the Windows File Explorer address bar.)</p>
                     {% if form.scrape_location.errors %}
                         {{ form.scrape_location(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -22,7 +22,7 @@
                 </div>
                 <div class="form-group">
                      <h6>{{ form.recursive.label(class="form-control-label") }}</h6>
-                    <p>Recursive search will go through all nested directories in location.</p>
+                    <p>A recursive search will include all nested directories within the specified location.</p>
                         {% if form.recursive.errors %}
                             {{ form.recursive(class="form-control form-control-lg is-invalid") }}
                             <div class="invalid-feedback">

@@ -63,9 +63,9 @@
             <h3>Quick Navigation</h3>
             <p class='text-muted'>
               <ul class="list-group">
-                <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.file_search')}}>Files Search</a></li>
-                <li class="list-group-item list-group-item-light"><a href={{url_for('project_tools.caan_search')}}>CAANs Search</a></li>
-                <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.archived_or_not')}}>Archived already?</a></li>
+                <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.file_search')}}>File Search</a></li>
+                <li class="list-group-item list-group-item-light"><a href={{url_for('project_tools.caan_search')}}>CAAN Search</a></li>
+                <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.archived_or_not')}}>Already Archived?</a></li>
                 {% if current_user.is_authenticated %}
                     {% if 'ADMIN' in current_user.roles %}
                         <li class="list-group-item list-group-item-light"><a href={{url_for('main.change_config_settings')}}>Change App Config</a></li>
