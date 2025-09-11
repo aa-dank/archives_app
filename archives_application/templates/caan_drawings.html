@@ -5,27 +5,25 @@
         <h2>Projects associated with CAAN {{ caan }}, {{ caan_name }}</h2>
         <div>
             <p>
-                Theis page consists of tables of projects and their respective locations on the archives server. </br>
-                The project data is pulled from the Filemaker database, thus the accuracy of the data is dependent on the data in Filemaker.
-                The Locations provided are the paths to the project directories on the archives server and, given the state of organization of those files and folders, will try to provide the closest location to that holding the project drawing files.</br>
-                Copy and paste the location into a web or file browser address bar.
+                This page lists projects and their respective locations on the archives server.<br>
+                The project data is pulled from the FileMaker database; therefore, its accuracy depends on the data stored there.<br>
+                The locations shown are paths to project directories on the archives server and, given the current organization of those files and folders, represent the closest likely location of the project drawing files.<br>
+                Copy and paste a location into a web or file browser address bar.
             </p>
         </div>
             
         <div>
-            <!-- If there is result table, display it here. -->
+            <!-- If there is a result table, display it here. -->
             {% if drawings_confirmed_table %}
                 <h4>Projects that have drawings</h4>
-                <p>Projects that are confirmed to have drawings (per Filemaker entry.)</p>
-                {{ drawings_confirmed_table | safe}}
+                <p>Projects confirmed to have drawings (per FileMaker entry).</p>
+                {{ drawings_confirmed_table | safe }}
             {% endif %}
             {% if drawings_maybe_table %}
                 <hr>
                 <h4>Projects that might have drawings</h4>
-                <p>Projects where the 'drawings' attribute is blank in Filemaker.</p>
-                {{ drawings_maybe_table | safe}}
+                <p>Projects where the "drawings" attribute is blank in FileMaker.</p>
+                {{ drawings_maybe_table | safe }}
             {% endif %}
         </div>
     </div>
-
-{% endblock content %}

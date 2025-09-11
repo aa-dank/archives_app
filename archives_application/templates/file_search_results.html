@@ -3,17 +3,17 @@
     <div class="content-section">
         <h2>File Search Results</h2>
         <p>
-            File search results for '{{ search_term }}'. To access a file, copy and paste the location to Windows File Explorer or web browser address bar.
+            File search results for '{{ search_term }}'. To access a file, copy and paste the location into Windows File Explorer or a web browser address bar.
         </p>
         {% if too_many_results%}
             <p>Too many results to display. Download spreadsheet for complete results.</p>
         {% endif %}
         <p>
-            <!-- adds the csv file timestamp  as parameter to the url -->
-            <a href="{{ url_for('archiver.file_search', timestamp=timestamp) }}">Download results as spreadsheet.</a>
+            <!-- Adds the CSV file timestamp as a URL parameter -->
+            <a href="{{ url_for('archiver.file_search', timestamp=timestamp) }}">Download results as a spreadsheet.</a>
         </p>
         <div>
-            <!-- If there is result table, display it here. -->
+            <!-- If there is a result table, display it here. -->
             {% if search_results_table %}
                 {{ search_results_table | safe}}
             {% endif %}
