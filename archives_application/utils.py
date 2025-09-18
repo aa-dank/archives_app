@@ -276,7 +276,7 @@ class FileServerUtils:
         project_no_prefix = project_number.split("-")[0]
         project_no_prefix = ''.join(i for i in project_no_prefix if i.isdigit())
         xx_level_prefix = project_no_prefix[:3]
-        if len(xx_level_prefix) <= 4:
+        if len(project_no_prefix) <= 4:
             xx_level_prefix = project_no_prefix[:2]
         return xx_level_prefix + 'xx', project_no_prefix
 
