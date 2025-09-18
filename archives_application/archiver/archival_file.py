@@ -199,9 +199,11 @@ class ArchivalFile:
         """
 
         def list_of_child_dirs(parent_directory_path: str):
-            """sub-function for getting a list of just the child directories given a parent directory path"""
-            return [dir for dir in os.listdir(parent_directory_path) if
-                    not os.path.isfile(os.path.join(parent_directory_path, dir))]
+            """Return the names of direct child directories under parent_directory_path."""
+            try:
+                return [entry.name for entry in os.scandir(parent_directory_path) if entry.is_dir()]
+            except FileNotFoundError:
+                return []
         
 
         def path_from_project_num_dir_to_destination(path_to_project_num_dir: str, destination_filename: str):
