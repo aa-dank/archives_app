@@ -5,7 +5,6 @@ import errno
 import flask
 import flask_sqlalchemy
 import os
-import random
 import shutil
 from sqlalchemy import func
 from typing import List, Callable
@@ -119,6 +118,19 @@ class ServerEdit:
             return filename + unique_suffix
         
         return '.'.join(filename_parts[:-1]) + unique_suffix + '.' + filename
+
+    @staticmethod
+    def _safe_path_join(path_list):
+        """
+        Safely joins a list of path components into a single path string.
+        Returns an empty string if the path list is empty or None.
+        
+        :param path_list: List of path components to join
+        :type path_list: list
+        :return: Joined path string or empty string if list is empty
+        :rtype: str
+        """
+        return os.path.join(*path_list) if path_list else ""
 
     def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=15):
         """
@@ -344,7 +356,8 @@ class ServerEdit:
         """
 
         filename = utils.FileServerUtils.split_path(file_path)[-1]
-        db_path = os.path.join(*utils.FileServerUtils.split_path(file_path)[root_index:-1])   
+        path_parts = utils.FileServerUtils.split_path(file_path)[root_index:-1]
+        db_path = ServerEdit._safe_path_join(path_parts)   
         location_entry_removed = False
         file_entry_removed = False
         location_entry = db.session.query(FileLocationModel)\
@@ -394,7 +407,7 @@ class ServerEdit:
             if self.is_file:
                 server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:-1]
                 filename = utils.FileServerUtils.split_path(self.old_path)[-1]
-                server_path = os.path.join(*server_dirs)
+                server_path = self._safe_path_join(server_dirs)
                 file_location_entry = db.session.query(FileLocationModel)\
                     .filter(FileLocationModel.file_server_directories == server_path,
                             FileLocationModel.filename == filename).first()
@@ -420,7 +433,7 @@ class ServerEdit:
 
             else:
                 server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:]
-                server_path = os.path.join(*server_dirs)
+                server_path = self._safe_path_join(server_dirs)
                 file_location_entries = db.session.query(FileLocationModel)\
                     .filter(FileLocationModel.file_server_directories.like(func.concat(server_path, '%'))).all()
                 for file_location_entry in file_location_entries:
@@ -466,7 +479,7 @@ class ServerEdit:
                 server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:-1]
                 old_filename = utils.FileServerUtils.split_path(self.old_path)[-1]
                 new_filename = utils.FileServerUtils.split_path(self.new_path)[-1]
-                server_path = os.path.join(*server_dirs)
+                server_path = self._safe_path_join(server_dirs)
                 
                 # first make sure that if there is already a file with the new name, it is deleted,
                 # because it will have been replaced by the renamed file
@@ -490,9 +503,9 @@ class ServerEdit:
             else:
                 rename_log['is_file'] = False
                 old_server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:]
-                old_server_path = os.path.join(*old_server_dirs)
+                old_server_path = self._safe_path_join(old_server_dirs)
                 new_server_dirs = utils.FileServerUtils.split_path(self.new_path)[file_server_root_index:]
-                new_server_path = os.path.join(*new_server_dirs)
+                new_server_path = self._safe_path_join(new_server_dirs)
                 file_location_entries = db.session.query(FileLocationModel)\
                     .filter(FileLocationModel.file_server_directories.like(func.concat(old_server_path, '%'))).all()
                 
@@ -500,7 +513,7 @@ class ServerEdit:
                 for file_location_entry in file_location_entries:
                     old_file_path = file_location_entry.file_server_directories
                     old_path_list = utils.FileServerUtils.split_path(old_file_path)
-                    new_server_path = os.path.join(*new_server_dirs, *old_path_list[len(new_server_dirs):])
+                    new_server_path = self._safe_path_join([*new_server_dirs, *old_path_list[len(new_server_dirs):]])
                     
                     #TODO what if a file with the same name already exists in the new location?
                     existing_file_location_entry = db.session.query(FileLocationModel)\
@@ -546,8 +559,8 @@ class ServerEdit:
             if self.is_file:
                 old_server_dirs_list = old_path_list[file_server_root_index:-1]
                 filename = old_path_list[-1]
-                old_server_path = os.path.join(*old_server_dirs_list)
-                new_server_path = os.path.join(*new_path_list[file_server_root_index:])
+                old_server_path = self._safe_path_join(old_server_dirs_list)
+                new_server_path = self._safe_path_join(new_path_list[file_server_root_index:])
 
                 # first make sure that if there is already a file with the new name, it is deleted,
                 # because it will have been replaced by the moved file
@@ -577,6 +590,12 @@ class ServerEdit:
                     if any([exclusion_func(full_path) for exclusion_func in self.exclusion_functions]):
                         return move_log
                     
+                    # Check if file exists before trying to hash it
+                    if not os.path.exists(self.new_path):
+                        move_log['error'] = f"File does not exist at new path: {self.new_path}"
+                        utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=move_log)
+                        return move_log
+                    
                     file_hash = utils.FilesUtils.get_hash(self.new_path)
                     file_entry = None
                     while not file_entry:
@@ -604,14 +623,14 @@ class ServerEdit:
             # if we are moving a directory, we need to move all files within the directory
             else:
                 old_server_dirs_list = old_path_list[file_server_root_index:]
-                old_server_path = os.path.join(*old_server_dirs_list)
+                old_server_path = self._safe_path_join(old_server_dirs_list)
                 effected_location_entries = db.session.query(FileLocationModel)\
                     .filter(FileLocationModel.file_server_directories.like(func.concat(old_server_path, '%'))).all()
                 
                 for location_entry in effected_location_entries:
                     entry_dir_list = utils.FileServerUtils.split_path(location_entry.file_server_directories)
                     new_location_list = new_path_list[file_server_root_index:] + entry_dir_list[len(old_server_dirs_list)-1:]
-                    new_location_server_dirs = os.path.join(*new_location_list)
+                    new_location_server_dirs = self._safe_path_join(new_location_list)
 
                     # remove any entries that are already in the new location
                     existing_loc_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), new_location_server_dirs, location_entry.filename)
@@ -638,7 +657,8 @@ class ServerEdit:
                 for root, _, files in os.walk(move_result_path):
                     for relocated_file in files:
                         located_in_db = False
-                        root_server_dirs = os.path.join(*utils.FileServerUtils.split_path(root)[file_server_root_index:])
+                        root_server_dirs_list = utils.FileServerUtils.split_path(root)[file_server_root_index:]
+                        root_server_dirs = self._safe_path_join(root_server_dirs_list)
                         for location_entry in effected_location_entries:
                             if location_entry.filename == relocated_file and location_entry.file_server_directories == root_server_dirs:
                                 located_in_db = True
