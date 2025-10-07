@@ -406,8 +406,7 @@ def get_app_config():
         "filemaker_password": flask.current_app.config.get("FILEMAKER_PASSWORD"),
         "filemaker_database": flask.current_app.config.get("FILEMAKER_DATABASE_NAME"),
         "app_workers_restart_command": flask.current_app.config.get("APP_WORKERS_RESTART_COMMAND"),
-        "app_restart_command": flask.current_app.config.get("APP_RESTART_COMMAND"),
-
+        "app_restart_command": flask.current_app.config.get("APP_RESTART_COMMAND")
     }
     return flask.jsonify(info)
 
@@ -603,7 +602,6 @@ def endpoints_index():
                     df.to_excel(writer, index=False, sheet_name='Endpoints')
 
                     # Adjust column widths
-                    workbook = writer.book
                     worksheet = writer.sheets['Endpoints']
 
                     for column_cells in worksheet.columns:
