@@ -376,7 +376,7 @@ class FileServerUtils:
             
             # The regex, `^{re.escape(project_number)}(?![\w-])`, matches the project number at the beginning of the string and
             # ensures that the next character is not a word character or a hyphen.
-            pattern = re.compile(f'^{re.escape(project_number)}(?![\w-])')
+            pattern = re.compile(rf'^{re.escape(project_number)}(?![\w-])')
             return bool(pattern.search(directory_name))
             
             
