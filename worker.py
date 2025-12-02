@@ -1,7 +1,8 @@
 # /worker.py
 import os
 import redis
-from rq import Worker, Queue, Connection
+from rq import Worker, Queue
+from rq.connections import RedisConnection
 
 listen = ['default']
 
@@ -13,7 +14,7 @@ conn = redis.from_url(redis_url)
 # https://github.com/michaelbrooks/rq-win
 if __name__ == '__main__':
     print("Starting worker")
-    with Connection(conn):
+    with RedisConnection(conn):
         worker = Worker(list(map(Queue, listen)))
         print("Worker initialized. Starting work.")
         worker.work()
