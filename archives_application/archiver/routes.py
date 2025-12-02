@@ -93,7 +93,7 @@ def cleanse_locations_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df['filepath'] = df.apply(lambda row: (row['file_server_directories'] + "/" + row['filename']), axis=1)
     return df[['filepath']]
 
-def get_current_user_inbox_files():
+def get_current_user_inbox_files(include_enqueued=False):
     """
     Returns a list of files in the inbox directory to be processed.
     """
@@ -117,7 +117,7 @@ def get_current_user_inbox_files():
             continue
         
         # check if the file has already been enqueued for processing
-        if thing in user_enqueued_files:
+        if not include_enqueued and thing in user_enqueued_files:
             continue
 
         inbox_files.append(thing)
@@ -1477,7 +1477,18 @@ def batch_process_inbox():
     - POST request: Submit the form with selected files, project_number, and destination parameters to enqueue the archiving task.
     """
     from archives_application.archiver.archiver_tasks import batch_process_inbox_task
-
+    
+    def update_session_enqueued_files():
+        """Updates the session to remove files that are no longer in the user's inbox from 'files_enqueued_in_batch'."""
+        if flask.session.get(current_user.email) and flask.session[current_user.email].get('files_enqueued_in_batch'):
+            user_inbox_files = get_current_user_inbox_files(include_enqueued=True)
+            enqueued_files = flask.session[current_user.email]['files_enqueued_in_batch']
+            updated_enqueued_files = [f for f in enqueued_files if f in user_inbox_files]
+            
+            # if any files were removed, update the session
+            if len(updated_enqueued_files) != len(enqueued_files):
+                flask.session[current_user.email]['files_enqueued_in_batch'] = updated_enqueued_files
+                flask.session.modified = True
     try:
         # determine if the request is for testing the associated worker task
         testing = is_test_request()
@@ -1494,12 +1505,13 @@ def batch_process_inbox():
         user_inbox_path = os.path.join(inbox_path, get_user_handle())
         if not os.path.exists(user_inbox_path):
             os.makedirs(user_inbox_path)
-        
+
         form = archiver_forms.BatchInboxItemsForm()
         # We need to determine which files ave already been enqueued in a batch archiving process and not include them in the form
         # for the user to select again. We also need to remove any files that have been archived (thus not in the inbox) in a batch 
         # process from the session.
         user_inbox_files = get_current_user_inbox_files()
+        update_session_enqueued_files()
 
         # if not user_inbox_files, return to the home page with a message
         if not user_inbox_files:
@@ -1519,7 +1531,7 @@ def batch_process_inbox():
             # get the selected files from the form and add them to the session so they can be removed from the subsequent form render
             selected_files = form.items_to_archive.data
             if selected_files:
-                if not flask.session.get(current_user.email).get('files_enqueued_in_batch', None):
+                if not flask.session.get(current_user.email, {}).get('files_enqueued_in_batch', None):
                     flask.session[current_user.email]['files_enqueued_in_batch'] = []
                 flask.session[current_user.email]['files_enqueued_in_batch'] += selected_files
 
@@ -1531,6 +1543,7 @@ def batch_process_inbox():
                                     'destination_path': form.destination_path.data,
                                     'notes': form.notes.data}
             
+            # if the request is for testing, we will run the task synchronously and return the results as json
             if testing:
                 test_task_id = f"{batch_process_inbox_task.__name__}_test_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 new_task_record = WorkerTaskModel(task_id=test_task_id,
