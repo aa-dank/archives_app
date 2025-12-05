@@ -518,7 +518,7 @@ class FlaskAppUtils:
         return decorator
     
 
-    @staticmethod # TODO - this function is not used anywhere in the application?
+    @staticmethod
     def user_path_to_app_path(path_from_user, app: flask.app.Flask):
         """
         Uses setting from app config to convert a user entered path to a path that can be used by the application.
@@ -584,7 +584,8 @@ class FlaskAppUtils:
             path_from_user = PureWindowsPath(path_from_user)
             user_path_list = list(path_from_user.parts)
 
-            server_mount_path_list = FileServerUtils.split_path(app.config.get('ARCHIVES_LOCATION'))
+            archives_location_for_app = app.config.get('ARCHIVES_LOCATION')
+            server_mount_path_list = FileServerUtils.split_path(archives_location_for_app)
             user_server_location_list = FileServerUtils.split_path(app.config.get('USER_ARCHIVES_LOCATION'))
             
             # combine the paths to get thepath from the app to the user location
@@ -597,7 +598,7 @@ class FlaskAppUtils:
             app_path = "\\\\" + path_from_user.lstrip("/" + "\\")
         # if the path is not a network url, we can map it to the network location
         if not matches_network_url(path_from_user):
-            app_path = FileServerUtils.mounted_path_to_networked_path(mounted_path=path_from_user, network_location=location_path_prefix)
+            app_path = FileServerUtils.mounted_path_to_networked_path(mounted_path=path_from_user, network_location=archives_location_for_app)
 
         return app_path
     

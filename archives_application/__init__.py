@@ -16,7 +16,7 @@ from urllib3.exceptions import InsecureRequestWarning
 from oauthlib.oauth2 import WebApplicationClient
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-VERSION = '1.10.7'
+VERSION = '1.10.8 '
 
 # Suppress only the InsecureRequestWarning.
 # https://urllib3.readthedocs.io/en/latest/advanced-usage.html#ssl-warnings
@@ -65,6 +65,11 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
 
     # config app from config class
     app.config.from_object(config_class)
+
+    # Ensure SQLAlchemy pings connections to avoid "SSL connection has been closed unexpectedly"
+    app.config.setdefault('SQLALCHEMY_ENGINE_OPTIONS', {})
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'].setdefault('pool_pre_ping', True)
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'].setdefault('pool_recycle', 1800)
 
     db.init_app(app)
     bcrypt.init_app(app)
