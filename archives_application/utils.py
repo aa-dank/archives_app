@@ -209,7 +209,9 @@ class FileServerUtils:
                 return "Unknown"
             
         def split_windows_path(filepath):
-            """"""
+            """
+            Splits a windows filepath into its components.
+            """
             parts = []
             curr_part = ""
             is_absolute = False
