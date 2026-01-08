@@ -171,3 +171,18 @@ class CAANModel(db.Model):
     
     def __repr__(self):
         return f"caan: {self.id}, {self.caan}, {self.name}, {self.description}"
+
+class FileContentModel(db.Model):
+    __tablename__ = 'file_contents'
+    file_hash = db.Column(db.String, primary_key=True)
+    file = db.relationship('FileModel', foreign_keys=[file_hash], primaryjoin="FileContentModel.file_hash==FileModel.hash", backref='content')
+    source_text = db.Column(db.Text)
+    minilm_model = db.Column(db.Text, default='all-minilm-l6-v2')
+    minilm_emb = db.Column(db.LargeBinary)
+    mpnet_model = db.Column(db.Text)
+    mpnet_emb = db.Column(db.LargeBinary)
+    updated_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
+    text_length = db.Column(db.Integer)
+
+    def __repr__(self):
+        return f"FileContent: {self.file_hash}, text_length={self.text_length}, updated_at={self.updated_at}"
