@@ -10,8 +10,7 @@ from sqlalchemy import func
 from typing import List, Callable
 from archives_application import create_app, utils
 from archives_application.archiver import archiver_tasks
-from archives_application.models import  FileLocationModel, FileModel, ArchivedFileModel
-
+from archives_application.models import  ArchivedFileModel, FileLocationModel, FileModel, FileContentModel
 # Create the app context so that tasks can access app extensions even though
 # they are not running in the main thread.
 app = create_app()
@@ -347,7 +346,7 @@ class ServerEdit:
         return self.files_effected, self.data_effected
 
     @staticmethod
-    def remove_file_from_db(db, root_index, file_path):
+    def record_file_server_file_removal(db, root_index, file_path):
         """
         Removes a file location from database and if it is the last entry for that file_id, removes the file db entry too.
         :param db: SQLAlchemy database object
@@ -370,21 +369,36 @@ class ServerEdit:
             db.session.delete(location_entry)
             location_entry_removed = True
 
-            other_entries = db.session.query(FileModel)\
-                .filter(FileModel.id == file_id)\
+            remaining_locations = db.session.query(FileLocationModel)\
+                .filter(FileLocationModel.file_id == file_id)\
                 .all()
             
-            # If this was the last entry for this file_id, delete the file_id entry
-            if not other_entries:
-                associated_archival_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_id).all()
-                for archival_event in associated_archival_events:
-                    archival_event.file_id = None
-                
-                db.session.query(FileModel)\
+            # If this was the last entry for this file_id and, thus, the file has actually been removed from the fileserver...
+            # 1. scrub any ArchivedModel entries of their link to the File...
+            # 2. remove associate FileContent entry if exists
+            # 3. Remove the FileModel itself.
+            if not remaining_locations:
+                file_model = db.session.query(FileModel)\
                     .filter(FileModel.id == file_id)\
-                    .delete()
+                    .first()
+                if not file_model:
+                    flask.current_app.logger.warning(
+                        "ServerEdit.remove_file_from_db: FileModel(id=%s) referenced by FileLocation(id=%s) is missing.",
+                        file_id,
+                        location_entry.id
+                    )
+                else:
+                    associated_archival_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_model.id).all()
+                    for archival_event in associated_archival_events:
+                        archival_event.file_id = None
+                    
+                    associated_contents_entries = db.session.query(FileContentModel).filter(FileContentModel.file_hash == file_model.hash).all()
+                    for content_entry in associated_contents_entries:
+                        db.session.delete(content_entry)
+
+                    db.session.delete(file_model)
+                    file_entry_removed = True
             db.session.commit()
-            file_entry_removed = True
         return location_entry_removed, file_entry_removed
             
 
@@ -483,7 +497,7 @@ class ServerEdit:
                 
                 # first make sure that if there is already a file with the new name, it is deleted,
                 # because it will have been replaced by the renamed file
-                new_location_entry_removed, some_file_entry_removed = self.remove_file_from_db(db, file_server_root_index, self.new_path)
+                new_location_entry_removed, some_file_entry_removed = self.record_file_server_file_removal(db, file_server_root_index, self.new_path)
                 if new_location_entry_removed:
                     rename_log['location_entries_effected'] += 1
                 if some_file_entry_removed:
@@ -522,7 +536,7 @@ class ServerEdit:
                     
                     if existing_file_location_entry:
                         existing_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), new_server_path)
-                        remove_file_entry, remove_location_entry = self.remove_file_from_db(db, file_server_root_index, file_path=existing_path)   
+                        remove_file_entry, remove_location_entry = self.record_file_server_file_removal(db, file_server_root_index, file_path=existing_path)   
                         if remove_file_entry:
                             rename_log['files_entries_effected'] += 1
                         if remove_location_entry:
@@ -564,7 +578,7 @@ class ServerEdit:
 
                 # first make sure that if there is already a file with the new name, it is deleted,
                 # because it will have been replaced by the moved file
-                new_location_entry_removed, some_file_entry_removed = self.remove_file_from_db(db, file_server_root_index, os.path.join(self.new_path, filename))
+                new_location_entry_removed, some_file_entry_removed = self.record_file_server_file_removal(db, file_server_root_index, os.path.join(self.new_path, filename))
                 if new_location_entry_removed:
                     move_log['location_entries_effected'] += 1
                 if some_file_entry_removed:
@@ -634,7 +648,7 @@ class ServerEdit:
 
                     # remove any entries that are already in the new location
                     existing_loc_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), new_location_server_dirs, location_entry.filename)
-                    remove_file_entry, remove_location_entry = self.remove_file_from_db(db, file_server_root_index, file_path=existing_loc_path)
+                    remove_file_entry, remove_location_entry = self.record_file_server_file_removal(db, file_server_root_index, file_path=existing_loc_path)
                     if remove_file_entry:
                         move_log['files_entries_effected'] += 1
                     if remove_location_entry:
