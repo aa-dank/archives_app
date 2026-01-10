@@ -72,6 +72,7 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
                                                                         db_name=config_dict["POSTGRESQL_DATABASE"],
                                                                         username=config_dict["POSTGRESQL_USERNAME"],
                                                                         password=config_dict["POSTGRESQL_PASSWORD"],
+                                                                        dialect="psycopg",
                                                                         port=config_dict["POSTGRESQL_PORT"],
                                                                         ssl=config_dict["POSTGRESQL_SSL"])
     config_dict['CONFIG_JSON_PATH'] = config_json_path
