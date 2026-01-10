@@ -78,6 +78,13 @@ class FileModel(db.Model):
     hash = db.Column(db.String, unique=True, index=True, nullable=False)
     size = db.Column(db.BigInteger, nullable=False)
     extension = db.Column(db.String)
+    content = db.relationship(
+        "FileContentModel",
+        back_populates="file",
+        uselist=False,
+        passive_deletes=True,   # let postgres on-delete-cascade do its job
+        cascade="all, delete-orphan",  # optional but sane
+    )
 
     def __repr__(self):
         return f"file: {self.id}, {self.hash}, {self.size}, {self.extension}"
@@ -174,8 +181,10 @@ class CAANModel(db.Model):
 
 class FileContentModel(db.Model):
     __tablename__ = 'file_contents'
-    file_hash = db.Column(db.String, primary_key=True)
-    file = db.relationship('FileModel', foreign_keys=[file_hash], primaryjoin="FileContentModel.file_hash==FileModel.hash", backref='content')
+    file_hash = db.Column(db.String,
+                          db.ForeignKey("files.hash", ondelete="CASCADE"),
+                          primary_key=True)
+    file = db.relationship("FileModel", back_populates="content", uselist=False)
     source_text = db.Column(db.Text)
     minilm_model = db.Column(db.Text, default='all-minilm-l6-v2')
     minilm_emb = db.Column(db.LargeBinary)
