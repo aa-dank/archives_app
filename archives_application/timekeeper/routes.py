@@ -123,9 +123,11 @@ def hours_worked_in_day(day: datetime.date, user_id: int):
 
     # query db to retrieve all entries for given user id and day date. Put them in dataframe.
     days_end = day + timedelta(days=1)
+    day_start_dt = datetime.combine(day, time.min)
+    day_end_dt = datetime.combine(days_end, time.min)
     query = TimekeeperEventModel.query.filter(TimekeeperEventModel.user_id == user_id,
-                                              TimekeeperEventModel.datetime >= day.strftime("%Y-%m-%d"),
-                                              TimekeeperEventModel.datetime < days_end.strftime("%Y-%m-%d"))
+                                              TimekeeperEventModel.datetime >= day_start_dt,
+                                              TimekeeperEventModel.datetime < day_end_dt)
 
     timesheet_df = utils.FlaskAppUtils.db_query_to_df(query=query)
     if timesheet_df.shape[0] == 0:
@@ -295,7 +297,7 @@ def timekeeper_event():
                                  id=current_user_id)
 
 
-def generate_user_timesheet_dataframes(user_id, start_date=None, end_date=None, include_weekly = True):
+def generate_user_timesheet_dataframes(user_id: int, start_date=None, end_date=None, include_weekly = True):
     """
     Creates Dataframes aggregating timekeeper and archiving data for a user between the start and end dates.
     :param user_id: The user id of the user to generate the timesheet for
@@ -420,11 +422,13 @@ def user_timesheet(employee_id):
     Returns:
         Response: Renders the 'timesheet_tables.html' template with the timesheet data for the specified user.
     """
+
     form = TimeSheetForm()
     timesheet_df = None
 
     # get user information from the database
     try:
+        employee_id = int(employee_id)
         employee = UserModel.query.filter(UserModel.id == employee_id).one_or_none()
         archivist_dict = {'email': employee.email, 'id': employee.id}
 
@@ -947,7 +951,7 @@ def archiving_dashboard(archiver_id):
     try:
         if 'ADMIN' not in current_user.roles:
             current_user_id = UserModel.query.filter_by(email=current_user.email).first().id
-            if str(current_user_id) != str(archiver_id):
+            if current_user_id != archiver_id:
                 return flask.Response("Unauthorized", status=401)
 
     except Exception as e:
@@ -958,6 +962,7 @@ def archiving_dashboard(archiver_id):
         )
 
     try:
+        archiver_id = int(archiver_id)
         default_chart_window = 30 # measured in days
         rolling_avg_window = 10 # measured in days
         query_start_date = datetime.now() - timedelta(days = default_chart_window)
