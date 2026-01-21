@@ -5,10 +5,12 @@ import flask
 import flask_sqlalchemy
 import os
 import re
+import shlex
 import subprocess
 import time
 from datetime import datetime, timedelta
 from typing import Dict
+from sqlalchemy.engine import make_url
 from archives_application import create_app, utils
 from archives_application.models import WorkerTaskModel
 
@@ -200,7 +202,9 @@ def db_backup_task(queue_id: str):
             db = flask.current_app.extensions['sqlalchemy']
             utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             log = {"task_id": queue_id, "errors": []}
-            db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
+            raw_db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
+            db_url = make_url(raw_db_url).set(drivername="postgresql")  # strip driver for pg_dump compatibility
+            db_url_for_pg_dump = db_url.render_as_string(hide_password=False)
             timestamp = datetime.now().strftime(DB_BACKUP_FILE_TIMESTAMP_FORMAT)
             temp_backup_filename = f"{DB_BACKUP_FILE_PREFIX}{timestamp}.sql"
             temp_backup_path =  utils.FlaskAppUtils.create_temp_filepath(temp_backup_filename)
@@ -208,14 +212,20 @@ def db_backup_task(queue_id: str):
             # An example of desired shell pg_dump command:
             # pg_dump postgresql://archives:password@localhost:5432/archives > /opt/app/data/Archive_Data/backup101.sql
             postgres_executable_location = flask.current_app.config.get("POSTGRESQL_EXECUTABLES_LOCATION")
-            db_backup_cmd = fr"""{postgres_executable_location}pg_dump {db_url} > {temp_backup_path}"""
+            db_backup_cmd = (
+                f"{postgres_executable_location}pg_dump "
+                f"{shlex.quote(db_url_for_pg_dump)} > {shlex.quote(temp_backup_path)}"
+            )
             log["backup_command"] = db_backup_cmd
+            env = os.environ.copy()
+            env["PGPASSWORD"] = db_url.password or ""
             cmd_result = subprocess.run(db_backup_cmd,
                                         shell=True,
                                         stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE,
-                                        text=True)
+                                        text=True,
+                                        env=env)
             if cmd_result.stderr:
                 raise Exception(
                     f"Backup command failed. Stderr from attempt to call pg_dump back-up command:\n{cmd_result.stderr}")
