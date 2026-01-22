@@ -203,7 +203,8 @@ def db_backup_task(queue_id: str):
             utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             log = {"task_id": queue_id, "errors": []}
             raw_db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
-            db_url = make_url(raw_db_url).set(drivername="postgresql")  # strip driver for pg_dump compatibility
+            # Normalize the SQLAlchemy URL to remove the driver suffix so pg_dump accepts it
+            db_url = make_url(raw_db_url).set(drivername="postgresql")
             db_url_for_pg_dump = db_url.render_as_string(hide_password=False)
             timestamp = datetime.now().strftime(DB_BACKUP_FILE_TIMESTAMP_FORMAT)
             temp_backup_filename = f"{DB_BACKUP_FILE_PREFIX}{timestamp}.sql"
@@ -212,13 +213,14 @@ def db_backup_task(queue_id: str):
             # An example of desired shell pg_dump command:
             # pg_dump postgresql://archives:password@localhost:5432/archives > /opt/app/data/Archive_Data/backup101.sql
             postgres_executable_location = flask.current_app.config.get("POSTGRESQL_EXECUTABLES_LOCATION")
+            # Build the pg_dump shell command with quoting to survive special chars/whitespace
             db_backup_cmd = (
                 f"{postgres_executable_location}pg_dump "
                 f"{shlex.quote(db_url_for_pg_dump)} > {shlex.quote(temp_backup_path)}"
             )
             log["backup_command"] = db_backup_cmd
             env = os.environ.copy()
-            env["PGPASSWORD"] = db_url.password or ""
+            env["PGPASSWORD"] = db_url.password or ""  # provide password non-interactively
             cmd_result = subprocess.run(db_backup_cmd,
                                         shell=True,
                                         stdin=subprocess.PIPE,
