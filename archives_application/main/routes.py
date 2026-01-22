@@ -9,6 +9,7 @@ import subprocess
 import traceback
 import archives_application.app_config as app_config
 import pandas as pd
+from sqlalchemy import text
 from flask_login import current_user
 from archives_application.main import forms
 from archives_application import db, bcrypt
@@ -359,8 +360,8 @@ def get_db_info():
     
     # Test database connection
     try:
-        # Run a simple SELECT 1 query via SQLAlchemy's engine
-        result = db.engine.execute("SELECT 1").scalar()
+        # Run a simple SELECT 1 using SQLAlchemy 2.x API
+        result = db.session.execute(text("SELECT 1")).scalar()
         
         if result == 1:
             info["connection_test"] = {
