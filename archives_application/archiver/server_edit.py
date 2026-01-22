@@ -375,7 +375,7 @@ class ServerEdit:
             
             # If this was the last entry for this file_id and, thus, the file has actually been removed from the fileserver...
             # 1. scrub any ArchivedModel entries of their link to the File...
-            # 2. Remove the FileModel itself and any associated FileContentModel
+            # 2. Remove the FileModel itself and any associated content (file_contents, file_content_failures)
             if not remaining_locations:
                 file_model = db.session.query(FileModel)\
                     .filter(FileModel.id == file_id)\
@@ -391,7 +391,7 @@ class ServerEdit:
                     for archival_event in associated_archival_events:
                         archival_event.file_id = None
 
-                    # Delete the FileModel and its associated FileContentModel (if any)
+                        # Delete the FileModel and associated content rows (if any)
                     db.session.delete(file_model)
                     file_entry_removed = True
             db.session.commit()

@@ -3,7 +3,7 @@
 from archives_application import db, login_manager
 from datetime import datetime
 from flask_login import UserMixin
-from sqlalchemy import func
+from sqlalchemy import func, CheckConstraint
 
 
 @login_manager.user_loader
@@ -84,6 +84,13 @@ class FileModel(db.Model):
         uselist=False,
         passive_deletes=True,   # let postgres on-delete-cascade do its job
         cascade="all, delete-orphan",  # optional but sane
+    )
+    content_failure = db.relationship(
+        "FileContentFailureModel",
+        back_populates="file",
+        uselist=False,
+        passive_deletes=True,
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self):
@@ -195,3 +202,25 @@ class FileContentModel(db.Model):
 
     def __repr__(self):
         return f"FileContent: {self.file_hash}, text_length={self.text_length}, updated_at={self.updated_at}"
+
+
+class FileContentFailureModel(db.Model):
+    __tablename__ = 'file_content_failures'
+
+    file_hash = db.Column(
+        db.String,
+        db.ForeignKey("files.hash", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    file = db.relationship("FileModel", back_populates="content_failure", uselist=False)
+    stage = db.Column(db.String, nullable=False)
+    error = db.Column(db.Text)
+    attempts = db.Column(db.Integer, nullable=False, server_default="1")
+    last_failed_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("stage in ('extract', 'embed')", name="file_content_failures_stage_check"),
+    )
+
+    def __repr__(self):
+        return f"FileContentFailure: {self.file_hash}, stage={self.stage}, attempts={self.attempts}"
