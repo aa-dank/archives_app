@@ -9,7 +9,8 @@ import random
 import shutil
 import traceback
 import pandas as pd
-from datetime import timedelta
+from pathlib import PureWindowsPath
+from datetime import timedelta, datetime
 from flask_login import login_required, current_user
 from sqlalchemy import func
 from urllib import parse
@@ -132,6 +133,193 @@ def is_test_request():
     return utils.FlaskAppUtils.retrieve_request_param('test', None) \
         and utils.FlaskAppUtils.retrieve_request_param('test').lower() == 'true' \
         and utils.FlaskAppUtils.has_admin_role(current_user)
+
+def _normalize_user_path_for_compare(path_value: str) -> str:
+    """
+    Normalize a user-supplied path for safe comparisons (case-insensitive, no trailing separators).
+    Uses Windows path semantics to match user input conventions.
+    """
+    if not path_value:
+        return ''
+    return str(PureWindowsPath(path_value)).rstrip('\\/').lower()
+
+def _format_bytes(byte_count: int) -> str:
+    """
+    Format a byte count into a human-readable string.
+    """
+    if byte_count is None:
+        return "0 B"
+    value = float(byte_count)
+    for unit in ["B", "KB", "MB", "GB", "TB", "PB"]:
+        if value < 1024.0 or unit == "PB":
+            if unit == "B":
+                return f"{int(value)} {unit}"
+            return f"{value:.1f} {unit}"
+        value /= 1024.0
+    return f"{int(byte_count)} B"
+
+def _safe_stat_timestamps(path_value: str) -> tuple[str, str]:
+    """
+    Retrieve filesystem timestamps for display. Returns "UNKNOWN" on access errors.
+    """
+    try:
+        stat_result = os.stat(path_value)
+        last_modified = datetime.fromtimestamp(stat_result.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+        created_time = datetime.fromtimestamp(stat_result.st_ctime).strftime('%Y-%m-%d %H:%M:%S')
+        return last_modified, created_time
+    except Exception:
+        return "UNKNOWN", "UNKNOWN"
+
+
+def _db_dir_from_app_path(app_path: str, archives_location: str) -> tuple[str, str]:
+    """
+    Convert an app/server path into a database directory prefix and normalized prefix with trailing slash.
+    """
+    rel_path = os.path.relpath(app_path, archives_location)
+    if rel_path in ['.', './']:
+        db_dir = ''
+    else:
+        db_dir = rel_path.replace(os.sep, '/').strip('/')
+    db_dir_norm = f"{db_dir}/" if db_dir else ''
+    return db_dir, db_dir_norm
+
+def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, dict]:
+    """
+    Build a summary dataframe for immediate children of the provided user path.
+    Uses the database for aggregation and filesystem only for timestamps.
+    """
+    archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+    user_archives_location = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+    resolved_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_path, app=flask.current_app)
+
+    # Ensure the resolved path is a valid directory within the archives root.
+    if not os.path.isdir(resolved_path):
+        raise ValueError(f"Path is not a directory: {resolved_path}")
+
+    archives_location_abs = os.path.abspath(archives_location)
+    resolved_abs = os.path.abspath(resolved_path)
+    if os.path.commonpath([archives_location_abs, resolved_abs]) != archives_location_abs:
+        raise ValueError(f"Path is outside archives location: {resolved_path}")
+
+    db_dir, db_dir_norm = _db_dir_from_app_path(resolved_path, archives_location_abs)
+
+    locations_query = db.session.query(
+        FileLocationModel.file_server_directories,
+        FileLocationModel.filename,
+        FileModel.size
+    ).join(FileModel, FileLocationModel.file_id == FileModel.id)
+
+    # Fetch all rows under the directory prefix (single query per view).
+    locations_query = locations_query.filter(FileLocationModel.file_server_directories.isnot(None))
+    if db_dir_norm:
+        locations_query = locations_query.filter(FileLocationModel.file_server_directories.like(f"{db_dir_norm}%"))
+
+    # Note: folder counts and presence are derived solely from file rows; empty folders are not represented.
+    aggregates = {}
+    for dir_path, filename, size in locations_query:
+        if not dir_path:
+            continue
+        dir_path = dir_path.replace('\\', '/')
+        if db_dir_norm:
+            if not dir_path.startswith(db_dir_norm):
+                continue
+            relative_tail = dir_path[len(db_dir_norm):]
+        else:
+            relative_tail = dir_path
+
+        if relative_tail == '':
+            if not filename:
+                continue
+            # Files directly under the target directory become individual rows.
+            key = ("file", filename)
+            agg = aggregates.get(key)
+            if not agg:
+                agg = {
+                    "name": filename,
+                    "kind": "file",
+                    "file_count": 0,
+                    "total_size": 0,
+                    "dir_set": set(),
+                }
+                aggregates[key] = agg
+            agg["file_count"] = 1
+            agg["total_size"] += int(size) if size else 0
+            continue
+
+        child_dir = relative_tail.split('/')[0]
+        # All descendants under the same immediate child directory are aggregated together.
+        key = ("dir", child_dir)
+        agg = aggregates.get(key)
+        if not agg:
+            agg = {
+                "name": child_dir,
+                "kind": "dir",
+                "file_count": 0,
+                "total_size": 0,
+                "dir_set": {child_dir},
+            }
+            aggregates[key] = agg
+        agg["file_count"] += 1
+        agg["total_size"] += int(size) if size else 0
+        agg["dir_set"].add(relative_tail)
+
+    parent_total = sum(item["total_size"] for item in aggregates.values())
+    rows = []
+    for agg in aggregates.values():
+        file_count = agg["file_count"]
+        total_size = agg["total_size"]
+        if agg["kind"] == "dir":
+            # Build drill-down URL using user-visible path conventions.
+            child_db_dir = f"{db_dir_norm}{agg['name']}" if db_dir_norm else agg['name']
+            child_user_path = utils.FileServerUtils.user_path_from_db_data(
+                file_server_directories=child_db_dir,
+                user_archives_location=user_archives_location,
+                user_location_networked=False
+            )
+            name_display = f"<a href=\"{flask.url_for('archiver.dir_contents_summary', path=child_user_path)}\">{agg['name']}</a>"
+            folder_count = max(len(agg["dir_set"]) - 1, 0)
+            child_app_path = os.path.join(archives_location_abs, child_db_dir.replace('/', os.sep))
+            last_modified, created_time = _safe_stat_timestamps(child_app_path)
+        else:
+            name_display = agg["name"]
+            folder_count = 0
+            child_app_path = os.path.join(archives_location_abs, db_dir.replace('/', os.sep), agg["name"]) if db_dir else os.path.join(archives_location_abs, agg["name"])
+            last_modified, created_time = _safe_stat_timestamps(child_app_path)
+
+        percent_of_parent = 0.0 if parent_total == 0 else round((total_size / parent_total) * 100, 1)
+
+        rows.append({
+            "Name": name_display,
+            "# Files": file_count,
+            "# Folders": folder_count,
+            "Size": _format_bytes(total_size),
+            "% of Parent": f"{percent_of_parent:.1f}%",
+            "Last Modified": last_modified,
+            "Created (ctime)": created_time,
+            "_size_bytes": total_size,
+        })
+
+    summary_df = pd.DataFrame(rows)
+    if not summary_df.empty:
+        summary_df.sort_values(by="_size_bytes", ascending=False, inplace=True)
+        summary_df.drop(columns=["_size_bytes"], inplace=True)
+
+    user_root_norm = _normalize_user_path_for_compare(user_archives_location)
+    user_path_norm = _normalize_user_path_for_compare(user_path)
+    parent_path = None
+    if user_path_norm and user_path_norm != user_root_norm:
+        # Parent path is computed in user-path space to preserve user expectations.
+        parent_path_candidate = str(PureWindowsPath(user_path).parent)
+        parent_path_candidate_norm = _normalize_user_path_for_compare(parent_path_candidate)
+        if parent_path_candidate_norm and parent_path_candidate_norm != user_path_norm:
+            parent_path = parent_path_candidate
+
+    context = {
+        "user_path": user_path,
+        "resolved_path": resolved_path,
+        "parent_path": parent_path,
+    }
+    return summary_df, context
 
 
 @archiver.route("/api/server_change", methods=['GET', 'POST'])
@@ -2093,6 +2281,68 @@ def test_confirm_files():
         print(e)
         flask.flash(f"Confirm file locations error: {e}", 'warning')
         return flask.redirect(flask.url_for('main.home'))
+
+
+@archiver.route("/dir_contents_summary", methods=['GET', 'POST'])
+def dir_contents_summary():
+    """
+    Render a directory contents summary table for the requested path.
+    """
+    form = archiver_forms.DirContentsSummaryForm()
+    user_path = None
+
+    if flask.request.method == 'GET' and utils.FlaskAppUtils.retrieve_request_param('path'):
+        user_path = utils.FlaskAppUtils.retrieve_request_param('path')
+    elif form.validate_on_submit():
+        user_path = form.path.data
+    elif flask.request.method == 'POST':
+        return flask.render_template('dir_contents_summary_form.html', title='Directory Contents Summary', form=form)
+    else:
+        return flask.render_template('dir_contents_summary_form.html', title='Directory Contents Summary', form=form)
+
+    try:
+        summary_df, context = _build_dir_contents_summary_df(user_path=user_path)
+        summary_table_html = None if summary_df.empty else utils.html_table_from_df(
+            df=summary_df,
+            html_columns=['Name']
+        )
+        return flask.render_template(
+            'dir_contents_summary.html',
+            title='Directory Contents Summary',
+            summary_table_html=summary_table_html,
+            **context
+        )
+    except Exception as e:
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="Error building directory contents summary: ",
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
+
+
+@archiver.route("/dir_contents_summary/download", methods=['GET'])
+def dir_contents_summary_download():
+    """
+    Download the current directory contents summary as a CSV file.
+    """
+    user_path = utils.FlaskAppUtils.retrieve_request_param('path')
+    if not user_path:
+        flask.flash("Please provide a directory path to download.", 'warning')
+        return flask.redirect(flask.url_for('archiver.dir_contents_summary'))
+
+    try:
+        summary_df, _ = _build_dir_contents_summary_df(user_path=user_path)
+        timestamp = datetime.now().strftime(r'%Y%m%d%H%M%S')
+        filename = f"dir_contents_summary_{timestamp}.csv"
+        csv_filepath = utils.FlaskAppUtils.create_temp_filepath(filename=filename)
+        summary_df.to_csv(csv_filepath, index=False)
+        return flask.send_file(csv_filepath, as_attachment=True)
+    except Exception as e:
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="Error downloading directory contents summary: ",
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
 
 
 @archiver.route("/file_search", methods=['GET', 'POST'])
