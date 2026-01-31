@@ -118,6 +118,17 @@ class FileSearchForm(FlaskForm):
         path_validation_subroutine(search_location, path_type="dir")
 
 
+class DirContentsSummaryForm(FlaskForm):
+    path = StringField('Directory Path', validators=[DataRequired()])
+    submit = SubmitField('View')
+
+    def validate_path(self, path):
+        """
+        Ensures that the directory path exists
+        """
+        path_validation_subroutine(path, path_type="dir")
+
+
 class ScrapeLocationForm(FlaskForm):
     scrape_location = StringField('Scrape Location', validators=[DataRequired()])
     recursive = SelectField('Recursive', choices=[('True', 'True'), ('False', 'False')], default='True')

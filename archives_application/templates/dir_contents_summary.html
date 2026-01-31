@@ -1,0 +1,24 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <h2>Directory Contents Summary</h2>
+        <p><strong>Current Path:</strong> {{ user_path }}</p>
+        {% if resolved_path %}
+            <p><strong>Resolved Server Path:</strong> {{ resolved_path }}</p>
+        {% endif %}
+        <p>
+            {% if parent_path %}
+                <a href="{{ url_for('archiver.dir_contents_summary', path=parent_path) }}">Up one level</a>
+                &nbsp;|&nbsp;
+            {% endif %}
+            <a href="{{ url_for('archiver.dir_contents_summary_download', path=user_path) }}">Download CSV</a>
+        </p>
+        <div>
+            {% if summary_table_html %}
+                {{ summary_table_html | safe }}
+            {% else %}
+                <p>No contents found for this location.</p>
+            {% endif %}
+        </div>
+    </div>
+{% endblock content %}
