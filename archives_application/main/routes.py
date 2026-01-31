@@ -567,7 +567,6 @@ def toggle_sql_logging():
         db_logger.disabled = True
     return flask.jsonify(**{"sql logging":flask.current_app.config['SQLALCHEMY_ECHO'], "log location":log_path})
 
-
 @main.route("/endpoints_index")
 def endpoints_index():
     """Displays all the endpoints of the application or returns an Excel file.

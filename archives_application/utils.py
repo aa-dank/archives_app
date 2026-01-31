@@ -295,24 +295,6 @@ class FileServerUtils:
             dir_name_index += 1
         
         return file_code.strip().upper()
-    
-    @staticmethod
-    def clean_path(path: str):
-        """
-        Process a path string such that it can be used regardless of the os and regardless of whether its length
-        surpasses the limit in windows file systems
-        :param path:
-        :return:
-        """
-        path = path.replace('/', os.sep).replace('\\', os.sep)
-        if os.sep == '\\' and '\\\\?\\' not in path:
-            # fix for Windows 260 char limit
-            relative_levels = len([directory for directory in path.split(os.sep) if directory == '..'])
-            cwd = [directory for directory in os.getcwd().split(os.sep)] if ':' not in path else []
-            path = '\\\\?\\' + os.sep.join(cwd[:len(cwd) - relative_levels] \
-                                        + [directory for directory in path.split(os.sep) if directory != ''][
-                                            relative_levels:])
-        return path
 
     @staticmethod
     def mounted_path_to_networked_path(mounted_path, network_location):
@@ -859,7 +841,10 @@ class FilesUtils:
                     raise ValueError("No pages in pdf")
                 
                 page_pix_map = fitz_doc.load_page(0).get_pixmap()
-                page_img = Image.frombytes("RGB", [page_pix_map.width, page_pix_map.height], page_pix_map.samples)
+                mode = "RGBA" if page_pix_map.alpha else "RGB"
+                page_img = Image.frombytes(mode=mode,
+                                           size=[page_pix_map.width, page_pix_map.height],
+                                           data=page_pix_map.samples)
 
                 # free C-level memory for the pixmap immediately
                 del page_pix_map

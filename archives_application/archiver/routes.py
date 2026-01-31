@@ -1264,7 +1264,7 @@ def inbox_item():
         if str_filepath_extension(arch_file_filename) in ['pdf']:
             try:
                 arch_file_preview_image_path = utils.FilesUtils.pdf_preview_image(pdf_path=arch_file_path,
-                                                                              image_destination=utils.FlaskAppUtils.create_temp_filepath(''))
+                                                                                  image_destination=utils.FlaskAppUtils.create_temp_filepath(''))
                 preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.FileServerUtils.split_path(arch_file_preview_image_path)[-1])
                 preview_generated = True
             
