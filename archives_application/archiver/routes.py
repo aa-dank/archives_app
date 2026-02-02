@@ -240,6 +240,7 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, dict]:
                     "file_count": 0,
                     "total_size": 0,
                     "dir_set": set(),
+                    "max_depth": 0,
                 }
                 aggregates[key] = agg
             agg["file_count"] = 1
@@ -247,6 +248,8 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, dict]:
             continue
 
         child_dir = relative_tail.split('/')[0]
+        depth_segments = relative_tail.split('/')
+        internal_depth = max(len(depth_segments) - 1, 0)
         # All descendants under the same immediate child directory are aggregated together.
         key = ("dir", child_dir)
         agg = aggregates.get(key)
@@ -257,11 +260,14 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, dict]:
                 "file_count": 0,
                 "total_size": 0,
                 "dir_set": {child_dir},
+                "max_depth": 0,
             }
             aggregates[key] = agg
         agg["file_count"] += 1
         agg["total_size"] += int(size) if size else 0
         agg["dir_set"].add(relative_tail)
+        if internal_depth > agg["max_depth"]:
+            agg["max_depth"] = internal_depth
 
     parent_total = sum(item["total_size"] for item in aggregates.values())
     rows = []
@@ -292,6 +298,7 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, dict]:
             "Name": name_display,
             "# Files": file_count,
             "# Folders": folder_count,
+            "Depth": agg.get("max_depth", 0),
             "Size": _format_bytes(total_size),
             "% of Parent": f"{percent_of_parent:.1f}%",
             "Last Modified": last_modified,
