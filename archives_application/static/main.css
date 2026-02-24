@@ -86,3 +86,47 @@ a.article-title:hover {
   opacity: 0.85;
   margin-left: 4px;
 }
+
+/* Sidebar navigation section headers */
+.nav-section-header {
+  background-color: #5f788a !important;
+}
+
+.nav-section-header a {
+  color: #ffffff !important;
+  text-decoration: none;
+}
+
+.nav-section-header a:hover {
+  color: #d0e0ea !important;
+  text-decoration: none;
+}
+
+/* Rotating arrow indicator for collapse toggles */
+.collapse-toggle-icon {
+  display: inline-block;
+  float: right;
+  transition: transform 0.2s ease;
+}
+
+a[aria-expanded="true"] .collapse-toggle-icon {
+  transform: rotate(180deg);
+}
+
+a[aria-expanded="false"] .collapse-toggle-icon {
+  transform: rotate(0deg);
+}
+
+/* Indented sub-items inside collapsible nav sections */
+.nav-sub-item {
+  padding-left: 1.75rem !important;
+  border-left: 3px solid #5f788a !important;
+}
+
+.nav-sub-item a {
+  color: #333333 !important;
+}
+
+.nav-sub-item a:hover {
+  color: #5f788a !important;
+}
