@@ -584,6 +584,11 @@ def timekeeper_admin_interface():
                     return flask.redirect(flask.url_for('timekeeper.who_work_when', 
                                                       date=date_str))
 
+            elif operation == 'archiving_dashboard':
+                employee_email = form.employee_email.data
+                employee = UserModel.query.filter_by(email=employee_email).first()
+                return flask.redirect(flask.url_for('timekeeper.archiving_dashboard', archiver_id=employee.id))
+
     except Exception as e:
         return utils.FlaskAppUtils.web_exception_subroutine(
             flash_message="Error processing timekeeper admin form:",

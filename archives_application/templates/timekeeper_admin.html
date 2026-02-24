@@ -105,12 +105,26 @@
                 var employeeSection = document.getElementById('employee-section');
                 var whowhenSection = document.getElementById('whowhen-section');
                 
+                var allOption = document.querySelector('select[name="employee_email"] option[value="ALL"]');
+
                 if (operation === 'employee_timesheet') {
                     employeeSection.style.display = 'block';
                     whowhenSection.style.display = 'none';
+                    if (allOption) allOption.disabled = false;
                 } else if (operation === 'who_work_when') {
                     employeeSection.style.display = 'none';
                     whowhenSection.style.display = 'block';
+                    if (allOption) allOption.disabled = false;
+                } else if (operation === 'archiving_dashboard') {
+                    employeeSection.style.display = 'block';
+                    whowhenSection.style.display = 'none';
+                    // ALL is not supported for archiving dashboard — disable and deselect it
+                    if (allOption) {
+                        allOption.disabled = true;
+                        if (allOption.selected) {
+                            allOption.selected = false;
+                        }
+                    }
                 }
             }
             
