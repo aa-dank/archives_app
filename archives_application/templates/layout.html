@@ -66,7 +66,7 @@
 
                 <!-- File Server Tools -->
                 <li class="list-group-item nav-section-header p-0">
-                  <a class="d-block px-3 py-2 font-weight-bold" data-toggle="collapse" href="#fileServerTools" role="button" aria-expanded="true" aria-controls="fileServerTools">
+                  <a class="d-block px-3 py-2 font-weight-bold" data-toggle="collapse" href="#fileServerTools" role="button" aria-expanded="false" aria-controls="fileServerTools">
                     File Server Tools <span class="collapse-toggle-icon">&#9660;</span>
                   </a>
                   <div class="collapse show" id="fileServerTools">
@@ -117,9 +117,6 @@
                     </div>
                   </li>
                   {% endif %}
-
-                  <li class="list-group-item list-group-item-light"><a href={{url_for('users.account')}}>Account Info</a></li>
-
                 {% else %}
                   <li class="list-group-item list-group-item-light"><a href={{url_for('users.register')}}>Registration</a></li>
                 {% endif %}
