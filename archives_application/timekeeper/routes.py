@@ -1,6 +1,7 @@
 # archives_application/timekeeper/routes.py
 
 import flask
+import io
 import matplotlib
 matplotlib.use('Agg') # Required to generate plots without a display
 import matplotlib.pyplot as plt
@@ -757,34 +758,40 @@ def who_work_when():
 @login_required
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def archiving_dashboard(archiver_id):
-    """Displays archiving metrics for a specific archivist.
+    """Displays archiving metrics for a specific archivist, or exports their archived files as a spreadsheet.
 
-    This endpoint provides a form for selecting the date range and rolling average window for the metrics.
-    It displays the total number of files archived, the total data quantity archived, and generates charts
-    showing the archiving activity over the selected date range.
+    This endpoint provides a form for selecting the date range and rolling average window. Depending on
+    which submit button is used, it either renders activity charts or returns an Excel file of the
+    archivist's archived_files records for the selected date range.
 
     Args:
         archiver_id (int): The ID of the archivist whose metrics are to be displayed.
 
     Form data:
-        timesheet_begin (date): Start date of the date range for the metrics.
-        timesheet_end (date): End date of the date range for the metrics.
-        rolling_avg_window (int): Number of days to use for the rolling average in the charts.
+        timesheet_begin (date): Start date of the date range for the metrics or spreadsheet export.
+        timesheet_end (date): End date of the date range for the metrics or spreadsheet export.
+        rolling_avg_window (int): Number of days to use for the rolling average in the charts (ignored for export).
+        submit (SubmitField): Renders charts for the selected date range.
+        export_spreadsheet (SubmitField): Downloads an Excel file of the archivist's archived_files entries
+            for the selected date range. Columns id, archivist_id, file_id, and document_date are excluded.
+            destination_path values are converted from app-server paths to user-facing Windows paths.
 
     Usage:
         - Users can select the start and end dates for the date range they want to analyze.
         - Users can specify the rolling average window to smooth out the data in the charts.
-        - The endpoint displays the total number of files archived and the total data quantity archived.
-        - The endpoint generates and displays charts showing the archiving activity over the selected date range.
+        - Clicking 'Submit' displays total files archived, total data archived, and activity charts.
+        - Clicking 'Export Spreadsheet' downloads an .xlsx file of the archivist's archived file records
+          for the entered date range.
 
     Returns:
-        Response: Renders the 'archivist_dashboard.html' template with the following data:
+        Response: Either renders the 'archivist_dashboard.html' template with the following data:
             - archivist_name: The name of the archivist.
-            - archivist_files_count: The total number of files archived by the archivist.
-            - archivist_data_quantity: The total data quantity archived by the archivist.
-            - total_plot: The path to the generated chart showing the total archiving activity.
-            - archivist_plot: The path to the generated chart showing the archivist's archiving activity.
+            - archivist_files_count: The total number of files archived by the archivist (all time).
+            - archivist_data_quantity: The total data quantity archived by the archivist in GB (all time).
+            - total_plot: URL to the generated chart showing collective archiving activity.
+            - archivist_plot: URL to the generated chart showing the archivist's archiving activity.
             - form: The TimeSheetForm object for selecting the date range and rolling average window.
+        Or returns an Excel file attachment when the export_spreadsheet button is used.
     """
     def bytes_to_mb(bytes):
         return round((bytes/(1024**2)), 3)
@@ -969,7 +976,7 @@ def archiving_dashboard(archiver_id):
     try:
         archiver_id = int(archiver_id)
         default_chart_window = 30 # measured in days
-        rolling_avg_window = 10 # measured in days
+        rolling_avg_window = 7 # measured in days; default used when none is entered in the form
         query_start_date = datetime.now() - timedelta(days = default_chart_window)
         query_start_date = query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
         query_end_date = datetime.now()
@@ -985,7 +992,43 @@ def archiving_dashboard(archiver_id):
             query_end_date = datetime(year=user_end_date.year, month=user_end_date.month, day=user_end_date.day)
             if form.rolling_avg_window.data:
                 rolling_avg_window = int(form.rolling_avg_window.data)
-        
+
+            if form.export_spreadsheet.data:
+                export_query = db.session.query(ArchivedFileModel)\
+                    .filter(
+                        ArchivedFileModel.archivist_id == archiver_id,
+                        ArchivedFileModel.date_archived.between(query_start_date, query_end_date)
+                    )
+                export_df = utils.FlaskAppUtils.db_query_to_df(query=export_query)
+                drop_cols = [c for c in ['id', 'archivist_id', 'file_id', 'document_date'] if c in export_df.columns]
+                export_df = export_df.drop(columns=drop_cols)
+                # If the destination_path column is present, convert the file server paths to user-friendly paths for display in the spreadsheet
+                if 'destination_path' in export_df.columns:
+                    user_archives_location = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+                    export_df['destination_path'] = export_df['destination_path'].map(
+                        lambda p: utils.FileServerUtils.user_path_from_db_data(
+                            file_server_directories=p,
+                            user_archives_location=user_archives_location
+                        ) if pd.notna(p) else p
+                    )
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    export_df.to_excel(writer, index=False, sheet_name='Archived Files')
+                    worksheet = writer.sheets['Archived Files']
+                    for column_cells in worksheet.columns:
+                        max_length = max((len(str(cell.value)) for cell in column_cells if cell.value), default=0)
+                        worksheet.column_dimensions[column_cells[0].column_letter].width = max_length + 2
+                output.seek(0)
+                start_str = query_start_date.strftime('%Y%m%d')
+                end_str = query_end_date.strftime('%Y%m%d')
+                download_name = f"{archiver_name}_archived_files_{start_str}_to_{end_str}.xlsx"
+                return flask.send_file(
+                    output,
+                    download_name=download_name,
+                    as_attachment=True,
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+
         # We start the query with a date that is the rolling_avg_window days before the chosen start date,
         # so that the rolling average of the first included day can be calculated
         query_start_date = query_start_date - timedelta(days=rolling_avg_window)

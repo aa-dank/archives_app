@@ -15,8 +15,9 @@ class TimekeepingForm(FlaskForm):
 class TimeSheetForm(FlaskForm):
     timesheet_begin = DateField('Timesheet Start', validators=[DataRequired()])
     timesheet_end = DateField('Timesheet End', validators=[DataRequired()])
-    rolling_avg_window = IntegerField('Rolling Average Window')
+    rolling_avg_window = IntegerField('Rolling Average Window (days)', validators=[Optional()])
     submit = SubmitField('Submit')
+    export_spreadsheet = SubmitField('Export Spreadsheet')
 
     def validate_timesheet_end(self, timesheet_end):
         if not timesheet_end.data > self.timesheet_begin.data:
