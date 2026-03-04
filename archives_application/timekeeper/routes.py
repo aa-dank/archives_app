@@ -184,6 +184,54 @@ def compile_journal(date: datetime.date, timecard_df: pd.DataFrame, delimiter_st
     return compiled_journal
 
 
+def compile_shifts(date: datetime.date, timecard_df: pd.DataFrame) -> str:
+    """
+    Builds a string summarising the clock-in/clock-out pairs for a given day.
+    Each shift is shown as 'HH:MM-HH:MM' (24-hr). An unmatched clock-in is
+    shown as 'HH:MM-?' to indicate the clock-out is missing.
+
+    Args:
+        date: The calendar day to inspect.
+        timecard_df: DataFrame of TimekeeperEvent rows for the user; must contain
+                     'datetime' and 'clock_in_event' columns.
+    Returns:
+        Newline-separated shift strings, e.g. "09:00-12:30\n13:00-17:00".
+        Empty string when no events exist for the day.
+    """
+    date_start = datetime.combine(date, time.min)
+    date_end = datetime.combine(date, time.max)
+
+    day_df = timecard_df[
+        (timecard_df["datetime"] >= date_start) & (timecard_df["datetime"] <= date_end)
+    ].sort_values("datetime")
+
+    if day_df.empty:
+        return ""
+
+    shifts = []
+    pending_clock_in = None
+
+    for _, row in day_df.iterrows():
+        if row["clock_in_event"]:
+            # If there is already an open clock-in, record it as incomplete before starting a new one
+            if pending_clock_in is not None:
+                shifts.append(f"{pending_clock_in.strftime('%H:%M')}-?")
+            pending_clock_in = row["datetime"]
+        else:
+            if pending_clock_in is not None:
+                shifts.append(
+                    f"{pending_clock_in.strftime('%H:%M')}-{row['datetime'].strftime('%H:%M')}"
+                )
+                pending_clock_in = None
+            # a clock-out with no preceding clock-in is ignored
+
+    # Handle a trailing unmatched clock-in
+    if pending_clock_in is not None:
+        shifts.append(f"{pending_clock_in.strftime('%H:%M')}-?")
+
+    return "\n".join(shifts)
+
+
 @timekeeper.route("/timekeeper", methods=['GET', 'POST'])
 @login_required
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
@@ -364,6 +412,9 @@ def generate_user_timesheet_dataframes(user_id: int, start_date=None, end_date=N
             if not arched_files_df.empty:
                 day_data["Archived Megabytes"] = (arched_files_df["file_size"].sum()/1000000).round(2)
 
+        # Build shift periods string for the day
+        day_data["Shifts"] = compile_shifts(range_date, timesheet_df)
+
         # Mush all journal entries together into a single journal entry
         compiled_journal = compile_journal(range_date, timesheet_df, " \ ")
         day_data["Journal"] = compiled_journal
@@ -469,7 +520,7 @@ def user_timesheet(employee_id):
 
 @timekeeper.route("/timekeeper/all", methods=['GET', 'POST'])
 @login_required
-@utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def all_timesheets():
     """Displays all timesheets for archivists.
 
