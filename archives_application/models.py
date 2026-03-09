@@ -92,6 +92,12 @@ class FileModel(db.Model):
         passive_deletes=True,
         cascade="all, delete-orphan",
     )
+    date_mentions = db.relationship(
+        "FileDateMentionModel",
+        back_populates="file",
+        passive_deletes=True,
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self):
         return f"file: {self.id}, {self.hash}, {self.size}, {self.extension}"
@@ -218,9 +224,28 @@ class FileContentFailureModel(db.Model):
     attempts = db.Column(db.Integer, nullable=False, server_default="1")
     last_failed_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=func.now())
 
+
+class FileDateMentionModel(db.Model):
+    __tablename__ = 'file_date_mentions'
+
+    file_hash = db.Column(
+        db.String,
+        db.ForeignKey("files.hash", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    mention_date = db.Column(db.Date, nullable=False, primary_key=True)
+    granularity = db.Column(db.Text, nullable=False, primary_key=True, default='day')
+    mentions_count = db.Column(db.Integer, nullable=False, server_default="1")
+    extractor = db.Column(db.Text)
+    extracted_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    file = db.relationship("FileModel", back_populates="date_mentions")
+
     __table_args__ = (
-        CheckConstraint("stage in ('extract', 'embed')", name="file_content_failures_stage_check"),
+        db.Index('ix_fdm_date', 'mention_date'),
+        db.Index('ix_fdm_date_gran', 'mention_date', 'granularity'),
+        db.Index('ix_fdm_file', 'file_hash'),
     )
 
     def __repr__(self):
-        return f"FileContentFailure: {self.file_hash}, stage={self.stage}, attempts={self.attempts}"
+        return f"FileDateMention: {self.file_hash}, {self.mention_date}, granularity={self.granularity}, count={self.mentions_count}"
