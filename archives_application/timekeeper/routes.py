@@ -232,6 +232,43 @@ def compile_shifts(date: datetime.date, timecard_df: pd.DataFrame) -> str:
     return "\n".join(shifts)
 
 
+def _timekeeper_df_to_html(df: pd.DataFrame, **kwargs) -> str:
+    """
+    Renders a timekeeper DataFrame as an HTML table.
+    Normalises \\r\\n, \\r, and \\n in string columns to <br> tags so they render
+    correctly in the browser. Column widths are constrained so the Journal column
+    does not dominate the layout.
+    """
+    render_df = df.copy()
+    str_cols = list(render_df.select_dtypes(include='object').columns)
+    for col in str_cols:
+        render_df[col] = (
+            render_df[col]
+            .fillna('')
+            .astype(str)
+            .str.replace('\r\n', '<br>', regex=False)
+            .str.replace('\r', '<br>', regex=False)
+            .str.replace('\n', '<br>', regex=False)
+        )
+
+    default_column_widths = {
+        'Date':               '12%',
+        'Hours Worked':        '7%',
+        'Archived Files':      '7%',
+        'Archived Megabytes':  '8%',
+        'Shifts':             '10%',
+        'Journal':            '56%',
+    }
+    column_widths = kwargs.pop('column_widths', default_column_widths)
+
+    return utils.html_table_from_df(
+        render_df,
+        html_columns=str_cols,
+        column_widths=column_widths,
+        **kwargs
+    )
+
+
 @timekeeper.route("/timekeeper", methods=['GET', 'POST'])
 @login_required
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
@@ -512,8 +549,8 @@ def user_timesheet(employee_id):
             app_obj=flask.current_app
         )
 
-    archivist_dict["daily_html_table"] = timesheet_df.to_html(index=False, classes="table-hover table-dark")
-    archivist_dict["weekly_html_table"] = weekly_summary_df.to_html(index=False, classes="table-hover table-dark")
+    archivist_dict["daily_html_table"] = _timekeeper_df_to_html(timesheet_df)
+    archivist_dict["weekly_html_table"] = _timekeeper_df_to_html(weekly_summary_df)
 
     return flask.render_template('timesheet_tables.html', title="Timesheet", form=form, archivist_info_list=[archivist_dict])
 
@@ -571,8 +608,8 @@ def all_timesheets():
         # iterate over archivists to create individualized timesheet tables
         for archivist_dict in archivists:
             archivist_dict["timesheet_df"], archivist_dict["weekly_summary_df"] = generate_user_timesheet_dataframes(archivist_dict["id"], start_date, end_date)
-            archivist_dict["daily_html_table"] = archivist_dict["timesheet_df"].to_html(index=False, classes="table-hover table-dark")
-            archivist_dict["weekly_html_table"] = archivist_dict["weekly_summary_df"].to_html(index=False, classes="table-hover table-dark")
+            archivist_dict["daily_html_table"] = _timekeeper_df_to_html(archivist_dict["timesheet_df"])
+            archivist_dict["weekly_html_table"] = _timekeeper_df_to_html(archivist_dict["weekly_summary_df"])
 
     except Exception as e:
         utils.FlaskAppUtils.web_exception_subroutine(
@@ -783,7 +820,7 @@ def who_work_when():
         
         # Generate HTML table
         if not work_df.empty:
-            html_table = work_df.to_html(index=False, classes="table-hover table-dark")
+            html_table = _timekeeper_df_to_html(work_df)
         else:
             html_table = "<p>No employees were working during the specified time.</p>"
             
