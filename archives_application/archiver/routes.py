@@ -886,9 +886,13 @@ def upload_file():
                 
                 # if a location path was provided we do not record the filing code
                 recorded_filing_code = arch_file.file_code if not form.destination_path.data else None
+                recorded_destination_path = utils.FileServerUtils.archive_relative_path(
+                    arch_file.get_destination_path(),
+                    flask.current_app.config.get('ARCHIVES_LOCATION')
+                )
                 
                 # add the archiving event to the database
-                archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
+                archived_file = ArchivedFileModel(destination_path=recorded_destination_path,
                                                   project_number=arch_file.project_number,
                                                   date_archived=datetime.now(),
                                                   document_date=form.document_date.data,
@@ -1083,10 +1087,14 @@ def upload_file_api():
             
             # If a location path was provided we do not record the filing code
             recorded_filing_code = arch_file.file_code if not destination_path else None
+            recorded_destination_path = utils.FileServerUtils.archive_relative_path(
+                arch_file.get_destination_path(),
+                flask.current_app.config.get('ARCHIVES_LOCATION')
+            )
             
             # Add the archiving event to the database
             archived_file = ArchivedFileModel(
-                destination_path=arch_file.get_destination_path(),
+                destination_path=recorded_destination_path,
                 project_number=arch_file.project_number,
                 date_archived=datetime.now(),
                 document_date=document_date,
@@ -1384,9 +1392,13 @@ def inbox_item():
                 try:
                     # if a location path was provided we do not record the filing code
                     recorded_filing_code = arch_file.file_code if not form.destination_path.data else None
+                    recorded_destination_path = utils.FileServerUtils.archive_relative_path(
+                        arch_file.get_destination_path(),
+                        flask.current_app.config.get('ARCHIVES_LOCATION')
+                    )
 
                     # add the archiving event to the database
-                    archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
+                    archived_file = ArchivedFileModel(destination_path=recorded_destination_path,
                                                       archivist_id=current_user.id,
                                                       project_number=arch_file.project_number,
                                                       date_archived=datetime.now(),

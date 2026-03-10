@@ -268,6 +268,61 @@ class FileServerUtils:
         return split_other_path(path)
 
     @staticmethod
+    def _clean_split_parts(path_parts):
+        """Remove empty/root-only markers from split path parts."""
+        return [part for part in path_parts if part not in ['/', '//', '', '///', '////']]
+
+    @staticmethod
+    def _is_absolute_path(path_value):
+        """Return True when the value looks like an absolute Windows/UNC or Linux path."""
+        path_str = str(path_value)
+        return path_str.startswith("\\\\") or path_str.startswith('/') or (len(path_str) >= 2 and path_str[1] == ':')
+
+    @staticmethod
+    def _relative_archive_path_parts(path_value, archives_location):
+        """
+        Return archive-root-relative path parts when the value can be interpreted that way.
+
+        Returns None for absolute paths that do not live under archives_location.
+        """
+        if path_value is None:
+            return None
+
+        path_str = str(path_value).strip()
+        if not path_str:
+            return []
+
+        archive_root_parts = FileServerUtils.split_path(str(archives_location))
+        path_parts = FileServerUtils.split_path(path_str)
+
+        if path_parts[:len(archive_root_parts)] == archive_root_parts:
+            return FileServerUtils._clean_split_parts(path_parts[len(archive_root_parts):])
+
+        if FileServerUtils._is_absolute_path(path_str):
+            return None
+
+        return FileServerUtils._clean_split_parts(path_parts)
+
+    @staticmethod
+    def relative_archive_path_to_user_path(relative_path, user_archives_location, user_location_networked = False, filename = None):
+        """
+        Join a relative archive path to the user-facing archives root using Windows separators.
+        """
+        relative_parts = FileServerUtils._clean_split_parts(FileServerUtils.split_path(relative_path))
+        user_root_parts = FileServerUtils._clean_split_parts(FileServerUtils.split_path(user_archives_location))
+        user_file_path_list = user_root_parts + relative_parts
+        if filename:
+            user_file_path_list.append(filename)
+
+        user_file_path = "\\".join(user_file_path_list)
+        user_file_path = user_file_path.lstrip('\\')
+        if user_location_networked:
+            while not user_file_path.startswith("\\\\"):
+                user_file_path = "\\" + user_file_path
+
+        return user_file_path
+
+    @staticmethod
     def prefixes_from_project_number(project_number: str):
         """
         returns root directory prefix for given project number.
@@ -319,20 +374,79 @@ class FileServerUtils:
         """
         Takes the file_server_directories and archives_location from the database and returns a path that can be used by the user.
         """
-        server_directories_list = FileServerUtils.split_path(file_server_directories)
-        archives_network_location_list = FileServerUtils.split_path(user_archives_location)
-        archives_network_location_list = [d for d in archives_network_location_list if d not in ['//', '', '///', '////']]
-        user_file_path_list = archives_network_location_list + server_directories_list
-        if filename:
-            user_file_path_list = user_file_path_list + [filename]
-        
-        user_file_path = "\\".join(user_file_path_list)
-        user_file_path = user_file_path.lstrip('\\')
-        if user_location_networked:
-            while not user_file_path.startswith("\\\\"):
-                user_file_path = "\\" + user_file_path
-        
-        return user_file_path
+        return FileServerUtils.relative_archive_path_to_user_path(
+            relative_path=file_server_directories,
+            user_archives_location=user_archives_location,
+            user_location_networked=user_location_networked,
+            filename=filename
+        )
+
+    @staticmethod
+    def archive_relative_path(path_value, archives_location):
+        """
+        Convert a path under the archives root to a linux-style relative path.
+
+        If the value is already relative, it is normalised to use forward slashes.
+        If the value is absolute but not rooted at archives_location, the original value is returned.
+        """
+        if path_value is None:
+            return path_value
+
+        path_str = str(path_value).strip()
+        if not path_str:
+            return path_str
+
+        relative_parts = FileServerUtils._relative_archive_path_parts(path_str, archives_location)
+        if relative_parts is None:
+            return path_str
+
+        return "/".join(relative_parts)
+
+    @staticmethod
+    def archived_file_path_to_user_path(destination_path, archives_location, user_archives_location, user_location_networked = False):
+        """
+        Convert an archived_files.destination_path value to a user-facing Windows path.
+
+        Expected values are linux-style relative paths under the archive root. Legacy absolute
+        archive paths are also supported. Unexpected absolute paths are returned unchanged.
+        """
+        if destination_path is None:
+            return destination_path
+
+        path_str = str(destination_path).strip()
+        if not path_str:
+            return path_str
+
+        relative_parts = FileServerUtils._relative_archive_path_parts(path_str, archives_location)
+        if relative_parts is None:
+            return path_str
+
+        return FileServerUtils.relative_archive_path_to_user_path(
+            relative_path="/".join(relative_parts),
+            user_archives_location=user_archives_location,
+            user_location_networked=user_location_networked
+        )
+
+    @staticmethod
+    def app_path_to_user_path(app_path, archives_location, user_archives_location, user_location_networked = False):
+        """
+        Converts a full archive path stored using the app server's filesystem to a user-facing Windows path.
+
+        The portion of the path rooted at archives_location is replaced with user_archives_location,
+        and the remainder is joined using Windows path separators.
+        """
+        if not app_path:
+            return app_path
+
+        relative_parts = FileServerUtils._relative_archive_path_parts(app_path, archives_location)
+        if relative_parts is None or not FileServerUtils._is_absolute_path(app_path):
+            return str(app_path)
+
+        return FileServerUtils.relative_archive_path_to_user_path(
+            relative_path="/".join(relative_parts),
+            user_archives_location=user_archives_location,
+            user_location_networked=user_location_networked
+        )
     
     @staticmethod
     def path_to_project_dir(project_number: Union[int, str], archives_location: str, create_new_project_dir: bool = False):
