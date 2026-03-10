@@ -862,7 +862,8 @@ def archiving_dashboard(archiver_id):
         submit (SubmitField): Renders charts for the selected date range.
         export_spreadsheet (SubmitField): Downloads an Excel file of the archivist's archived_files entries
             for the selected date range. Columns id, archivist_id, file_id, and document_date are excluded.
-            destination_path values are converted from app-server paths to user-facing Windows paths.
+            destination_path values are converted to user-facing Windows paths. Relative archive paths are
+            expected, and legacy absolute archive paths are handled when possible.
 
     Usage:
         - Users can select the start and end dates for the date range they want to analyze.
@@ -1090,12 +1091,14 @@ def archiving_dashboard(archiver_id):
                 export_df = utils.FlaskAppUtils.db_query_to_df(query=export_query)
                 drop_cols = [c for c in ['id', 'archivist_id', 'file_id', 'document_date'] if c in export_df.columns]
                 export_df = export_df.drop(columns=drop_cols)
-                # If the destination_path column is present, convert the file server paths to user-friendly paths for display in the spreadsheet
+                # Convert expected relative archive paths, with best-effort handling for legacy absolute values.
                 if 'destination_path' in export_df.columns:
+                    archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
                     user_archives_location = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
                     export_df['destination_path'] = export_df['destination_path'].map(
-                        lambda p: utils.FileServerUtils.user_path_from_db_data(
-                            file_server_directories=p,
+                        lambda p: utils.FileServerUtils.archived_file_path_to_user_path(
+                            destination_path=p,
+                            archives_location=archives_location,
                             user_archives_location=user_archives_location
                         ) if pd.notna(p) else p
                     )
