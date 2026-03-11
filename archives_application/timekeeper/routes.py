@@ -842,7 +842,7 @@ def who_work_when():
         )
 
 
-@timekeeper.route("/archiving_dashboard/<archiver_id>", methods=['GET', 'POST'])
+@timekeeper.route("/archiving_dashboard/<int:archiver_id>", methods=['GET', 'POST'])
 @login_required
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def archiving_dashboard(archiver_id):
@@ -1048,9 +1048,9 @@ def archiving_dashboard(archiver_id):
         return file_destination
 
 
-    # archivists should only be able to view their own metrics. Get unauthorized if they try to view another's
+    # Archivists may only view their own dashboard; admins may view any dashboard.
     try:
-        if 'ADMIN' not in current_user.roles:
+        if 'ADMIN' not in current_user.roles.split(","):
             current_user_id = UserModel.query.filter_by(email=current_user.email).first().id
             if current_user_id != archiver_id:
                 return flask.Response("Unauthorized", status=401)
@@ -1063,7 +1063,6 @@ def archiving_dashboard(archiver_id):
         )
 
     try:
-        archiver_id = int(archiver_id)
         default_chart_window = 30 # measured in days
         rolling_avg_window = 7 # measured in days; default used when none is entered in the form
         query_start_date = datetime.now() - timedelta(days = default_chart_window)
