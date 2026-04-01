@@ -2,7 +2,7 @@
 
 import flask
 import json
-import os
+import re
 import pandas as pd
 from datetime import datetime
 from flask_login import current_user
@@ -182,18 +182,18 @@ def caan_search():
     """CAAN search endpoint.
 
     Provides a web form for users to locate CAAN records (by number, name, or description) and optionally
-    jump directly to the drawings view for a specific CAAN. The endpoint supports both initial form
+    jump directly to the info view for a specific CAAN. The endpoint supports both initial form
     rendering (GET) and search submission (POST).
 
     Workflow:
             1. User visits the page (GET) and is shown a form with two inputs:
                     - ``enter_caan``: Exact CAAN value. If supplied on submit, user is redirected immediately to
-                        the corresponding ``/caan_drawings/<caan>`` page without running a broader search.
+                        the corresponding ``/caan_info/<caan>`` page without running a broader search.
                     - ``search_query``: Free‑text terms separated by whitespace. Each term is matched (case‑insensitive)
                         against CAAN number, name, OR description. All terms must match at least one of the three
                         fields (logical AND across terms; logical OR across fields per term).
-            2. If only ``search_query`` is supplied, a filtered result set is produced and rendered in
-                    ``caan_search_results.html``. Each CAAN in the results links to its drawings page.
+                2. If only ``search_query`` is supplied, a filtered result set is produced and rendered in
+                    ``caan_search_results.html``. Each CAAN in the results links to its info page.
             3. If no matches are found, the form is re-rendered with an informational flash message.
 
     Form Fields (``CAANSearchForm``):
@@ -203,7 +203,7 @@ def caan_search():
 
     Returns:
             - GET: Renders ``caan_search.html`` with empty form.
-            - POST (exact CAAN provided): Redirect to ``project_tools.caan_drawings``.
+            - POST (exact CAAN provided): Redirect to ``project_tools.caan_info``.
             - POST (search terms): Renders ``caan_search_results.html`` with ``table_list`` (list of dicts:
                 ``caan``, ``name``, ``description``) and original ``query`` string.
             - POST (no results): Re-renders ``caan_search.html`` with flash message.
@@ -219,7 +219,7 @@ def caan_search():
         try:
             # direct navigation if an exact CAAN provided
             if form.enter_caan.data:
-                return flask.redirect(flask.url_for('project_tools.caan_drawings', caan=form.enter_caan.data.strip()))
+                return flask.redirect(flask.url_for('project_tools.caan_info', caan=form.enter_caan.data.strip()))
 
             if not form.search_query.data:
                 raise ValueError("Missing search query")
@@ -267,59 +267,45 @@ def caan_search():
     return flask.render_template('caan_search.html', form=form)
 
 
-@project_tools.route("/caan_drawings/<caan>", methods=['GET', 'POST'])
-def caan_drawings(caan):
+@project_tools.route("/caan_info/<caan>", methods=['GET'])
+def caan_info(caan):
     """
-    Endpoint for displaying drawings for a given CAAN.
+    Endpoint for displaying details and associated projects for a given CAAN.
 
-    This endpoint retrieves and displays the locations of project drawings associated with a given CAAN.
-    It checks the database for projects linked to the CAAN and categorizes them based on whether they have drawings.
-    The locations of the drawings are then displayed in an HTML table.
+    This endpoint retrieves and displays CAAN details plus all projects associated with the CAAN.
+    It includes a "Drawings?" status column based on FileMaker data and links each row to
+    the root project folder path on the archives server.
 
     Path Parameters:
-        caan (str): The CAAN identifier for which to retrieve project drawings.
+        caan (str): The CAAN identifier for which to retrieve project and metadata details.
 
     Returns:
-        Response: Renders the 'caan_drawings.html' template with tables of projects that have drawings and those that might have drawings.
+        Response: Renders the 'caan_info.html' template with CAAN metadata and a table of associated projects.
                   Returns a 404 response if the CAAN is not found or if no projects are associated with the CAAN.
     """
 
-    def project_drawing_location(project_location, archives_location, network_location, drawing_folder_prefix = "f5"):
-        """
-        Returns the location of the drawings folder for a project for access by .
-        @param project_location: location of the project folder
-        @param drawing_folder_prefix: prefix of the drawings folder
-        @return: location of the drawings folder
-        """
-        
-        if not project_location or not archives_location or not network_location:
-            return None
-        
-        app_path_to_proj = os.path.join(archives_location, project_location)
-        if os.path.exists(app_path_to_proj):
-            drawing_folder_prefix = drawing_folder_prefix.lower()
-            for entry in os.scandir(app_path_to_proj):
-            
-                if entry.is_dir() and entry.name.lower().startswith('f '):
-                    project_location = os.path.join(project_location, entry.name)
-                    app_path_to_proj = os.path.join(app_path_to_proj, entry.name)
+    def project_number_sort_key(project_number):
+        # Split alpha and numeric chunks so mixed values sort more naturally (e.g. 6300-7A before 6300-11).
+        number_str = str(project_number) if project_number is not None else ""
+        return tuple(
+            (0, int(chunk)) if chunk.isdigit() else (1, chunk.lower())
+            for chunk in re.split(r'(\d+)', number_str)
+            if chunk
+        )
 
-                    for entry2 in os.scandir(app_path_to_proj):
-                        if entry2.is_dir() and entry2.name.lower().startswith(drawing_folder_prefix):
-                            project_location = os.path.join(project_location, entry2.name)
-                            break
-                    break
-                
-                # if the entry is a directory and starts with the drawing folder prefix, then we have found the drawings folder
-                if entry.is_dir() and entry.name.lower().startswith(drawing_folder_prefix):
-                    project_location = os.path.join(project_location, entry.name)
-                    break
-            
-            user_project_path = utils.FileServerUtils.user_path_from_db_data(file_server_directories=project_location,
-                                                                             user_archives_location=network_location)
-            return user_project_path
-        
-        return None
+    def drawings_label(drawings_value):
+        if pd.isnull(drawings_value):
+            return "UNKNOWN"
+        return "Yes" if bool(drawings_value) else "No"
+
+    def project_root_location(project_location, network_location):
+        if not project_location or not network_location:
+            return None
+
+        return utils.FileServerUtils.user_path_from_db_data(
+            file_server_directories=project_location,
+            user_archives_location=network_location
+        )
     
     try:
         # check if the caan value exists in the database
@@ -335,47 +321,39 @@ def caan_drawings(caan):
         if caan_projects_df.empty:
             return flask.Response(f"No projects found for CAAN {caan}.", status=404)
 
-        # split projects into those with drawings and those without
-        has_drawings_groups = caan_projects_df.groupby('drawings')
-        if True in has_drawings_groups.groups.keys():
-            has_drawings_df = has_drawings_groups.get_group(True)
+        row_root_location = lambda row: project_root_location(
+            project_location=row["file_server_location"],
+            network_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+        )
+        html_col_widths = {"Number": "10%", "Name": "33%", "Drawings?": "12%", "Location": "45%"}
 
-        else:
-            has_drawings_df = pd.DataFrame()
+        caan_projects_df["Drawings?"] = caan_projects_df["drawings"].apply(drawings_label)
+        caan_projects_df["_drawings_rank"] = caan_projects_df["Drawings?"].map({"Yes": 0, "UNKNOWN": 1, "No": 2})
+        caan_projects_df["_number_sort_key"] = caan_projects_df["number"].apply(project_number_sort_key)
+        caan_projects_df["Location"] = caan_projects_df.apply(row_root_location, axis=1)
 
-        row_drawing_location = lambda row: project_drawing_location(project_location=row["file_server_location"],
-                                                                    archives_location=flask.current_app.config.get("ARCHIVES_LOCATION"),
-                                                                    network_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION'))
-        html_col_widths = {"Number": "10%", "Name": "35%", "Location": "55%"}
-        
-        # get all file locations for projects with drawings
-        maybe_drawings_html, has_drawings_html = None, None
-        if not has_drawings_df.empty:
-            has_drawings_df.sort_values(by=["number"], inplace=True)
-            has_drawings_df["Location"] = has_drawings_df.apply(row_drawing_location, axis=1)
-            has_drawings_df = has_drawings_df[["number", "name", "Location"]]
-            has_drawings_df.columns = has_drawings_df.columns.str.capitalize()
-            has_drawings_html = utils.html_table_from_df(df=has_drawings_df,
-                                                        path_columns=["Location"],
-                                                        column_widths=html_col_widths)
-
-        maybe_drawings_df = caan_projects_df[caan_projects_df["drawings"].isnull()]
-        if not maybe_drawings_df.empty:
-            maybe_drawings_df.sort_values(by=["number"], inplace=True)
-            maybe_drawings_df["Location"] = maybe_drawings_df.apply(row_drawing_location, axis=1)
-            maybe_drawings_df = maybe_drawings_df[["number", "name", "Location"]]
-            maybe_drawings_df.columns = maybe_drawings_df.columns.str.capitalize()
-            maybe_drawings_html = utils.html_table_from_df(df=maybe_drawings_df,
-                                                        path_columns=["Location"],
-                                                        column_widths=html_col_widths)
+        caan_projects_df.sort_values(by=["_drawings_rank", "_number_sort_key"], inplace=True)
+        projects_table_df = caan_projects_df[["number", "name", "Drawings?", "Location"]]
+        projects_table_df.columns = ["Number", "Name", "Drawings?", "Location"]
+        projects_html = utils.html_table_from_df(
+            df=projects_table_df,
+            path_columns=["Location"],
+            column_widths=html_col_widths
+        )
         
         # retrieve caan data
         caan = CAANModel.query.filter(CAANModel.caan == caan).first()
 
-        return flask.render_template('caan_drawings.html', caan=caan.caan, caan_name=caan.name, drawings_confirmed_table=has_drawings_html, drawings_maybe_table=maybe_drawings_html)
+        return flask.render_template(
+            'caan_info.html',
+            caan=caan.caan,
+            caan_name=caan.name,
+            caan_description=caan.description,
+            projects_table=projects_html
+        )
     except Exception as e:
         return utils.FlaskAppUtils.api_exception_subroutine(
-            response_message="Error retrieving CAAN drawings:",
+            response_message="Error retrieving CAAN information:",
             thrown_exception=e
         )
 

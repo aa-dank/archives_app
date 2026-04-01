@@ -144,6 +144,8 @@ def html_table_from_df(df, path_columns: List[str] = [], html_columns: List[str]
     :param html_columns: list of column names that need to be transformed to render correctly in HTML
     :return: html table string
     """
+    df = df.copy()
+
     # The following lines of code are to resolve an issue where html collapses multiple spaces into one space but 
     # to_html() escapes the non-collapsing html space character. The solution is to replace spaces in filepaths with 
     # a uncommon char sequence before the to_html() render and then replace the char sequence with the non-collapsing
@@ -928,7 +930,7 @@ class FilesUtils:
         :return: The cleaned filename safe for use on most file systems.
         """
         clean_filename = proposed_filename.replace('\n', '')
-        clean_filename = "".join(i for i in clean_filename if i not in "\/:*?<>|")
+        clean_filename = "".join(i for i in clean_filename if i not in "\\/:*?<>|")
         clean_filename = clean_filename.strip()
         clean_filename = sanitize_unicode(clean_filename)
         return clean_filename
