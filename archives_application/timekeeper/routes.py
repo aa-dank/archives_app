@@ -453,7 +453,7 @@ def generate_user_timesheet_dataframes(user_id: int, start_date=None, end_date=N
         day_data["Shifts"] = compile_shifts(range_date, timesheet_df)
 
         # Mush all journal entries together into a single journal entry
-        compiled_journal = compile_journal(range_date, timesheet_df, " \ ")
+        compiled_journal = compile_journal(range_date, timesheet_df, " \\ ")
         day_data["Journal"] = compiled_journal
         all_days_data.append(day_data)
     
