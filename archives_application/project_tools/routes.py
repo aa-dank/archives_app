@@ -349,6 +349,10 @@ def caan_info(caan):
             caan=caan.caan,
             caan_name=caan.name,
             caan_description=caan.description,
+            caan_address_street=caan.address_street,
+            caan_address_city=caan.address_city,
+            caan_address_zip=caan.address_zip,
+            caan_area=caan.area,
             projects_table=projects_html
         )
     except Exception as e:
