@@ -12,6 +12,17 @@
                     <em>No description provided.</em>
                 {% endif %}
             </p>
+            {% if caan_address_street or caan_address_city or caan_address_zip %}
+            <p>
+                <strong>Address:</strong>
+                {{ caan_address_street or '' }}{% if caan_address_street and (caan_address_city or caan_address_zip) %}, {% endif %}{{ caan_address_city or '' }}{% if caan_address_city and caan_address_zip %} {% endif %}{{ caan_address_zip or '' }}
+            </p>
+            {% endif %}
+            {% if caan_area %}
+            <p>
+                <strong>Area:</strong> {{ caan_area }}
+            </p>
+            {% endif %}
             <p>
                 This page lists CAAN details and associated projects with their respective root locations on the archives server.<br>
                 Data is pulled from the FileMaker database; therefore, accuracy depends on the data stored there.<br>
