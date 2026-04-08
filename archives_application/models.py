@@ -3,6 +3,7 @@
 from archives_application import db, login_manager
 from datetime import datetime
 from flask_login import UserMixin
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import func, CheckConstraint
 
 
@@ -92,6 +93,12 @@ class FileModel(db.Model):
         passive_deletes=True,
         cascade="all, delete-orphan",
     )
+    date_mentions = db.relationship(
+        "FileDateMentionModel",
+        back_populates="file",
+        passive_deletes=True,
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self):
         return f"file: {self.id}, {self.hash}, {self.size}, {self.extension}"
@@ -155,11 +162,12 @@ class WorkerTaskModel(db.Model):
         return f"Enqueued Task: {self.id}, {self.task_id}, {self.time_enqueued}, {self.origin}, {self.function_name}, {self.time_completed}, {self.status}, {self.task_results}"
 
 
-project_caans = db.Table(
-    'project_caans',
-    db.Column('project_id', db.Integer, db.ForeignKey('projects.id'), primary_key=True),
-    db.Column('caan_id', db.Integer, db.ForeignKey('caans.id'), primary_key=True)
-)
+class ProjectCaanModel(db.Model):
+    __tablename__ = 'project_caans'
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), primary_key=True)
+    caan_id = db.Column(db.Integer, db.ForeignKey('caans.id'), primary_key=True)
+    project = db.relationship('ProjectModel', back_populates='project_caans')
+    caan = db.relationship('CAANModel', back_populates='project_caans')
 
 
 class ProjectModel(db.Model):
@@ -169,7 +177,13 @@ class ProjectModel(db.Model):
     name = db.Column(db.String, nullable=False)
     file_server_location = db.Column(db.String)
     drawings = db.Column(db.Boolean)
-    caans = db.relationship('CAANModel', secondary=project_caans, back_populates='projects')
+    fmp_id_primary = db.Column(db.Integer, unique=True)
+    closed = db.Column(db.Boolean)
+    campus_client = db.Column(db.String)
+    last_synced_at = db.Column(db.DateTime(timezone=True))
+    caans = db.relationship('CAANModel', secondary=ProjectCaanModel.__table__, back_populates='projects')
+    contracts = db.relationship('ContractModel', backref='project', lazy=True)
+    project_caans = db.relationship('ProjectCaanModel', back_populates='project')
 
     def __repr__(self):
         return f"project: {self.id}, {self.number}, {self.name}, {self.file_server_location}, {self.drawings}"
@@ -181,22 +195,35 @@ class CAANModel(db.Model):
     caan = db.Column(db.String, nullable=False)
     name = db.Column(db.String)
     description = db.Column(db.String)
-    projects = db.relationship('ProjectModel', secondary=project_caans, back_populates='caans')
+    fmp_id_primary = db.Column(db.Integer, unique=True)
+    address_street = db.Column(db.String)
+    address_city = db.Column(db.String)
+    address_zip = db.Column(db.String)
+    area = db.Column(db.String)
+    last_synced_at = db.Column(db.DateTime(timezone=True))
+    projects = db.relationship('ProjectModel', secondary=ProjectCaanModel.__table__, back_populates='caans')
+    project_caans = db.relationship('ProjectCaanModel', back_populates='caan')
     
     def __repr__(self):
         return f"caan: {self.id}, {self.caan}, {self.name}, {self.description}"
 
 class FileContentModel(db.Model):
     __tablename__ = 'file_contents'
+    __table_args__ = (
+        db.Index('ix_file_contents_minilm_emb', 'minilm_emb', postgresql_using='ivfflat',
+                 postgresql_ops={'minilm_emb': 'vector_cosine_ops'}, postgresql_with={'lists': 100}),
+        db.Index('ix_file_contents_mpnet_emb', 'mpnet_emb', postgresql_using='ivfflat',
+                 postgresql_ops={'mpnet_emb': 'vector_cosine_ops'}, postgresql_with={'lists': 100}),
+    )
     file_hash = db.Column(db.String,
                           db.ForeignKey("files.hash", ondelete="CASCADE"),
                           primary_key=True)
     file = db.relationship("FileModel", back_populates="content", uselist=False)
     source_text = db.Column(db.Text)
     minilm_model = db.Column(db.Text, default='all-minilm-l6-v2')
-    minilm_emb = db.Column(db.LargeBinary)
+    minilm_emb = db.Column(Vector(384))
     mpnet_model = db.Column(db.Text)
-    mpnet_emb = db.Column(db.LargeBinary)
+    mpnet_emb = db.Column(Vector(768))
     updated_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
     text_length = db.Column(db.Integer)
 
@@ -206,6 +233,9 @@ class FileContentModel(db.Model):
 
 class FileContentFailureModel(db.Model):
     __tablename__ = 'file_content_failures'
+    __table_args__ = (
+        CheckConstraint("stage in ('extract', 'embed')", name='file_content_failures_stage_check'),
+    )
 
     file_hash = db.Column(
         db.String,
@@ -218,9 +248,68 @@ class FileContentFailureModel(db.Model):
     attempts = db.Column(db.Integer, nullable=False, server_default="1")
     last_failed_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=func.now())
 
+
+class FileDateMentionModel(db.Model):
+    __tablename__ = 'file_date_mentions'
+
+    file_hash = db.Column(
+        db.String,
+        db.ForeignKey("files.hash", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    mention_date = db.Column(db.Date, nullable=False, primary_key=True)
+    granularity = db.Column(db.Text, nullable=False, primary_key=True, default='day')
+    mentions_count = db.Column(db.Integer, nullable=False, server_default="1")
+    extractor = db.Column(db.Text)
+    extracted_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    file = db.relationship("FileModel", back_populates="date_mentions")
+
     __table_args__ = (
-        CheckConstraint("stage in ('extract', 'embed')", name="file_content_failures_stage_check"),
+        db.Index('ix_fdm_date', 'mention_date'),
+        db.Index('ix_fdm_date_gran', 'mention_date', 'granularity'),
+        db.Index('ix_fdm_file', 'file_hash'),
     )
 
     def __repr__(self):
-        return f"FileContentFailure: {self.file_hash}, stage={self.stage}, attempts={self.attempts}"
+        return f"FileDateMention: {self.file_hash}, {self.mention_date}, granularity={self.granularity}, count={self.mentions_count}"
+
+
+class ContractModel(db.Model):
+    __tablename__ = 'contracts'
+
+    id = db.Column(db.Integer, primary_key=True)
+    fmp_id_primary = db.Column(db.Integer, unique=True)
+    contract_number = db.Column(db.Integer)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'))
+    # Dates
+    contract_date = db.Column(db.Date)
+    ntp_start_date = db.Column(db.Date)
+    beneficial_occupancy_date = db.Column(db.Date)
+    substantial_completion_date = db.Column(db.Date)
+    certificate_of_occupancy_date = db.Column(db.Date)
+    noc_completion_date = db.Column(db.Date)
+    noc_recorded_date = db.Column(db.Date)
+    termination_date = db.Column(db.Date)
+    bid_date = db.Column(db.Date)
+    change_order_revised_expected_end = db.Column(db.Date)
+    # Financial
+    cost_estimate = db.Column(db.Numeric(14, 2))
+    original_contract_cost = db.Column(db.Numeric(14, 2))
+    change_order_total = db.Column(db.Numeric(14, 2))
+    change_order_revised_cost = db.Column(db.Numeric(14, 2))
+    account_number = db.Column(db.String)
+    funding_number = db.Column(db.String)
+    # Duration (days)
+    original_project_duration = db.Column(db.Integer)
+    change_order_time_total = db.Column(db.Integer)
+    change_order_revised_duration = db.Column(db.Integer)
+    # Parties & description
+    contractor_org_name = db.Column(db.String)
+    executive_design_org_name = db.Column(db.String)
+    scope_description = db.Column(db.Text)
+    # Sync metadata
+    last_synced_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self):
+        return f"Contract: {self.id}, project_id={self.project_id}, contractor={self.contractor_org_name}"

@@ -15,8 +15,9 @@ class TimekeepingForm(FlaskForm):
 class TimeSheetForm(FlaskForm):
     timesheet_begin = DateField('Timesheet Start', validators=[DataRequired()])
     timesheet_end = DateField('Timesheet End', validators=[DataRequired()])
-    rolling_avg_window = IntegerField('Rolling Average Window')
+    rolling_avg_window = IntegerField('Rolling Average Window (days)', validators=[Optional()])
     submit = SubmitField('Submit')
+    export_spreadsheet = SubmitField('Export Spreadsheet')
 
     def validate_timesheet_end(self, timesheet_end):
         if not timesheet_end.data > self.timesheet_begin.data:
@@ -30,7 +31,8 @@ class TimeSheetForm(FlaskForm):
 class TimeKeeperAdminForm(FlaskForm):
     operation = RadioField('Operation', 
                           choices=[('employee_timesheet', 'View Employee Timesheet'), 
-                                   ('who_work_when', 'View Who Worked When')],
+                                   ('who_work_when', 'View Who Worked When'),
+                                   ('archiving_dashboard', 'View Archiving Data')],
                           validators=[DataRequired()],
                           default='employee_timesheet')
     employee_email = SelectField('Employee Email')
@@ -51,6 +53,11 @@ class TimeKeeperAdminForm(FlaskForm):
         if self.operation.data == 'employee_timesheet' and not self.employee_email.data:
             self.employee_email.errors = ["Employee email is required when viewing timesheets"]
             return False
+
+        if self.operation.data == 'archiving_dashboard':
+            if not self.employee_email.data or self.employee_email.data == 'ALL':
+                self.employee_email.errors = ["Please select a specific employee to view their archiving dashboard."]
+                return False
         
         # Return the original validation result after applying our custom rules
         return is_valid

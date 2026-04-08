@@ -1,6 +1,7 @@
 # archives_application/timekeeper/routes.py
 
 import flask
+import io
 import matplotlib
 matplotlib.use('Agg') # Required to generate plots without a display
 import matplotlib.pyplot as plt
@@ -183,6 +184,91 @@ def compile_journal(date: datetime.date, timecard_df: pd.DataFrame, delimiter_st
     return compiled_journal
 
 
+def compile_shifts(date: datetime.date, timecard_df: pd.DataFrame) -> str:
+    """
+    Builds a string summarising the clock-in/clock-out pairs for a given day.
+    Each shift is shown as 'HH:MM-HH:MM' (24-hr). An unmatched clock-in is
+    shown as 'HH:MM-?' to indicate the clock-out is missing.
+
+    Args:
+        date: The calendar day to inspect.
+        timecard_df: DataFrame of TimekeeperEvent rows for the user; must contain
+                     'datetime' and 'clock_in_event' columns.
+    Returns:
+        Newline-separated shift strings, e.g. "09:00-12:30\n13:00-17:00".
+        Empty string when no events exist for the day.
+    """
+    date_start = datetime.combine(date, time.min)
+    date_end = datetime.combine(date, time.max)
+
+    day_df = timecard_df[
+        (timecard_df["datetime"] >= date_start) & (timecard_df["datetime"] <= date_end)
+    ].sort_values("datetime")
+
+    if day_df.empty:
+        return ""
+
+    shifts = []
+    pending_clock_in = None
+
+    for _, row in day_df.iterrows():
+        if row["clock_in_event"]:
+            # If there is already an open clock-in, record it as incomplete before starting a new one
+            if pending_clock_in is not None:
+                shifts.append(f"{pending_clock_in.strftime('%H:%M')}-?")
+            pending_clock_in = row["datetime"]
+        else:
+            if pending_clock_in is not None:
+                shifts.append(
+                    f"{pending_clock_in.strftime('%H:%M')}-{row['datetime'].strftime('%H:%M')}"
+                )
+                pending_clock_in = None
+            # a clock-out with no preceding clock-in is ignored
+
+    # Handle a trailing unmatched clock-in
+    if pending_clock_in is not None:
+        shifts.append(f"{pending_clock_in.strftime('%H:%M')}-?")
+
+    return "\n".join(shifts)
+
+
+def _timekeeper_df_to_html(df: pd.DataFrame, **kwargs) -> str:
+    """
+    Renders a timekeeper DataFrame as an HTML table.
+    Normalises \\r\\n, \\r, and \\n in string columns to <br> tags so they render
+    correctly in the browser. Column widths are constrained so the Journal column
+    does not dominate the layout.
+    """
+    render_df = df.copy()
+    str_cols = list(render_df.select_dtypes(include='object').columns)
+    for col in str_cols:
+        render_df[col] = (
+            render_df[col]
+            .fillna('')
+            .astype(str)
+            .str.replace('\r\n', '<br>', regex=False)
+            .str.replace('\r', '<br>', regex=False)
+            .str.replace('\n', '<br>', regex=False)
+        )
+
+    default_column_widths = {
+        'Date':               '12%',
+        'Hours Worked':        '7%',
+        'Archived Files':      '7%',
+        'Archived Megabytes':  '8%',
+        'Shifts':             '10%',
+        'Journal':            '56%',
+    }
+    column_widths = kwargs.pop('column_widths', default_column_widths)
+
+    return utils.html_table_from_df(
+        render_df,
+        html_columns=str_cols,
+        column_widths=column_widths,
+        **kwargs
+    )
+
+
 @timekeeper.route("/timekeeper", methods=['GET', 'POST'])
 @login_required
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
@@ -363,8 +449,11 @@ def generate_user_timesheet_dataframes(user_id: int, start_date=None, end_date=N
             if not arched_files_df.empty:
                 day_data["Archived Megabytes"] = (arched_files_df["file_size"].sum()/1000000).round(2)
 
+        # Build shift periods string for the day
+        day_data["Shifts"] = compile_shifts(range_date, timesheet_df)
+
         # Mush all journal entries together into a single journal entry
-        compiled_journal = compile_journal(range_date, timesheet_df, " \ ")
+        compiled_journal = compile_journal(range_date, timesheet_df, " \\ ")
         day_data["Journal"] = compiled_journal
         all_days_data.append(day_data)
     
@@ -460,15 +549,15 @@ def user_timesheet(employee_id):
             app_obj=flask.current_app
         )
 
-    archivist_dict["daily_html_table"] = timesheet_df.to_html(index=False, classes="table-hover table-dark")
-    archivist_dict["weekly_html_table"] = weekly_summary_df.to_html(index=False, classes="table-hover table-dark")
+    archivist_dict["daily_html_table"] = _timekeeper_df_to_html(timesheet_df)
+    archivist_dict["weekly_html_table"] = _timekeeper_df_to_html(weekly_summary_df)
 
     return flask.render_template('timesheet_tables.html', title="Timesheet", form=form, archivist_info_list=[archivist_dict])
 
 
 @timekeeper.route("/timekeeper/all", methods=['GET', 'POST'])
 @login_required
-@utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
+@utils.FlaskAppUtils.roles_required(['ADMIN'])
 def all_timesheets():
     """Displays all timesheets for archivists.
 
@@ -519,8 +608,8 @@ def all_timesheets():
         # iterate over archivists to create individualized timesheet tables
         for archivist_dict in archivists:
             archivist_dict["timesheet_df"], archivist_dict["weekly_summary_df"] = generate_user_timesheet_dataframes(archivist_dict["id"], start_date, end_date)
-            archivist_dict["daily_html_table"] = archivist_dict["timesheet_df"].to_html(index=False, classes="table-hover table-dark")
-            archivist_dict["weekly_html_table"] = archivist_dict["weekly_summary_df"].to_html(index=False, classes="table-hover table-dark")
+            archivist_dict["daily_html_table"] = _timekeeper_df_to_html(archivist_dict["timesheet_df"])
+            archivist_dict["weekly_html_table"] = _timekeeper_df_to_html(archivist_dict["weekly_summary_df"])
 
     except Exception as e:
         utils.FlaskAppUtils.web_exception_subroutine(
@@ -583,6 +672,11 @@ def timekeeper_admin_interface():
                     # If no time specified, just use the date
                     return flask.redirect(flask.url_for('timekeeper.who_work_when', 
                                                       date=date_str))
+
+            elif operation == 'archiving_dashboard':
+                employee_email = form.employee_email.data
+                employee = UserModel.query.filter_by(email=employee_email).first()
+                return flask.redirect(flask.url_for('timekeeper.archiving_dashboard', archiver_id=employee.id))
 
     except Exception as e:
         return utils.FlaskAppUtils.web_exception_subroutine(
@@ -726,7 +820,7 @@ def who_work_when():
         
         # Generate HTML table
         if not work_df.empty:
-            html_table = work_df.to_html(index=False, classes="table-hover table-dark")
+            html_table = _timekeeper_df_to_html(work_df)
         else:
             html_table = "<p>No employees were working during the specified time.</p>"
             
@@ -748,38 +842,45 @@ def who_work_when():
         )
 
 
-@timekeeper.route("/archiving_dashboard/<archiver_id>", methods=['GET', 'POST'])
+@timekeeper.route("/archiving_dashboard/<int:archiver_id>", methods=['GET', 'POST'])
 @login_required
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
 def archiving_dashboard(archiver_id):
-    """Displays archiving metrics for a specific archivist.
+    """Displays archiving metrics for a specific archivist, or exports their archived files as a spreadsheet.
 
-    This endpoint provides a form for selecting the date range and rolling average window for the metrics.
-    It displays the total number of files archived, the total data quantity archived, and generates charts
-    showing the archiving activity over the selected date range.
+    This endpoint provides a form for selecting the date range and rolling average window. Depending on
+    which submit button is used, it either renders activity charts or returns an Excel file of the
+    archivist's archived_files records for the selected date range.
 
     Args:
         archiver_id (int): The ID of the archivist whose metrics are to be displayed.
 
     Form data:
-        timesheet_begin (date): Start date of the date range for the metrics.
-        timesheet_end (date): End date of the date range for the metrics.
-        rolling_avg_window (int): Number of days to use for the rolling average in the charts.
+        timesheet_begin (date): Start date of the date range for the metrics or spreadsheet export.
+        timesheet_end (date): End date of the date range for the metrics or spreadsheet export.
+        rolling_avg_window (int): Number of days to use for the rolling average in the charts (ignored for export).
+        submit (SubmitField): Renders charts for the selected date range.
+        export_spreadsheet (SubmitField): Downloads an Excel file of the archivist's archived_files entries
+            for the selected date range. Columns id, archivist_id, file_id, and document_date are excluded.
+            destination_path values are converted to user-facing Windows paths. Relative archive paths are
+            expected, and legacy absolute archive paths are handled when possible.
 
     Usage:
         - Users can select the start and end dates for the date range they want to analyze.
         - Users can specify the rolling average window to smooth out the data in the charts.
-        - The endpoint displays the total number of files archived and the total data quantity archived.
-        - The endpoint generates and displays charts showing the archiving activity over the selected date range.
+        - Clicking 'Submit' displays total files archived, total data archived, and activity charts.
+        - Clicking 'Export Spreadsheet' downloads an .xlsx file of the archivist's archived file records
+          for the entered date range.
 
     Returns:
-        Response: Renders the 'archivist_dashboard.html' template with the following data:
+        Response: Either renders the 'archivist_dashboard.html' template with the following data:
             - archivist_name: The name of the archivist.
-            - archivist_files_count: The total number of files archived by the archivist.
-            - archivist_data_quantity: The total data quantity archived by the archivist.
-            - total_plot: The path to the generated chart showing the total archiving activity.
-            - archivist_plot: The path to the generated chart showing the archivist's archiving activity.
+            - archivist_files_count: The total number of files archived by the archivist (all time).
+            - archivist_data_quantity: The total data quantity archived by the archivist in GB (all time).
+            - total_plot: URL to the generated chart showing collective archiving activity.
+            - archivist_plot: URL to the generated chart showing the archivist's archiving activity.
             - form: The TimeSheetForm object for selecting the date range and rolling average window.
+        Or returns an Excel file attachment when the export_spreadsheet button is used.
     """
     def bytes_to_mb(bytes):
         return round((bytes/(1024**2)), 3)
@@ -947,9 +1048,9 @@ def archiving_dashboard(archiver_id):
         return file_destination
 
 
-    # archivists should only be able to view their own metrics. Get unauthorized if they try to view another's
+    # Archivists may only view their own dashboard; admins may view any dashboard.
     try:
-        if 'ADMIN' not in current_user.roles:
+        if 'ADMIN' not in current_user.roles.split(","):
             current_user_id = UserModel.query.filter_by(email=current_user.email).first().id
             if current_user_id != archiver_id:
                 return flask.Response("Unauthorized", status=401)
@@ -962,9 +1063,8 @@ def archiving_dashboard(archiver_id):
         )
 
     try:
-        archiver_id = int(archiver_id)
         default_chart_window = 30 # measured in days
-        rolling_avg_window = 10 # measured in days
+        rolling_avg_window = 7 # measured in days; default used when none is entered in the form
         query_start_date = datetime.now() - timedelta(days = default_chart_window)
         query_start_date = query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
         query_end_date = datetime.now()
@@ -980,7 +1080,45 @@ def archiving_dashboard(archiver_id):
             query_end_date = datetime(year=user_end_date.year, month=user_end_date.month, day=user_end_date.day)
             if form.rolling_avg_window.data:
                 rolling_avg_window = int(form.rolling_avg_window.data)
-        
+
+            if form.export_spreadsheet.data:
+                export_query = db.session.query(ArchivedFileModel)\
+                    .filter(
+                        ArchivedFileModel.archivist_id == archiver_id,
+                        ArchivedFileModel.date_archived.between(query_start_date, query_end_date)
+                    )
+                export_df = utils.FlaskAppUtils.db_query_to_df(query=export_query)
+                drop_cols = [c for c in ['id', 'archivist_id', 'file_id', 'document_date'] if c in export_df.columns]
+                export_df = export_df.drop(columns=drop_cols)
+                # Convert expected relative archive paths, with best-effort handling for legacy absolute values.
+                if 'destination_path' in export_df.columns:
+                    archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+                    user_archives_location = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+                    export_df['destination_path'] = export_df['destination_path'].map(
+                        lambda p: utils.FileServerUtils.archived_file_path_to_user_path(
+                            destination_path=p,
+                            archives_location=archives_location,
+                            user_archives_location=user_archives_location
+                        ) if pd.notna(p) else p
+                    )
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    export_df.to_excel(writer, index=False, sheet_name='Archived Files')
+                    worksheet = writer.sheets['Archived Files']
+                    for column_cells in worksheet.columns:
+                        max_length = max((len(str(cell.value)) for cell in column_cells if cell.value), default=0)
+                        worksheet.column_dimensions[column_cells[0].column_letter].width = max_length + 2
+                output.seek(0)
+                start_str = query_start_date.strftime('%Y%m%d')
+                end_str = query_end_date.strftime('%Y%m%d')
+                download_name = f"{archiver_name}_archived_files_{start_str}_to_{end_str}.xlsx"
+                return flask.send_file(
+                    output,
+                    download_name=download_name,
+                    as_attachment=True,
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+
         # We start the query with a date that is the rolling_avg_window days before the chosen start date,
         # so that the rolling average of the first included day can be calculated
         query_start_date = query_start_date - timedelta(days=rolling_avg_window)
