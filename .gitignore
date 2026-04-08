@@ -52,6 +52,8 @@ archives_application/config.py
 # Dev Files #
 /dev_files
 \dev_files
+/development
+\development
 .idea/csv-plugin.xml
 *\__pycache__*
 *.pyc

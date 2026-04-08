@@ -22,7 +22,7 @@
 			<tbody>
 			{% for row in table_list %}
 				<tr>
-					<td><a href="{{ url_for('project_tools.caan_drawings', caan=row.caan) }}">{{ row.caan }}</a></td>
+					<td><a href="{{ url_for('project_tools.caan_info', caan=row.caan) }}">{{ row.caan }}</a></td>
 					<td>{{ row.name }}</td>
 					<td>{{ row.description }}</td>
 				</tr>

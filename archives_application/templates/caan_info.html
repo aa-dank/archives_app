@@ -1,0 +1,49 @@
+{% set hide_sidebar = True %}
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <h2>CAAN {{ caan }}: {{ caan_name }}</h2>
+        <div>
+            <p>
+                <strong>Description:</strong>
+                {% if caan_description %}
+                    {{ caan_description }}
+                {% else %}
+                    <em>No description provided.</em>
+                {% endif %}
+            </p>
+            {% if caan_address_street or caan_address_city or caan_address_zip %}
+            <p>
+                <strong>Address:</strong>
+                {{ caan_address_street or '' }}{% if caan_address_street and (caan_address_city or caan_address_zip) %}, {% endif %}{{ caan_address_city or '' }}{% if caan_address_city and caan_address_zip %} {% endif %}{{ caan_address_zip or '' }}
+            </p>
+            {% endif %}
+            {% if caan_area %}
+            <p>
+                <strong>Area:</strong> {{ caan_area }}
+            </p>
+            {% endif %}
+            <p>
+                This page lists CAAN details and associated projects with their respective root locations on the archives server.<br>
+                Data is pulled from the FileMaker database; therefore, accuracy depends on the data stored there.<br>
+                Copy and paste values from the location column into a web or file browser address bar.
+            </p>
+            <p><strong>Drawings? legend:</strong></p>
+            <ul>
+                <li><strong>Yes</strong>: FileMaker indicates drawings exist.</li>
+                <li><strong>UNKNOWN</strong>: FileMaker drawings value is blank.</li>
+                <li><strong>No</strong>: FileMaker indicates drawings do not exist.</li>
+            </ul>
+        </div>
+
+        <div>
+            {% if projects_table %}
+                <div class="table-responsive">
+                    {{ projects_table | safe }}
+                </div>
+            {% else %}
+                <p>No projects found for this CAAN.</p>
+            {% endif %}
+        </div>
+    </div>
+{% endblock content %}
