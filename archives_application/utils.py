@@ -308,7 +308,16 @@ class FileServerUtils:
     @staticmethod
     def relative_archive_path_to_user_path(relative_path, user_archives_location, user_location_networked = False, filename = None):
         """
-        Join a relative archive path to the user-facing archives root using Windows separators.
+        Join an archive-root-relative path to the user-facing archive mount point using
+        Windows backslash separators. Core primitive called by ``user_path_from_db_data``,
+        ``archived_file_path_to_user_path``, and ``app_path_to_user_path``.
+
+        :param relative_path: Archive-root-relative directory path, e.g. ``"ClientFiles/ProjectX"``.
+        :param user_archives_location: User-facing mount point or UNC root, e.g.
+            ``"\\\\fileserver\\Archives"`` or ``"Z:\\Archives"``.
+        :param user_location_networked: Force a ``\\\\`` UNC prefix on the result. Defaults to False.
+        :param filename: Optional filename to append (e.g. ``files.filename``). Defaults to None.
+        :return: Windows-style path, e.g. ``"\\\\fileserver\\Archives\\ClientFiles\\ProjectX\\report.pdf"``.
         """
         relative_parts = FileServerUtils._clean_split_parts(FileServerUtils.split_path(relative_path))
         user_root_parts = FileServerUtils._clean_split_parts(FileServerUtils.split_path(user_archives_location))
@@ -374,7 +383,17 @@ class FileServerUtils:
     @staticmethod
     def user_path_from_db_data(file_server_directories, user_archives_location, user_location_networked = False, filename = None):
         """
-        Takes the file_server_directories and archives_location from the database and returns a path that can be used by the user.
+        Build a user-facing Windows path from ``file_locations`` DB columns.
+
+        Combines ``file_locations.file_server_directories`` (an archive-root-relative path)
+        with the user-facing archive mount point (``USER_ARCHIVES_LOCATION`` config value)
+        to produce a path the user can open directly in Windows Explorer.
+
+        :param file_server_directories: ``file_locations.file_server_directories`` value.
+        :param user_archives_location: User-facing mount point or UNC root from app config.
+        :param user_location_networked: Force a ``\\\\`` UNC prefix on the result. Defaults to False.
+        :param filename: ``files.filename`` value to append. When None, returns the directory path only.
+        :return: Windows-style path, e.g. ``"\\\\fileserver\\Archives\\ClientFiles\\ProjectX\\report.pdf"``.
         """
         return FileServerUtils.relative_archive_path_to_user_path(
             relative_path=file_server_directories,
