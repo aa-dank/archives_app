@@ -3,8 +3,18 @@
 import flask
 import json
 import logging
+import pathlib
+import tomllib
 
-
+def retrieve_app_version():
+    """
+    Retrieves the version of the app from the pyproject.toml file. This is used for logging purposes.
+    :return: string version number
+    """
+    v_number = None
+    with open(pathlib.Path(__file__).parent.parent / "pyproject.toml", "rb") as f:
+        v_number = tomllib.load(f)["project"]["version"]
+    return v_number
 
 def google_creds_from_creds_json(creds_path):
     with open(creds_path) as creds_json:
