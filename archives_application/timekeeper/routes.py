@@ -1045,6 +1045,7 @@ def archiving_dashboard(archiver_id):
         plt.title(title, fontsize=20)
         
         plt.savefig(file_destination)
+        plt.close()
         return file_destination
 
 
