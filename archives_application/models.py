@@ -166,8 +166,8 @@ class ProjectCaanModel(db.Model):
     __tablename__ = 'project_caans'
     project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), primary_key=True)
     caan_id = db.Column(db.Integer, db.ForeignKey('caans.id'), primary_key=True)
-    project = db.relationship('ProjectModel', back_populates='project_caans')
-    caan = db.relationship('CAANModel', back_populates='project_caans')
+    project = db.relationship('ProjectModel', back_populates='project_caans', overlaps="caans,project_caans,projects")
+    caan = db.relationship('CAANModel', back_populates='project_caans', overlaps="caans,project_caans,projects")
 
 
 class ProjectModel(db.Model):
@@ -181,9 +181,9 @@ class ProjectModel(db.Model):
     closed = db.Column(db.Boolean)
     campus_client = db.Column(db.String)
     last_synced_at = db.Column(db.DateTime(timezone=True))
-    caans = db.relationship('CAANModel', secondary=ProjectCaanModel.__table__, back_populates='projects')
+    caans = db.relationship('CAANModel', secondary=ProjectCaanModel.__table__, back_populates='projects', overlaps="project_caans,project,caan")
     contracts = db.relationship('ContractModel', backref='project', lazy=True)
-    project_caans = db.relationship('ProjectCaanModel', back_populates='project')
+    project_caans = db.relationship('ProjectCaanModel', back_populates='project', overlaps="caans,projects")
 
     def __repr__(self):
         return f"project: {self.id}, {self.number}, {self.name}, {self.file_server_location}, {self.drawings}"
@@ -201,8 +201,8 @@ class CAANModel(db.Model):
     address_zip = db.Column(db.String)
     area = db.Column(db.String)
     last_synced_at = db.Column(db.DateTime(timezone=True))
-    projects = db.relationship('ProjectModel', secondary=ProjectCaanModel.__table__, back_populates='caans')
-    project_caans = db.relationship('ProjectCaanModel', back_populates='caan')
+    projects = db.relationship('ProjectModel', secondary=ProjectCaanModel.__table__, back_populates='caans', overlaps="project_caans,project,caan")
+    project_caans = db.relationship('ProjectCaanModel', back_populates='caan', overlaps="caans,projects")
     
     def __repr__(self):
         return f"caan: {self.id}, {self.caan}, {self.name}, {self.description}"
