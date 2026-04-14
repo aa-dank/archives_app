@@ -12,12 +12,11 @@ import pandas as pd
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
-from importlib.metadata import version
 from oauthlib.oauth2 import WebApplicationClient
 from urllib3.exceptions import InsecureRequestWarning
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-VERSION = version("archives-app")
+VERSION = app_config.retrieve_app_version()
 
 # Suppress only the InsecureRequestWarning.
 # https://urllib3.readthedocs.io/en/latest/advanced-usage.html#ssl-warnings
