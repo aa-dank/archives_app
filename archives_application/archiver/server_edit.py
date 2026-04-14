@@ -72,11 +72,23 @@ class ServerEdit:
         self.change_executed = False
         self.data_effected = 0
         
-        # if the serveredit is a move, change, or edit, determine if the change is to a file or directory
+        # if the ServerEdit is a move, change, or edit, determine if the change is to a file or directory
         self.is_file = False
         if self.old_path:
             self.is_file = os.path.isfile(self.old_path)
         self.files_effected = 1 if self.is_file else 0
+
+        # if ServerEdit is a RENAME edit...
+        if self.change_type.upper() == 'RENAME':
+            # ...make sure that the old and new paths have the same parent directory
+            old_parent_dir = os.path.dirname(self.old_path)
+            new_parent_dir = os.path.dirname(self.new_path)
+            if old_parent_dir != new_parent_dir:
+                raise Exception(f"Attempt at renaming paths failed. Parent directories are not the same: \n {self.new_path}\n{self.old_path}")
+            
+            # ...determine if new path already exists
+            if os.path.exists(self.new_path):
+                raise Exception(f"Cannot rename to a path that already exists: {self.new_path}")
 
     def to_dict(self):
         """
