@@ -9,7 +9,7 @@
             <p>Too many results to display. Download spreadsheet for complete results.</p>
         {% endif %}
         <p>
-            <!-- Adds the CSV file timestamp as a URL parameter -->
+            <!-- Adds the spreadsheet timestamp as a URL parameter -->
             <a href="{{ url_for('archiver.file_search', timestamp=timestamp) }}">Download results as a spreadsheet.</a>
         </p>
         <div>

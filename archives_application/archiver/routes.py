@@ -3,6 +3,7 @@
 import datetime
 import flask
 import flask_sqlalchemy
+import io
 import json
 import os
 import random
@@ -183,7 +184,7 @@ def _db_dir_from_app_path(app_path: str, archives_location: str) -> tuple[str, s
     db_dir_norm = f"{db_dir}/" if db_dir else ''
     return db_dir, db_dir_norm
 
-def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
     """
     Build a summary dataframe for immediate children of the provided user path.
     Uses the database for aggregation and filesystem only for timestamps.
@@ -217,6 +218,7 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
     # Note: folder counts and presence are derived solely from file rows; empty folders are not represented.
     aggregates = {}
     current_path_file_rows = []
+    all_recursive_file_rows = []
     unique_descendant_dirs = set()
     total_files = 0
     total_size_bytes = 0
@@ -235,6 +237,16 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
         file_size = int(size) if size else 0
         total_files += 1
         total_size_bytes += file_size
+
+        file_directory_user_path = user_path if relative_tail == '' else str(PureWindowsPath(user_path) / relative_tail)
+        file_full_user_path = str(PureWindowsPath(file_directory_user_path) / filename) if filename else file_directory_user_path
+        all_recursive_file_rows.append({
+            "Directory": file_directory_user_path,
+            "Filename": filename,
+            "File Path": file_full_user_path,
+            "Size": _format_bytes(file_size),
+            "Size Bytes": file_size,
+        })
 
         if relative_tail == '':
             if not filename:
@@ -317,6 +329,10 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
         current_files_df.sort_values(by="_size_bytes", ascending=False, inplace=True)
         current_files_df.drop(columns=["_size_bytes"], inplace=True)
 
+    all_recursive_files_df = pd.DataFrame(all_recursive_file_rows)
+    if not all_recursive_files_df.empty:
+        all_recursive_files_df.sort_values(by="Size Bytes", ascending=False, inplace=True)
+
     current_path_size_bytes = sum(row["_size_bytes"] for row in current_path_file_rows)
 
     summary_stats = {
@@ -345,7 +361,7 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
         "parent_path": parent_path,
         "summary_stats": summary_stats,
     }
-    return summary_df, current_files_df, context
+    return summary_df, current_files_df, all_recursive_files_df, context
 
 
 @archiver.route("/api/server_change", methods=['GET', 'POST'])
@@ -2339,7 +2355,7 @@ def dir_contents_summary():
         return flask.render_template('dir_contents_summary_form.html', title='Directory Contents Summary', form=form)
 
     try:
-        summary_df, current_files_df, context = _build_dir_contents_summary_df(user_path=user_path)
+        summary_df, current_files_df, _, context = _build_dir_contents_summary_df(user_path=user_path)
         summary_table_html = None if summary_df.empty else utils.html_table_from_df(
             df=summary_df,
             html_columns=['Name']
@@ -2365,7 +2381,7 @@ def dir_contents_summary():
 @archiver.route("/dir_contents_summary/download", methods=['GET'])
 def dir_contents_summary_download():
     """
-    Download the current directory contents summary as a CSV file.
+    Download the current directory contents summary as a multi-sheet Excel file.
     """
     user_path = utils.FlaskAppUtils.retrieve_request_param('path')
     if not user_path:
@@ -2373,12 +2389,35 @@ def dir_contents_summary_download():
         return flask.redirect(flask.url_for('archiver.dir_contents_summary'))
 
     try:
-        summary_df, _, _ = _build_dir_contents_summary_df(user_path=user_path)
+        summary_df, current_files_df, all_recursive_files_df, _ = _build_dir_contents_summary_df(user_path=user_path)
+
+        child_directories_df = summary_df.copy()
+        if not child_directories_df.empty and 'Name' in child_directories_df.columns:
+            child_directories_df['Name'] = child_directories_df['Name'].replace(r'<a [^>]*>', '', regex=True)
+            child_directories_df['Name'] = child_directories_df['Name'].replace('</a>', '', regex=False)
+
+        current_directory_files_df = current_files_df.copy()
+
+        recursive_files_df = all_recursive_files_df.copy()
+        if not recursive_files_df.empty and 'Size Bytes' in recursive_files_df.columns:
+            recursive_files_df.sort_values(by='Size Bytes', ascending=False, inplace=True)
+
         timestamp = datetime.now().strftime(r'%Y%m%d%H%M%S')
-        filename = f"dir_contents_summary_{timestamp}.csv"
-        csv_filepath = utils.FlaskAppUtils.create_temp_filepath(filename=filename)
-        summary_df.to_csv(csv_filepath, index=False)
-        return flask.send_file(csv_filepath, as_attachment=True)
+        filename = f"dir_contents_summary_{timestamp}.xlsx"
+        output = io.BytesIO()
+
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            child_directories_df.to_excel(writer, index=False, sheet_name='Child Directories')
+            current_directory_files_df.to_excel(writer, index=False, sheet_name='Files in Current Dir')
+            recursive_files_df.to_excel(writer, index=False, sheet_name='All Files Recursive')
+
+        output.seek(0)
+        return flask.send_file(
+            output,
+            download_name=filename,
+            as_attachment=True,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
     except Exception as e:
         return utils.FlaskAppUtils.web_exception_subroutine(
             flash_message="Error downloading directory contents summary: ",
@@ -2405,7 +2444,7 @@ def file_search():
         search_location (str): The specific directory path to limit the search. Must be copied from the Windows File Explorer address bar.
 
     Query Parameters:
-        timestamp (str, optional): The timestamp associated with a previous search's CSV results. Used to retrieve and download the corresponding spreadsheet.
+        timestamp (str, optional): The timestamp associated with a previous search's spreadsheet results. Used to retrieve and download the corresponding spreadsheet.
 
     Headers:
         Content-Type (str): Should be 'application/x-www-form-urlencoded' or 'application/json'.
@@ -2418,12 +2457,12 @@ def file_search():
                 - Renders 'file_search.html' template displaying the search form.
             - On POST request without 'timestamp':
                 - Performs the file search based on the provided form data.
-                - If the number of search results exceeds the `html_table_row_limit`, generates a CSV file and provides a download link.
+                - If the number of search results exceeds the `html_table_row_limit`, generates an Excel file and provides a download link.
                 - Renders 'file_search_results.html' template displaying the search results in an HTML table and a link to download the full results as a spreadsheet.
             - On GET or POST request with 'timestamp':
-                - Attempts to retrieve the corresponding CSV file for the provided timestamp.
-                - If the CSV file exists, sends the file as an attachment for download.
-                - If the CSV file does not exist, flashes an error message and redirects to the home page.
+                - Attempts to retrieve the corresponding spreadsheet file for the provided timestamp.
+                - If the spreadsheet file exists, sends the file as an attachment for download.
+                - If the spreadsheet file does not exist, flashes an error message and redirects to the home page.
 
     Usage:
         - Users navigate to this endpoint to search for files within the archives.
@@ -2434,12 +2473,12 @@ def file_search():
             - Submit the form to view the search results.
         - **Downloading Search Results:**
             - If the search yields a large number of results, a message will prompt the user to download the complete results as a spreadsheet.
-            - Click the provided download link to retrieve the CSV file containing all search results.
+            - Click the provided download link to retrieve the spreadsheet containing all search results.
 
     Raises:
         - Redirects with a flash message if:
-            - The CSV file associated with the provided timestamp does not exist.
-            - An error occurs while processing the search or generating the CSV file.
+            - The spreadsheet file associated with the provided timestamp does not exist.
+            - An error occurs while processing the search or generating the spreadsheet file.
 
     Examples:
         **Accessing the Search Form:**
@@ -2469,7 +2508,7 @@ def file_search():
     """
 
     form = archiver_forms.FileSearchForm()
-    csv_filename_prefix = "search_results_"
+    spreadsheet_filename_prefix = "search_results_"
     timestamp_format = r'%Y%m%d%H%M%S'
     html_table_row_limit = 1000
     
@@ -2478,15 +2517,31 @@ def file_search():
     if utils.FlaskAppUtils.retrieve_request_param('timestamp'):
         try:
             timestamp = utils.FlaskAppUtils.retrieve_request_param('timestamp')
-            csv_filepath = utils.FlaskAppUtils.create_temp_filepath(filename=f'{csv_filename_prefix}{timestamp}.csv',
-                                                                     unique_filepath=False)
-            if not os.path.exists(csv_filepath):
+            xlsx_filepath = utils.FlaskAppUtils.create_temp_filepath(
+                filename=f'{spreadsheet_filename_prefix}{timestamp}.xlsx',
+                unique_filepath=False
+            )
+            # Backward compatibility for previously generated CSV downloads.
+            csv_filepath = utils.FlaskAppUtils.create_temp_filepath(
+                filename=f'{spreadsheet_filename_prefix}{timestamp}.csv',
+                unique_filepath=False
+            )
+
+            if os.path.exists(xlsx_filepath):
+                return flask.send_file(
+                    xlsx_filepath,
+                    as_attachment=True,
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+
+            if os.path.exists(csv_filepath):
+                return flask.send_file(csv_filepath, as_attachment=True)
+
+            if not os.path.exists(xlsx_filepath):
                 # reformat timestamp to be more human-readable
                 timestamp = datetime.strftime(datetime.strptime(timestamp, timestamp_format), r'%Y-%m-%d %H:%M:%S')
-                message = f"Search results from {timestamp} not found. Expected file at {csv_filepath}"
+                message = f"Search results from {timestamp} not found. Expected file at {xlsx_filepath}"
                 raise FileNotFoundError(message)
-            
-            return flask.send_file(csv_filepath, as_attachment=True)
         
         except Exception as e:
             message = f"Error retrieving search results:\n{e}"
@@ -2529,8 +2584,10 @@ def file_search():
             search_df.rename(columns={'filename': 'Filename'}, inplace=True)
             timestamp = datetime.now().strftime(r'%Y%m%d%H%M%S')
             too_many_results = len(search_df) > html_table_row_limit
-            csv_filepath = utils.FlaskAppUtils.create_temp_filepath(filename=f'{csv_filename_prefix}{timestamp}.csv')
-            search_df.to_csv(csv_filepath, index=False)
+            spreadsheet_filepath = utils.FlaskAppUtils.create_temp_filepath(filename=f'{spreadsheet_filename_prefix}{timestamp}.xlsx')
+            with pd.ExcelWriter(spreadsheet_filepath, engine='openpyxl') as writer:
+                search_df.to_excel(writer, index=False, sheet_name='Search Results')
+
             search_df = search_df.head(html_table_row_limit)
             search_df_html = utils.html_table_from_df(df=search_df, path_columns=['Location'])
             
