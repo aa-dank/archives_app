@@ -6,6 +6,21 @@
         {% if resolved_path %}
             <p><strong>Resolved Server Path:</strong> {{ resolved_path }}</p>
         {% endif %}
+
+        {% if summary_stats %}
+            <h4>Current Path Summary</h4>
+            <table class="table-dark table-striped table-bordered table-hover table-sm" style="table-layout: auto; width: 100%;">
+                <tbody>
+                    {% for label, value in summary_stats.items() %}
+                        <tr>
+                            <th style="width: 45%;">{{ label }}</th>
+                            <td>{{ value }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+
         <p>
             {% if parent_path %}
                 <a href="{{ url_for('archiver.dir_contents_summary', path=parent_path) }}">Up one level</a>
@@ -13,11 +28,22 @@
             {% endif %}
             <a href="{{ url_for('archiver.dir_contents_summary_download', path=user_path) }}">Download CSV</a>
         </p>
+
+        <h4>Child Directories</h4>
         <div>
             {% if summary_table_html %}
                 {{ summary_table_html | safe }}
             {% else %}
-                <p>No contents found for this location.</p>
+                <p>No child directories found for this location.</p>
+            {% endif %}
+        </div>
+
+        <h4>Files in Current Path</h4>
+        <div>
+            {% if current_files_table_html %}
+                {{ current_files_table_html | safe }}
+            {% else %}
+                <p>No files found directly in this directory.</p>
             {% endif %}
         </div>
     </div>
