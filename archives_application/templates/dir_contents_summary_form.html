@@ -21,8 +21,28 @@
                 </div>
             </fieldset>
             <div class="form-group">
-                {{ form.submit(class="btn btn-outline-info") }}
+                {{ form.submit(class="btn btn-outline-info", id="dir-contents-view-button") }}
             </div>
         </form>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var summaryForm = document.getElementById('dir-contents-summary-form');
+            if (!summaryForm) {
+                return;
+            }
+
+            summaryForm.addEventListener('submit', function(event) {
+                var button = document.getElementById('dir-contents-view-button');
+                if (button) {
+                    button.value = 'Loading...';
+                    setTimeout(function() { button.disabled = true; }, 10);
+                }
+
+                event.preventDefault();
+                setTimeout(function() { HTMLFormElement.prototype.submit.call(summaryForm); }, 350);
+            });
+        });
+    </script>
 {% endblock content %}

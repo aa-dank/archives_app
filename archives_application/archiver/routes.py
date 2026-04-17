@@ -183,7 +183,7 @@ def _db_dir_from_app_path(app_path: str, archives_location: str) -> tuple[str, s
     db_dir_norm = f"{db_dir}/" if db_dir else ''
     return db_dir, db_dir_norm
 
-def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, dict]:
+def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """
     Build a summary dataframe for immediate children of the provided user path.
     Uses the database for aggregation and filesystem only for timestamps.
@@ -216,6 +216,11 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, dict]:
 
     # Note: folder counts and presence are derived solely from file rows; empty folders are not represented.
     aggregates = {}
+    current_path_file_rows = []
+    unique_descendant_dirs = set()
+    total_files = 0
+    total_size_bytes = 0
+
     for dir_path, filename, size in locations_query:
         if not dir_path:
             continue
@@ -227,36 +232,38 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, dict]:
         else:
             relative_tail = dir_path
 
+        file_size = int(size) if size else 0
+        total_files += 1
+        total_size_bytes += file_size
+
         if relative_tail == '':
             if not filename:
                 continue
-            # Files directly under the target directory become individual rows.
-            key = ("file", filename)
-            agg = aggregates.get(key)
-            if not agg:
-                agg = {
-                    "name": filename,
-                    "kind": "file",
-                    "file_count": 0,
-                    "total_size": 0,
-                    "dir_set": set(),
-                    "max_depth": 0,
-                }
-                aggregates[key] = agg
-            agg["file_count"] = 1
-            agg["total_size"] += int(size) if size else 0
+            file_app_path = os.path.join(
+                archives_location_abs,
+                db_dir.replace('/', os.sep),
+                filename
+            ) if db_dir else os.path.join(archives_location_abs, filename)
+            last_modified, created_time = _safe_stat_timestamps(file_app_path)
+            current_path_file_rows.append({
+                "Filename": filename,
+                "Size": _format_bytes(file_size),
+                "Last Modified": last_modified,
+                "Created (ctime)": created_time,
+                "_size_bytes": file_size,
+            })
             continue
 
         child_dir = relative_tail.split('/')[0]
+        unique_descendant_dirs.add(relative_tail)
         depth_segments = relative_tail.split('/')
         internal_depth = max(len(depth_segments) - 1, 0)
         # All descendants under the same immediate child directory are aggregated together.
-        key = ("dir", child_dir)
+        key = child_dir
         agg = aggregates.get(key)
         if not agg:
             agg = {
                 "name": child_dir,
-                "kind": "dir",
                 "file_count": 0,
                 "total_size": 0,
                 "dir_set": {child_dir},
@@ -264,33 +271,27 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, dict]:
             }
             aggregates[key] = agg
         agg["file_count"] += 1
-        agg["total_size"] += int(size) if size else 0
+        agg["total_size"] += file_size
         agg["dir_set"].add(relative_tail)
         if internal_depth > agg["max_depth"]:
             agg["max_depth"] = internal_depth
 
-    parent_total = sum(item["total_size"] for item in aggregates.values())
+    parent_total = total_size_bytes
     rows = []
     for agg in aggregates.values():
         file_count = agg["file_count"]
         total_size = agg["total_size"]
-        if agg["kind"] == "dir":
-            # Build drill-down URL using user-visible path conventions.
-            child_db_dir = f"{db_dir_norm}{agg['name']}" if db_dir_norm else agg['name']
-            child_user_path = utils.FileServerUtils.user_path_from_db_data(
-                file_server_directories=child_db_dir,
-                user_archives_location=user_archives_location,
-                user_location_networked=False
-            )
-            name_display = f"<a href=\"{flask.url_for('archiver.dir_contents_summary', path=child_user_path)}\">{agg['name']}</a>"
-            folder_count = max(len(agg["dir_set"]) - 1, 0)
-            child_app_path = os.path.join(archives_location_abs, child_db_dir.replace('/', os.sep))
-            last_modified, created_time = _safe_stat_timestamps(child_app_path)
-        else:
-            name_display = agg["name"]
-            folder_count = 0
-            child_app_path = os.path.join(archives_location_abs, db_dir.replace('/', os.sep), agg["name"]) if db_dir else os.path.join(archives_location_abs, agg["name"])
-            last_modified, created_time = _safe_stat_timestamps(child_app_path)
+        # Build drill-down URL using user-visible path conventions.
+        child_db_dir = f"{db_dir_norm}{agg['name']}" if db_dir_norm else agg['name']
+        child_user_path = utils.FileServerUtils.user_path_from_db_data(
+            file_server_directories=child_db_dir,
+            user_archives_location=user_archives_location,
+            user_location_networked=False
+        )
+        name_display = f"<a href=\"{flask.url_for('archiver.dir_contents_summary', path=child_user_path)}\">{agg['name']}</a>"
+        folder_count = max(len(agg["dir_set"]) - 1, 0)
+        child_app_path = os.path.join(archives_location_abs, child_db_dir.replace('/', os.sep))
+        last_modified, created_time = _safe_stat_timestamps(child_app_path)
 
         percent_of_parent = 0.0 if parent_total == 0 else round((total_size / parent_total) * 100, 1)
 
@@ -311,6 +312,23 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, dict]:
         summary_df.sort_values(by="_size_bytes", ascending=False, inplace=True)
         summary_df.drop(columns=["_size_bytes"], inplace=True)
 
+    current_files_df = pd.DataFrame(current_path_file_rows)
+    if not current_files_df.empty:
+        current_files_df.sort_values(by="_size_bytes", ascending=False, inplace=True)
+        current_files_df.drop(columns=["_size_bytes"], inplace=True)
+
+    current_path_size_bytes = sum(row["_size_bytes"] for row in current_path_file_rows)
+
+    summary_stats = {
+        "Total Files (Current Path + Subfolders)": f"{total_files:,}",
+        "Total Size (Current Path + Subfolders)": _format_bytes(total_size_bytes),
+        "Total Size (GB)": f"{round(total_size_bytes / (1024 ** 3), 3):,.3f}",
+        "Child Directories": f"{len(aggregates):,}",
+        "Subfolders (All Levels)": f"{len(unique_descendant_dirs):,}",
+        "Files in Current Path": f"{len(current_path_file_rows):,}",
+        "Size in Current Path": _format_bytes(current_path_size_bytes),
+    }
+
     user_root_norm = _normalize_user_path_for_compare(user_archives_location)
     user_path_norm = _normalize_user_path_for_compare(user_path)
     parent_path = None
@@ -325,8 +343,9 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, dict]:
         "user_path": user_path,
         "resolved_path": resolved_path,
         "parent_path": parent_path,
+        "summary_stats": summary_stats,
     }
-    return summary_df, context
+    return summary_df, current_files_df, context
 
 
 @archiver.route("/api/server_change", methods=['GET', 'POST'])
@@ -2320,15 +2339,19 @@ def dir_contents_summary():
         return flask.render_template('dir_contents_summary_form.html', title='Directory Contents Summary', form=form)
 
     try:
-        summary_df, context = _build_dir_contents_summary_df(user_path=user_path)
+        summary_df, current_files_df, context = _build_dir_contents_summary_df(user_path=user_path)
         summary_table_html = None if summary_df.empty else utils.html_table_from_df(
             df=summary_df,
             html_columns=['Name']
+        )
+        current_files_table_html = None if current_files_df.empty else utils.html_table_from_df(
+            df=current_files_df
         )
         return flask.render_template(
             'dir_contents_summary.html',
             title='Directory Contents Summary',
             summary_table_html=summary_table_html,
+            current_files_table_html=current_files_table_html,
             **context
         )
     except Exception as e:
@@ -2350,7 +2373,7 @@ def dir_contents_summary_download():
         return flask.redirect(flask.url_for('archiver.dir_contents_summary'))
 
     try:
-        summary_df, _ = _build_dir_contents_summary_df(user_path=user_path)
+        summary_df, _, _ = _build_dir_contents_summary_df(user_path=user_path)
         timestamp = datetime.now().strftime(r'%Y%m%d%H%M%S')
         filename = f"dir_contents_summary_{timestamp}.csv"
         csv_filepath = utils.FlaskAppUtils.create_temp_filepath(filename=filename)
