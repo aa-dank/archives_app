@@ -211,9 +211,18 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
     ).join(FileModel, FileLocationModel.file_id == FileModel.id)
 
     # Fetch all rows under the directory prefix (single query per view).
+    # Include both files directly in the target dir (exact match on db_dir) and files in subdirectories
+    # (LIKE db_dir_norm%). Without the OR, files whose file_server_directories == db_dir (no trailing slash)
+    # are silently excluded by the LIKE filter alone.
     locations_query = locations_query.filter(FileLocationModel.file_server_directories.isnot(None))
     if db_dir_norm:
-        locations_query = locations_query.filter(FileLocationModel.file_server_directories.like(f"{db_dir_norm}%"))
+        from sqlalchemy import or_ as _or
+        locations_query = locations_query.filter(
+            _or(
+                FileLocationModel.file_server_directories == db_dir,
+                FileLocationModel.file_server_directories.like(f"{db_dir_norm}%")
+            )
+        )
 
     # Note: folder counts and presence are derived solely from file rows; empty folders are not represented.
     aggregates = {}
@@ -228,9 +237,13 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
             continue
         dir_path = dir_path.replace('\\', '/')
         if db_dir_norm:
-            if not dir_path.startswith(db_dir_norm):
+            if dir_path == db_dir:
+                # File is directly in the target directory (stored without trailing slash).
+                relative_tail = ''
+            elif dir_path.startswith(db_dir_norm):
+                relative_tail = dir_path[len(db_dir_norm):]
+            else:
                 continue
-            relative_tail = dir_path[len(db_dir_norm):]
         else:
             relative_tail = dir_path
 
@@ -313,7 +326,7 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
             "# Folders": folder_count,
             "Depth": agg.get("max_depth", 0),
             "Size": _format_bytes(total_size),
-            "% of Parent": f"{percent_of_parent:.1f}%",
+            "% of Current": f"{percent_of_parent:.1f}%",
             "Last Modified": last_modified,
             "Created (ctime)": created_time,
             "_size_bytes": total_size,
@@ -2521,11 +2534,6 @@ def file_search():
                 filename=f'{spreadsheet_filename_prefix}{timestamp}.xlsx',
                 unique_filepath=False
             )
-            # Backward compatibility for previously generated CSV downloads.
-            csv_filepath = utils.FlaskAppUtils.create_temp_filepath(
-                filename=f'{spreadsheet_filename_prefix}{timestamp}.csv',
-                unique_filepath=False
-            )
 
             if os.path.exists(xlsx_filepath):
                 return flask.send_file(
@@ -2533,9 +2541,6 @@ def file_search():
                     as_attachment=True,
                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
-
-            if os.path.exists(csv_filepath):
-                return flask.send_file(csv_filepath, as_attachment=True)
 
             if not os.path.exists(xlsx_filepath):
                 # reformat timestamp to be more human-readable
