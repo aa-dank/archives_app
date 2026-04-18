@@ -2,9 +2,9 @@
 {% block content %}
     <div class="content-section">
         <h2>Directory Contents Summary</h2>
-        <p><strong>Current Path:</strong> {{ user_path }}</p>
+        <p><strong>Current Path:</strong> <span style="white-space: pre-wrap; word-break: break-word;">{{ user_path }}</span></p>
         {% if resolved_path %}
-            <p><strong>Resolved Server Path:</strong> {{ resolved_path }}</p>
+            <p><strong>Resolved Server Path:</strong> <span style="white-space: pre-wrap; word-break: break-word;">{{ resolved_path }}</span></p>
         {% endif %}
 
         {% if summary_stats %}
@@ -23,10 +23,18 @@
 
         <p>
             {% if parent_path %}
-                <a href="{{ url_for('archiver.dir_contents_summary', path=parent_path) }}">Up one level</a>
-                &nbsp;|&nbsp;
+                <a href="{{ url_for('archiver.dir_contents_summary', path=parent_path) }}">Parent directory summary</a>
             {% endif %}
-            <a href="{{ url_for('archiver.dir_contents_summary_download', path=user_path) }}">Download Excel (3 sheets)</a>
+            <form method="GET"
+                  action="{{ url_for('archiver.dir_contents_summary_download') }}"
+                  id="dir-contents-download-form"
+                  style="display: inline;">
+                <input type="hidden" name="path" value="{{ user_path }}">
+                <input type="submit"
+                       id="dir-contents-download-button"
+                       class="btn btn-outline-success btn-sm"
+                       value="Download Excel (3 sheets)">
+            </form>
         </p>
 
         <h4>Child Directories</h4>
@@ -47,4 +55,24 @@
             {% endif %}
         </div>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var downloadForm = document.getElementById('dir-contents-download-form');
+            if (!downloadForm) {
+                return;
+            }
+
+            downloadForm.addEventListener('submit', function(event) {
+                var button = document.getElementById('dir-contents-download-button');
+                if (button) {
+                    button.value = 'Generating Excel...';
+                    setTimeout(function() { button.disabled = true; }, 10);
+                }
+
+                event.preventDefault();
+                setTimeout(function() { HTMLFormElement.prototype.submit.call(downloadForm); }, 350);
+            });
+        });
+    </script>
 {% endblock content %}
