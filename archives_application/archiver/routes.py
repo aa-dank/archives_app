@@ -61,7 +61,6 @@ def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
     db.session.commit()
     return file_deleted
 
-
 def get_user_handle():
     '''
     user's email handle without the rest of the address (eg dilbert.dogbert@ucsc.edu would return dilbert.dogbert)
@@ -69,14 +68,12 @@ def get_user_handle():
     '''
     return current_user.email.split("@")[0]
 
-
 def exclude_extensions(f_path, extensions_list=EXCLUDED_FILE_EXTENSIONS):
     """
     checks filepath to see if it is using excluded extensions
     """
     filename = utils.FileServerUtils.split_path(f_path)[-1].lower()
     return any([filename.endswith(ext.lower()) for ext in extensions_list])
-
 
 def exclude_filenames(f_path, excluded_names=EXCLUDED_FILENAMES):
     """
@@ -159,31 +156,6 @@ def _format_bytes(byte_count: int) -> str:
         value /= 1024.0
     return f"{int(byte_count)} B"
 
-def _safe_stat_timestamps(path_value: str) -> tuple[str, str]:
-    """
-    Retrieve filesystem timestamps for display. Returns "UNKNOWN" on access errors.
-    """
-    try:
-        stat_result = os.stat(path_value)
-        last_modified = datetime.fromtimestamp(stat_result.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-        created_time = datetime.fromtimestamp(stat_result.st_ctime).strftime('%Y-%m-%d %H:%M:%S')
-        return last_modified, created_time
-    except Exception:
-        return "UNKNOWN", "UNKNOWN"
-
-
-def _db_dir_from_app_path(app_path: str, archives_location: str) -> tuple[str, str]:
-    """
-    Convert an app/server path into a database directory prefix and normalized prefix with trailing slash.
-    """
-    rel_path = os.path.relpath(app_path, archives_location)
-    if rel_path in ['.', './']:
-        db_dir = ''
-    else:
-        db_dir = rel_path.replace(os.sep, '/').strip('/')
-    db_dir_norm = f"{db_dir}/" if db_dir else ''
-    return db_dir, db_dir_norm
-
 def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
     """
     Build a summary dataframe for immediate children of the provided user path.
@@ -202,13 +174,15 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
     if os.path.commonpath([archives_location_abs, resolved_abs]) != archives_location_abs:
         raise ValueError(f"Path is outside archives location: {resolved_path}")
 
-    db_dir, db_dir_norm = _db_dir_from_app_path(resolved_path, archives_location_abs)
+    db_dir, db_dir_norm = utils.FileServerUtils.app_path_to_db_dir(resolved_path, archives_location_abs)
 
     locations_query = db.session.query(
         FileLocationModel.file_server_directories,
         FileLocationModel.filename,
-        FileModel.size
-    ).join(FileModel, FileLocationModel.file_id == FileModel.id)
+        FileModel.size,
+        FileContentModel.text_length
+    ).join(FileModel, FileLocationModel.file_id == FileModel.id
+    ).outerjoin(FileContentModel, FileModel.hash == FileContentModel.file_hash)
 
     # Fetch all rows under the directory prefix (single query per view).
     # Include both files directly in the target dir (exact match on db_dir) and files in subdirectories
@@ -232,7 +206,7 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
     total_files = 0
     total_size_bytes = 0
 
-    for dir_path, filename, size in locations_query:
+    for dir_path, filename, size, text_length in locations_query:
         if not dir_path:
             continue
         dir_path = dir_path.replace('\\', '/')
@@ -259,22 +233,18 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
             "File Path": file_full_user_path,
             "Size": _format_bytes(file_size),
             "Size Bytes": file_size,
+            "Contents Extracted": "Yes" if text_length is not None else "No",
+            "Extracted Text Length": text_length if text_length is not None else "",
         })
 
         if relative_tail == '':
             if not filename:
                 continue
-            file_app_path = os.path.join(
-                archives_location_abs,
-                db_dir.replace('/', os.sep),
-                filename
-            ) if db_dir else os.path.join(archives_location_abs, filename)
-            last_modified, created_time = _safe_stat_timestamps(file_app_path)
             current_path_file_rows.append({
                 "Filename": filename,
                 "Size": _format_bytes(file_size),
-                "Last Modified": last_modified,
-                "Created (ctime)": created_time,
+                "Contents Extracted": "Yes" if text_length is not None else "No",
+                "Extracted Text Length": text_length if text_length is not None else "",
                 "_size_bytes": file_size,
             })
             continue
@@ -315,8 +285,6 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
         )
         name_display = f"<a href=\"{flask.url_for('archiver.dir_contents_summary', path=child_user_path)}\">{agg['name']}</a>"
         folder_count = max(len(agg["dir_set"]) - 1, 0)
-        child_app_path = os.path.join(archives_location_abs, child_db_dir.replace('/', os.sep))
-        last_modified, created_time = _safe_stat_timestamps(child_app_path)
 
         percent_of_parent = 0.0 if parent_total == 0 else round((total_size / parent_total) * 100, 1)
 
@@ -327,8 +295,6 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
             "Depth": agg.get("max_depth", 0),
             "Size": _format_bytes(total_size),
             "% of Current": f"{percent_of_parent:.1f}%",
-            "Last Modified": last_modified,
-            "Created (ctime)": created_time,
             "_size_bytes": total_size,
         })
 
@@ -341,10 +307,12 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
     if not current_files_df.empty:
         current_files_df.sort_values(by="_size_bytes", ascending=False, inplace=True)
         current_files_df.drop(columns=["_size_bytes"], inplace=True)
+        current_files_df.sort_values(by="Filename", inplace=True)
 
     all_recursive_files_df = pd.DataFrame(all_recursive_file_rows)
     if not all_recursive_files_df.empty:
         all_recursive_files_df.sort_values(by="Size Bytes", ascending=False, inplace=True)
+        all_recursive_files_df.sort_values(by="Filename", inplace=True)
 
     current_path_size_bytes = sum(row["_size_bytes"] for row in current_path_file_rows)
 
@@ -355,7 +323,7 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
         "Child Directories": f"{len(aggregates):,}",
         "Subfolders (All Levels)": f"{len(unique_descendant_dirs):,}",
         "Files in Current Path": f"{len(current_path_file_rows):,}",
-        "Size in Current Path": _format_bytes(current_path_size_bytes),
+        "Size in Current Directory": _format_bytes(current_path_size_bytes),
     }
 
     user_root_norm = _normalize_user_path_for_compare(user_archives_location)
@@ -370,7 +338,6 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
 
     context = {
         "user_path": user_path,
-        "resolved_path": resolved_path,
         "parent_path": parent_path,
         "summary_stats": summary_stats,
     }
@@ -2373,9 +2340,17 @@ def dir_contents_summary():
             df=summary_df,
             html_columns=['Name']
         )
-        current_files_table_html = None if current_files_df.empty else utils.html_table_from_df(
-            df=current_files_df
-        )
+        
+        # Apply 300-file safety cap for HTML rendering
+        files_exceed_limit = len(current_files_df) > 300
+        current_files_table_html = None
+        if not current_files_df.empty:
+            if not files_exceed_limit:
+                current_files_table_html = utils.html_table_from_df(df=current_files_df)
+        
+        context['files_exceed_limit'] = files_exceed_limit
+        context['current_files_count'] = len(current_files_df)
+        
         return flask.render_template(
             'dir_contents_summary.html',
             title='Directory Contents Summary',

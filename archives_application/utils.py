@@ -468,7 +468,29 @@ class FileServerUtils:
             user_archives_location=user_archives_location,
             user_location_networked=user_location_networked
         )
-    
+
+    @staticmethod
+    def app_path_to_db_dir(app_path: str, archives_location: str) -> tuple[str, str]:
+        """
+        Convert an app/server filesystem path into a database directory prefix and normalized prefix with trailing slash.
+
+        Used internally to convert between mounted filesystem paths (e.g., /mnt/n/PPDO/Records)
+        and database-stored relative paths (e.g., PPDO/Records).
+
+        :param app_path: The absolute filesystem path under the archives root.
+        :param archives_location: The archives root mount point or server path.
+        :return: A tuple of (db_dir, db_dir_norm) where:
+            - db_dir is the relative path with forward slashes (e.g., "PPDO/Records")
+            - db_dir_norm is db_dir with a trailing slash if non-empty (e.g., "PPDO/Records/")
+        """
+        rel_path = os.path.relpath(app_path, archives_location)
+        if rel_path in ['.', './']:
+            db_dir = ''
+        else:
+            db_dir = rel_path.replace(os.sep, '/').strip('/')
+        db_dir_norm = f"{db_dir}/" if db_dir else ''
+        return db_dir, db_dir_norm
+
     @staticmethod
     def path_to_project_dir(project_number: Union[int, str], archives_location: str, create_new_project_dir: bool = False):
         """

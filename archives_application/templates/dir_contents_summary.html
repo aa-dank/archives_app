@@ -3,9 +3,6 @@
     <div class="content-section">
         <h2>Directory Contents Summary</h2>
         <p><strong>Current Path:</strong> <span style="white-space: pre-wrap; word-break: break-word;">{{ user_path }}</span></p>
-        {% if resolved_path %}
-            <p><strong>Resolved Server Path:</strong> <span style="white-space: pre-wrap; word-break: break-word;">{{ resolved_path }}</span></p>
-        {% endif %}
 
         {% if summary_stats %}
             <h4>Current Path Summary</h4>
@@ -33,7 +30,7 @@
                 <input type="submit"
                        id="dir-contents-download-button"
                        class="btn btn-outline-success btn-sm"
-                       value="Download Excel (3 sheets)">
+                       value="Download Excel">
             </form>
         </p>
 
@@ -48,7 +45,9 @@
 
         <h4>Files in Current Directory</h4>
         <div>
-            {% if current_files_table_html %}
+            {% if files_exceed_limit %}
+                <p><strong>⚠️ Warning:</strong> This directory contains {{ current_files_count }} files (exceeds display limit of 300). Download the Excel spreadsheet to see the complete list.</p>
+            {% elif current_files_table_html %}
                 {{ current_files_table_html | safe }}
             {% else %}
                 <p>No files found directly in this directory.</p>
