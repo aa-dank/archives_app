@@ -193,7 +193,7 @@ class ServerChangeForm(FlaskForm):
             user_mount = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
             if user_mount and not _path_starts_with_user_mount(new_directory.data, user_mount):
                 raise ValidationError(
-                    f"Path must start with configured user mount point:\n{user_mount}\nEntered path:\n{new_directory.data}"
+                    f"Path must start with configured user mount point: {user_mount}  |  Entered path: {new_directory.data}"
                 )
 
             network_directory = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=new_directory.data,

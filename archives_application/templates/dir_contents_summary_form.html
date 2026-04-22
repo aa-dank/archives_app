@@ -5,7 +5,12 @@
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Directory Contents Summary</legend>
-                <p>Enter a directory path as copied from Windows File Explorer.</p>
+                <div class="alert alert-info" role="alert" style="border-left: 4px solid #17a2b8;">
+                    <strong>How this works:</strong>
+                    Enter a target directory path to view summary statistics about file, data size, and folder distribution for that location.
+                    Results include child-directory totals, files in the current directory, and downloadable Excel output for deeper review.
+                </div>
+                <p class="text-muted mb-3">Enter a directory path from the archives file server as copied from Windows File Explorer.</p>
                 <div class="form-group">
                     <h6>{{ form.path.label(class="form-control-label") }}</h6>
                     {% if form.path.errors %}
