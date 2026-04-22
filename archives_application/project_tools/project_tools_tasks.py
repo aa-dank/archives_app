@@ -27,7 +27,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
         os.environ['no_proxy'] = '*'
         db: flask_sqlalchemy.SQLAlchemy = flask.current_app.extensions['sqlalchemy']
         utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-        filemaker_timeout = int(flask.current_app.config.get('FILEMAKER_TIMEOUT', 300))
+        filemaker_timeout = int(flask.current_app.config.get('FILEMAKER_TIMEOUT', 1800))
         
         def fmrest_server(layout):
             s = fmrest.Server(
