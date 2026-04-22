@@ -54,7 +54,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
         recon_log = {
             "Filemaker Projects": {"count": 0,'completed': False},
             "Filemaker CAANs": {"count": 0, 'completed': False},
-            "CAAN": {"added": [], "removed": [], 'completed': False},
+            "CAAN": {"added": [], "updated": [], "removed": [], 'completed': False},
             "project": {"added": [], "removed": [], 'completed': False},
             "project-caans": {"added": [], "removed": [], 'completed': False},
             "enqueue location confirmation": {"completed": False, "projects": []},
@@ -89,34 +89,41 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
 
             # Reconcile CAAN data 
             if not fm_caan_df.empty:
-                caan_query = db.session.query(CAANModel)
-                db_caans_df = utils.FlaskAppUtils.db_query_to_df(caan_query)
+                normalize_fm_value = lambda value: None if pd.isna(value) else value
+                db_caans = db.session.query(CAANModel).all()
+                db_caans_by_code = {caan.caan: caan for caan in db_caans}
+                fm_caans = set()
 
-                missing_from_db = fm_caan_df
-                if not db_caans_df.empty:
-                    # missing_from_db is the set of caans in FileMaker that are not in the db
-                    missing_from_db = fm_caan_df[~fm_caan_df['CAAN'].isin(db_caans_df['caan'])]
-                
-                # Add caans that are in FileMaker but not in the db
-                for _, row in missing_from_db.iterrows():
-                    caan = CAANModel(caan=row['CAAN'],
-                                     name=row['Name'],
-                                     description=row['Description'])
-                    db.session.add(caan)
-                    recon_log['CAAN']['added'].append(row['CAAN'])
-                
+                for row in fm_caan_df.itertuples(index=False):
+                    fm_caan = row.CAAN
+                    fm_name = normalize_fm_value(row.Name)
+                    fm_description = normalize_fm_value(row.Description)
+                    fm_caans.add(fm_caan)
+
+                    caan = db_caans_by_code.get(fm_caan)
+                    if caan is None:
+                        db.session.add(CAANModel(caan=fm_caan,
+                                                 name=fm_name,
+                                                 description=fm_description))
+                        recon_log['CAAN']['added'].append(fm_caan)
+                        continue
+
+                    if caan.name != fm_name or caan.description != fm_description:
+                        caan.name = fm_name
+                        caan.description = fm_description
+                        recon_log['CAAN']['updated'].append(fm_caan)
+
                 # remove caans that are in the db but not in FileMaker
-                if not db_caans_df.empty:
-                    missing_from_fm = db_caans_df[~db_caans_df['caan'].isin(fm_caan_df['CAAN'])]
-                    for _, row in missing_from_fm.iterrows():
-                        caan = CAANModel.query.filter_by(caan=row['caan']).first()
-                        
-                        # Remove the caan from any projects it is associated with
-                        for project in caan.projects:
-                            project.caans.remove(caan)
-                        
-                        db.session.delete(caan)
-                        recon_log['CAAN']['removed'].append(row['caan'])
+                for caan_code, caan in db_caans_by_code.items():
+                    if caan_code in fm_caans:
+                        continue
+
+                    # Remove the caan from any projects it is associated with
+                    for project in list(caan.projects):
+                        project.caans.remove(caan)
+
+                    db.session.delete(caan)
+                    recon_log['CAAN']['removed'].append(caan_code)
                 recon_log['CAAN']['completed'] = True
                 db.session.commit()
 
