@@ -141,6 +141,24 @@ def _normalize_user_path_for_compare(path_value: str) -> str:
         return ''
     return str(PureWindowsPath(path_value)).rstrip('\\/').lower()
 
+
+def _path_starts_with_user_mount(path_value: str, user_mount: str) -> bool:
+    """
+    Return True when path_value is at or under user_mount using Windows path semantics.
+    """
+    if not user_mount:
+        return True
+    if not path_value:
+        return False
+
+    path_parts = [p.rstrip('\\/').lower() for p in PureWindowsPath(path_value).parts if p not in ['\\', '/']]
+    mount_parts = [p.rstrip('\\/').lower() for p in PureWindowsPath(user_mount).parts if p not in ['\\', '/']]
+    if not mount_parts:
+        return True
+    if len(path_parts) < len(mount_parts):
+        return False
+    return path_parts[:len(mount_parts)] == mount_parts
+
 def _format_bytes(byte_count: int) -> str:
     """
     Format a byte count into a human-readable string.
@@ -163,6 +181,10 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
     """
     archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
     user_archives_location = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+
+    if not _path_starts_with_user_mount(path_value=user_path, user_mount=user_archives_location):
+        raise ValueError(f"Path must start with configured user mount point: {user_archives_location}")
+
     resolved_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_path, app=flask.current_app)
 
     # Ensure the resolved path is a valid directory within the archives root.

@@ -3,6 +3,7 @@
 import errno
 import os
 import flask
+from pathlib import PureWindowsPath
 from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField, SelectField, BooleanField, SelectMultipleField, widgets
 from wtforms.validators import DataRequired, ValidationError
@@ -10,17 +11,44 @@ from flask_wtf.file import FileField, FileRequired
 from .. import utils
 
 
-def path_validation_subroutine(path_form_field: StringField, path_type: str = None):
+def _normalized_path_parts(path_value: str) -> list[str]:
+    parts = utils.FileServerUtils.split_path(str(PureWindowsPath(path_value).as_posix()))
+    return [part.strip('\\/').lower() for part in parts if part and part not in ['/', '//', '\\\\']]
+
+
+def _path_starts_with_user_mount(path_value: str, user_mount: str) -> bool:
+    if not user_mount:
+        return True
+    if not path_value:
+        return False
+
+    entered_parts = _normalized_path_parts(path_value.strip())
+    mount_parts = _normalized_path_parts(str(user_mount).strip())
+    if len(entered_parts) < len(mount_parts):
+        return False
+    return entered_parts[:len(mount_parts)] == mount_parts
+
+
+def path_validation_subroutine(path_form_field: StringField, path_type: str = None, require_user_mount: bool = False):
     """
     Ensures that the path exists and matches the type requirement
     :param path_form_field: The form field that contains the path string
     :param path_type: The type of path that is required. Either "file" or "dir"
+    :param require_user_mount: If True, path must start with USER_ARCHIVES_LOCATION
     """
     if path_type not in ["file", "dir", None]:
         raise ValueError("path_type must be either 'file' or 'dir'")
     
     if path_form_field.data:
         path_validation_error = lambda mssg: ValidationError(f"{mssg}: \n{path_form_field.data}")
+
+        if require_user_mount:
+            user_mount = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+            if user_mount and not _path_starts_with_user_mount(path_form_field.data, user_mount):
+                raise path_validation_error(
+                    f"Path must start with configured user mount point:\n{user_mount}\nEntered path"
+                )
+
         try:
             network_path = utils.FlaskAppUtils.user_path_to_app_path(
                 path_from_user=path_form_field.data,
@@ -55,7 +83,7 @@ def validate_str_path(form: FlaskForm, field: StringField):
     """
     Universal simple file and directory path validation function
     """
-    path_validation_subroutine(field)
+    path_validation_subroutine(field, require_user_mount=True)
 
 
 class MultiCheckboxField(SelectMultipleField):
@@ -115,7 +143,7 @@ class FileSearchForm(FlaskForm):
         """
         Ensures that the search location exists
         """
-        path_validation_subroutine(search_location, path_type="dir")
+        path_validation_subroutine(search_location, path_type="dir", require_user_mount=True)
 
 
 class DirContentsSummaryForm(FlaskForm):
@@ -124,9 +152,9 @@ class DirContentsSummaryForm(FlaskForm):
 
     def validate_path(self, path):
         """
-        Ensures that the directory path exists
+        Ensures that the entered directory path starts with USER_ARCHIVES_LOCATION and exists.
         """
-        path_validation_subroutine(path, path_type="dir")
+        path_validation_subroutine(path, path_type="dir", require_user_mount=True)
 
 
 class ScrapeLocationForm(FlaskForm):
@@ -138,7 +166,7 @@ class ScrapeLocationForm(FlaskForm):
         """
         Ensures that the scraping location exists
         """
-        path_validation_subroutine(scrape_location, path_type="dir")
+        path_validation_subroutine(scrape_location, path_type="dir", require_user_mount=True)
 
 
 class ServerChangeForm(FlaskForm):
@@ -162,6 +190,12 @@ class ServerChangeForm(FlaskForm):
         Ensures that the new directory doesn't already exist and that the parent directory does exist
         """
         if new_directory.data:
+            user_mount = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+            if user_mount and not _path_starts_with_user_mount(new_directory.data, user_mount):
+                raise ValidationError(
+                    f"Path must start with configured user mount point:\n{user_mount}\nEntered path:\n{new_directory.data}"
+                )
+
             network_directory = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=new_directory.data,
                                                                           app=flask.current_app)
             if os.path.exists(os.path.join(network_directory)):
@@ -181,7 +215,7 @@ class ServerChangeForm(FlaskForm):
         """
         Ensures that the destination path exists and is a directory
         """
-        path_validation_subroutine(destination_path, path_type="dir")
+        path_validation_subroutine(destination_path, path_type="dir", require_user_mount=True)
 
 
 class BatchServerEditForm(FlaskForm):
@@ -194,14 +228,14 @@ class BatchServerEditForm(FlaskForm):
         """
         Ensures that the destination path exists and is a directory
         """
-        path_validation_subroutine(destination_path, path_type="dir")
+        path_validation_subroutine(destination_path, path_type="dir", require_user_mount=True)
 
 
     def validate_asset_path(self, asset_path):
         """
         Ensures that the asset path exists
         """
-        path_validation_subroutine(asset_path, path_type="dir")
+        path_validation_subroutine(asset_path, path_type="dir", require_user_mount=True)
 
 
 class BatchMoveEditForm(FlaskForm):
@@ -216,11 +250,11 @@ class BatchMoveEditForm(FlaskForm):
         """
         # if nothing is selected, then just return
         if destination_path.data:
-            path_validation_subroutine(destination_path, path_type="dir")
+            path_validation_subroutine(destination_path, path_type="dir", require_user_mount=True)
     
     def validate_asset_path(self, asset_path):
         """
         Ensures that the asset path exists
         """
         if asset_path.data:
-            path_validation_subroutine(asset_path, path_type="dir")
+            path_validation_subroutine(asset_path, path_type="dir", require_user_mount=True)
