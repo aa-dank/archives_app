@@ -27,6 +27,7 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
         os.environ['no_proxy'] = '*'
         db: flask_sqlalchemy.SQLAlchemy = flask.current_app.extensions['sqlalchemy']
         utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+        filemaker_timeout = int(flask.current_app.config.get('FILEMAKER_TIMEOUT', 300))
         
         def fmrest_server(layout):
             s = fmrest.Server(
@@ -36,7 +37,8 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
                 database=flask.current_app.config.get('FILEMAKER_DATABASE_NAME'),
                 layout=layout,
                 api_version=FILEMAKER_API_VERSION,
-                verify_ssl=VERIFY_FILEMAKER_SSL
+                verify_ssl=VERIFY_FILEMAKER_SSL,
+                timeout=filemaker_timeout
             )
             return s
 
@@ -62,8 +64,8 @@ def fmp_caan_project_reconciliation_task(queue_id: str, confirm_locations: bool 
             "errors": []
             }
         
-        # Increase the timeout for the fmrest server
-        fmrest.utils.TIMEOUT = 300
+        # Timeout must be passed directly to fmrest.Server; changing fmrest.utils.TIMEOUT
+        # here does not affect the Server default argument in fmrest 1.8.0.
         archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
         progress_update = lambda log: utils.RQTaskUtils.update_task_subroutine(q_id=queue_id, sql_db=db, task_results=log)
         
