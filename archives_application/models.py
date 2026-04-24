@@ -192,7 +192,7 @@ class ProjectModel(db.Model):
 class CAANModel(db.Model):
     __tablename__ = "caans"
     id = db.Column(db.Integer, primary_key=True)
-    caan = db.Column(db.String, nullable=False)
+    caan = db.Column(db.String, nullable=False, unique=True)
     name = db.Column(db.String)
     description = db.Column(db.String)
     fmp_id_primary = db.Column(db.Integer, unique=True)
