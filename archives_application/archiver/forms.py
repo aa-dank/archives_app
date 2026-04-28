@@ -2,6 +2,7 @@
 
 import errno
 import os
+import re
 import flask
 from pathlib import PureWindowsPath
 from flask_wtf import FlaskForm
@@ -9,6 +10,27 @@ from wtforms import StringField, SubmitField, SelectField, BooleanField, SelectM
 from wtforms.validators import DataRequired, ValidationError
 from flask_wtf.file import FileField, FileRequired
 from .. import utils
+
+
+# Valid project numbers currently supported by project-directory resolution logic.
+# Examples: 1234, 12345A, 1234-001, 12345-001A
+PROJECT_NUMBER_RE_PATTERN = r'^\d{4,5}(?:[A-Z])?(?:-\d{3})?(?:[A-Z])?$'
+
+
+def project_number_pattern_validation(project_number_field: StringField):
+    """Validate project number format when provided.
+
+    The project number field is optional because users may instead archive directly
+    to an explicit Destination Path.
+    """
+    if not project_number_field.data:
+        return
+
+    project_number = utils.sanitize_unicode(project_number_field.data.strip()).upper()
+    if not re.fullmatch(PROJECT_NUMBER_RE_PATTERN, project_number):
+        raise ValidationError(
+            "Project number format is invalid. For unconventional project numbers, leave Project Number blank and use Destination Path instead."
+        )
 
 
 def _normalized_path_parts(path_value: str) -> list[str]:
@@ -108,6 +130,9 @@ class UploadFileForm(FlaskForm):
     upload = FileField('File Upload', validators=[FileRequired()])
     submit = SubmitField('Archive File')
 
+    def validate_project_number(self, project_number):
+        project_number_pattern_validation(project_number)
+
 
 class ArchivedOrNotForm(FlaskForm):
     project_number = StringField('Project Number')
@@ -125,6 +150,9 @@ class InboxItemForm(FlaskForm):
     notes = StringField('Notes')
     submit = SubmitField('Archive File')
 
+    def validate_project_number(self, project_number):
+        project_number_pattern_validation(project_number)
+
 class BatchInboxItemsForm(FlaskForm):
     items_to_archive = MultiCheckboxField('Items to archive', choices=[], validate_choice=False)
     project_number = StringField('Project Number')
@@ -132,6 +160,9 @@ class BatchInboxItemsForm(FlaskForm):
     destination_path = StringField('Destination Path')
     notes = StringField('Notes')
     submit = SubmitField('Archive Items')
+
+    def validate_project_number(self, project_number):
+        project_number_pattern_validation(project_number)
 
 class FileSearchForm(FlaskForm):
     search_location = StringField('Limit Search to Location')
