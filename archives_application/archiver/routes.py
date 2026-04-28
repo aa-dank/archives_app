@@ -255,7 +255,6 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
             "File Path": file_full_user_path,
             "Size": _format_bytes(file_size),
             "Size Bytes": file_size,
-            "Contents Extracted": "Yes" if text_length is not None else "No",
             "Extracted Text Length": text_length if text_length is not None else "",
         })
 
@@ -265,7 +264,6 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
             current_path_file_rows.append({
                 "Filename": filename,
                 "Size": _format_bytes(file_size),
-                "Contents Extracted": "Yes" if text_length is not None else "No",
                 "Extracted Text Length": text_length if text_length is not None else "",
                 "_size_bytes": file_size,
             })
@@ -2369,6 +2367,12 @@ def dir_contents_summary():
         if not current_files_df.empty:
             if not files_exceed_limit:
                 current_files_table_html = utils.html_table_from_df(df=current_files_df)
+                current_files_table_html = current_files_table_html.replace(
+                    '<th>Extracted Text Length</th>',
+                    '<th>Extracted Text Length '
+                    '<span title="Length of extracted text stored in the database for this file.\nBlank if no text has been stored." '
+                    'style="cursor: help; font-weight: normal;">&#9432;</span></th>'
+                )
         
         context['files_exceed_limit'] = files_exceed_limit
         context['current_files_count'] = len(current_files_df)
