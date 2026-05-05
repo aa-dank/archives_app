@@ -10,7 +10,7 @@ from sqlalchemy import func
 from typing import List, Callable
 from archives_application import create_app, utils
 from archives_application.archiver import archiver_tasks
-from archives_application.models import  ArchivedFileModel, FileLocationModel, FileModel, FileContentModel
+from archives_application.models import ArchivedFileModel, FileLocationModel, FileModel, FileContentModel, FileContentFailureModel, FileDateMentionModel
 # Create the app context so that tasks can access app extensions even though
 # they are not running in the main thread.
 app = create_app()
@@ -142,6 +142,23 @@ class ServerEdit:
         :rtype: str
         """
         return os.path.join(*path_list) if path_list else ""
+
+    @staticmethod
+    def _delete_file_hash_dependents(db: flask_sqlalchemy.SQLAlchemy, file_hash: str):
+        """
+        Remove child rows keyed by files.hash before deleting FileModel rows.
+        This protects delete operations in environments where ON DELETE CASCADE
+        constraints are missing or stale.
+        """
+        db.session.query(FileDateMentionModel).filter(
+            FileDateMentionModel.file_hash == file_hash
+        ).delete(synchronize_session=False)
+        db.session.query(FileContentModel).filter(
+            FileContentModel.file_hash == file_hash
+        ).delete(synchronize_session=False)
+        db.session.query(FileContentFailureModel).filter(
+            FileContentFailureModel.file_hash == file_hash
+        ).delete(synchronize_session=False)
 
     def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=15):
         """
@@ -404,6 +421,7 @@ class ServerEdit:
                         archival_event.file_id = None
 
                         # Delete the FileModel and associated content rows (if any)
+                    ServerEdit._delete_file_hash_dependents(db=db, file_hash=file_model.hash)
                     db.session.delete(file_model)
                     file_entry_removed = True
             db.session.commit()
@@ -449,9 +467,11 @@ class ServerEdit:
                             archival_event.file_id = None
 
                         file_entry = db.session.query(FileModel).filter(FileModel.id == file_id).first()
-                        db.session.delete(file_entry)
-                        db.session.commit()
-                        deletion_log['files_entries_effected'] = 1
+                        if file_entry:
+                            self._delete_file_hash_dependents(db=db, file_hash=file_entry.hash)
+                            db.session.delete(file_entry)
+                            db.session.commit()
+                            deletion_log['files_entries_effected'] = 1
 
             else:
                 server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:]
@@ -471,9 +491,11 @@ class ServerEdit:
                             archival_event.file_id = None
 
                         file_entry = db.session.query(FileModel).filter(FileModel.id == file_id).first()
-                        db.session.delete(file_entry)
-                        db.session.commit()
-                        deletion_log['files_entries_effected'] += 1
+                        if file_entry:
+                            self._delete_file_hash_dependents(db=db, file_hash=file_entry.hash)
+                            db.session.delete(file_entry)
+                            db.session.commit()
+                            deletion_log['files_entries_effected'] += 1
             
             utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=deletion_log)
             return deletion_log
