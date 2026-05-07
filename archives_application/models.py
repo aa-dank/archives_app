@@ -212,8 +212,6 @@ class FileContentModel(db.Model):
     __table_args__ = (
         db.Index('ix_file_contents_minilm_emb', 'minilm_emb', postgresql_using='ivfflat',
                  postgresql_ops={'minilm_emb': 'vector_cosine_ops'}, postgresql_with={'lists': 100}),
-        db.Index('ix_file_contents_mpnet_emb', 'mpnet_emb', postgresql_using='ivfflat',
-                 postgresql_ops={'mpnet_emb': 'vector_cosine_ops'}, postgresql_with={'lists': 100}),
     )
     file_hash = db.Column(db.String,
                           db.ForeignKey("files.hash", ondelete="CASCADE"),
@@ -222,8 +220,6 @@ class FileContentModel(db.Model):
     source_text = db.Column(db.Text)
     minilm_model = db.Column(db.Text, default='all-minilm-l6-v2')
     minilm_emb = db.Column(Vector(384))
-    mpnet_model = db.Column(db.Text)
-    mpnet_emb = db.Column(Vector(768))
     updated_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
     text_length = db.Column(db.Integer)
 
