@@ -4,7 +4,7 @@ from archives_application import db, login_manager
 from datetime import datetime
 from flask_login import UserMixin
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import func, CheckConstraint
+from sqlalchemy import func, CheckConstraint, UniqueConstraint
 
 
 @login_manager.user_loader
@@ -217,6 +217,12 @@ class FileContentModel(db.Model):
                           db.ForeignKey("files.hash", ondelete="CASCADE"),
                           primary_key=True)
     file = db.relationship("FileModel", back_populates="content", uselist=False)
+    fts_chunks = db.relationship(
+        "FileContentFtsChunkModel",
+        back_populates="file_content",
+        passive_deletes=True,
+        cascade="all, delete-orphan",
+    )
     source_text = db.Column(db.Text)
     minilm_model = db.Column(db.Text, default='all-minilm-l6-v2')
     minilm_emb = db.Column(Vector(384))
@@ -225,6 +231,34 @@ class FileContentModel(db.Model):
 
     def __repr__(self):
         return f"FileContent: {self.file_hash}, text_length={self.text_length}, updated_at={self.updated_at}"
+
+
+class FileContentFtsChunkModel(db.Model):
+    __tablename__ = "file_content_fts_chunks"
+    __table_args__ = (
+        UniqueConstraint(
+            "file_hash",
+            "chunk_index",
+            "chunked_at",
+            name="uq_file_content_fts_chunks_file_hash_chunk_index",
+        ),
+        CheckConstraint(
+            "length(chunk_text) > 0",
+            name="ck_file_content_fts_chunks_nonempty",
+        ),
+    )
+
+    id = db.Column(db.BigInteger, primary_key=True)
+    file_hash = db.Column(
+        db.String,
+        db.ForeignKey("file_contents.file_hash", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chunk_index = db.Column(db.Integer, nullable=False)
+    chunk_text = db.Column(db.Text, nullable=False)
+    chunked_at = db.Column(db.DateTime(timezone=True), nullable=False)
+
+    file_content = db.relationship("FileContentModel", back_populates="fts_chunks")
 
 
 class FileContentFailureModel(db.Model):
