@@ -5,8 +5,8 @@ import flask
 import flask_sqlalchemy
 import os
 import re
-import shlex
 import subprocess
+import threading
 import time
 from datetime import datetime, timedelta
 from typing import Dict
@@ -171,7 +171,7 @@ def restart_app_task(queue_id: str, delay: int = 0):
 
 def db_backup_task(queue_id: str):
     """
-    Worker task for sending pg_dump command to shell and saving a compressed backup to the server.
+    Worker task for streaming pg_dump output into a compressed backup on the server.
     Resources:
     https://stackoverflow.com/questions/63299534/backup-postgres-from-python-on-win10
     https://stackoverflow.com/questions/43380273/pg-dump-pg-restore-password-using-python-module-subprocess
@@ -179,25 +179,9 @@ def db_backup_task(queue_id: str):
     :param queue_id: the id of the task in the RQ queue
 
     """
-    
-    def bz2_compress_file(input_filepath: str, output_filepath: str = None):
-        """
-        Compresses a file using bz2 compression.
-        :param input_filepath: the path to the file to be compressed
-        :param output_filepath: the path to the compressed file. If none is provided, the compressed file will be saved in the same directory as the input file.
-        """
-
-        if not output_filepath:
-            input_filepath_list = utils.FileServerUtils.split_path(input_filepath)
-            filename = input_filepath_list[-1]
-            output_filepath = os.path.join(input_filepath_list[:-1], filename + '.bz2')
-
-        with open(input_filepath, 'rb') as f_in:
-            with bz2.open(output_filepath, 'wb') as f_out:
-                f_out.writelines(f_in)
-                return os.path.exists(output_filepath)
-            
-    temp_backup_path = None
+    part_path = None
+    proc = None
+    stderr_thread = None
     with app.app_context():
         log = {"task_id": queue_id, "errors": []}
         try:
@@ -208,47 +192,66 @@ def db_backup_task(queue_id: str):
             db_url = make_url(raw_db_url).set(drivername="postgresql")
             db_url_for_pg_dump = db_url.render_as_string(hide_password=False)
             timestamp = datetime.now().strftime(DB_BACKUP_FILE_TIMESTAMP_FORMAT)
-            temp_backup_filename = f"{DB_BACKUP_FILE_PREFIX}{timestamp}.sql"
-            temp_backup_path = utils.FlaskAppUtils.create_temp_filepath(temp_backup_filename)
-            
-            # An example of desired shell pg_dump command:
-            # pg_dump postgresql://archives:password@localhost:5432/archives > /opt/app/data/Archive_Data/backup101.sql
+
             postgres_executable_location = flask.current_app.config.get("POSTGRESQL_EXECUTABLES_LOCATION")
-            # Build the pg_dump shell command with quoting to survive special chars/whitespace
-            db_backup_cmd = (
-                f"{postgres_executable_location}pg_dump "
-                f"{shlex.quote(db_url_for_pg_dump)} > {shlex.quote(temp_backup_path)}"
-            )
-            log["backup_command"] = db_backup_cmd
-            env = os.environ.copy()
-            env["PGPASSWORD"] = db_url.password or ""  # provide password non-interactively
-            cmd_result = subprocess.run(db_backup_cmd,
-                                        shell=True,
-                                        stdin=subprocess.PIPE,
-                                        stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE,
-                                        text=True,
-                                        env=env)
-            if cmd_result.stderr:
-                raise Exception(
-                    f"Backup command failed. Stderr from attempt to call pg_dump back-up command:\n{cmd_result.stderr}")
-            log["stdout"] = str(cmd_result.stdout)
+            pg_dump_bin = f"{postgres_executable_location or ''}pg_dump"
+            db_backup_cmd = [pg_dump_bin, db_url_for_pg_dump]
+            log["backup_command"] = [pg_dump_bin, db_url.render_as_string(hide_password=True)]
+
             db_backup_destination = flask.current_app.config.get("DATABASE_BACKUP_LOCATION")
             destination_path = os.path.join(db_backup_destination, f"{DB_BACKUP_FILE_PREFIX}{timestamp}.sql.bz2")
+            part_path = f"{destination_path}.part"
             log["backup_location"] = destination_path
-            log["uncompressed_size"] = os.path.getsize(temp_backup_path)
-            
-            # Compress the backup file using bz2 compression
-            bz2_compress_file(temp_backup_path, destination_path)
+
+            env = os.environ.copy()
+            env["PGPASSWORD"] = db_url.password or ""  # provide password non-interactively
+
+            proc = subprocess.Popen(db_backup_cmd,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE,
+                                    env=env)
+
+            stderr_chunks = []
+
+            def read_stderr():
+                for chunk in iter(lambda: proc.stderr.read(8192), b""):
+                    stderr_chunks.append(chunk)
+
+            stderr_thread = threading.Thread(target=read_stderr)
+            stderr_thread.start()
+
+            uncompressed_size = 0
+            with bz2.open(part_path, "wb", compresslevel=9) as bz_out:
+                for chunk in iter(lambda: proc.stdout.read(1024 * 1024), b""):
+                    uncompressed_size += len(chunk)
+                    bz_out.write(chunk)
+
+            return_code = proc.wait()
+            stderr_thread.join()
+            stderr = b"".join(stderr_chunks).decode(errors="replace")
+
+            if return_code != 0:
+                raise Exception(
+                    f"Backup command failed. pg_dump exited with code {return_code}:\n{stderr}")
+
+            os.replace(part_path, destination_path)
+            part_path = None
+            log["stderr"] = stderr
+            log["uncompressed_size"] = uncompressed_size
             log["compressed_size"] = os.path.getsize(destination_path)
 
         except Exception as e:
             # log stack trace and error message
             log["errors"].append({"error": str(e), "stack_trace": str(e.__traceback__)})
         finally:
-            if temp_backup_path and os.path.exists(temp_backup_path):
+            if proc and proc.poll() is None:
+                proc.kill()
+                proc.wait()
+            if stderr_thread:
+                stderr_thread.join()
+            if part_path and os.path.exists(part_path):
                 try:
-                    os.remove(temp_backup_path)
+                    os.remove(part_path)
                 except Exception as cleanup_error:
                     log["errors"].append({"error": str(cleanup_error), "stack_trace": str(cleanup_error.__traceback__)})
 
@@ -256,6 +259,3 @@ def db_backup_task(queue_id: str):
         log = {k: str(val) for k, val in log.items() if hasattr(val, '__str__')} # Convert all values to strings to avoid JSON serialization errors
         utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
         return log
-
-        
-    
