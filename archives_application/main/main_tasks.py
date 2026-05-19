@@ -197,18 +197,19 @@ def db_backup_task(queue_id: str):
                 f_out.writelines(f_in)
                 return os.path.exists(output_filepath)
             
+    temp_backup_path = None
     with app.app_context():
+        log = {"task_id": queue_id, "errors": []}
         try:
             db = flask.current_app.extensions['sqlalchemy']
             utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-            log = {"task_id": queue_id, "errors": []}
             raw_db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
             # Normalize the SQLAlchemy URL to remove the driver suffix so pg_dump accepts it
             db_url = make_url(raw_db_url).set(drivername="postgresql")
             db_url_for_pg_dump = db_url.render_as_string(hide_password=False)
             timestamp = datetime.now().strftime(DB_BACKUP_FILE_TIMESTAMP_FORMAT)
             temp_backup_filename = f"{DB_BACKUP_FILE_PREFIX}{timestamp}.sql"
-            temp_backup_path =  utils.FlaskAppUtils.create_temp_filepath(temp_backup_filename)
+            temp_backup_path = utils.FlaskAppUtils.create_temp_filepath(temp_backup_filename)
             
             # An example of desired shell pg_dump command:
             # pg_dump postgresql://archives:password@localhost:5432/archives > /opt/app/data/Archive_Data/backup101.sql
@@ -239,12 +240,17 @@ def db_backup_task(queue_id: str):
             
             # Compress the backup file using bz2 compression
             bz2_compress_file(temp_backup_path, destination_path)
-            os.remove(temp_backup_path)
             log["compressed_size"] = os.path.getsize(destination_path)
 
         except Exception as e:
             # log stack trace and error message
             log["errors"].append({"error": str(e), "stack_trace": str(e.__traceback__)})
+        finally:
+            if temp_backup_path and os.path.exists(temp_backup_path):
+                try:
+                    os.remove(temp_backup_path)
+                except Exception as cleanup_error:
+                    log["errors"].append({"error": str(cleanup_error), "stack_trace": str(cleanup_error.__traceback__)})
 
 
         log = {k: str(val) for k, val in log.items() if hasattr(val, '__str__')} # Convert all values to strings to avoid JSON serialization errors
