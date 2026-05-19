@@ -187,6 +187,8 @@ def db_backup_task(queue_id: str):
         try:
             db = flask.current_app.extensions['sqlalchemy']
             utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+            backup_started_at = time.perf_counter()
+            log["started_at"] = datetime.now().isoformat()
             raw_db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
             # Normalize the SQLAlchemy URL to remove the driver suffix so pg_dump accepts it
             db_url = make_url(raw_db_url).set(drivername="postgresql")
@@ -220,11 +222,13 @@ def db_backup_task(queue_id: str):
             stderr_thread = threading.Thread(target=read_stderr)
             stderr_thread.start()
 
+            dump_and_compress_started_at = time.perf_counter()
             uncompressed_size = 0
             with bz2.open(part_path, "wb", compresslevel=9) as bz_out:
                 for chunk in iter(lambda: proc.stdout.read(1024 * 1024), b""):
                     uncompressed_size += len(chunk)
                     bz_out.write(chunk)
+            log["dump_and_compress_seconds"] = round(time.perf_counter() - dump_and_compress_started_at, 3)
 
             return_code = proc.wait()
             stderr_thread.join()
@@ -234,11 +238,15 @@ def db_backup_task(queue_id: str):
                 raise Exception(
                     f"Backup command failed. pg_dump exited with code {return_code}:\n{stderr}")
 
+            rename_started_at = time.perf_counter()
             os.replace(part_path, destination_path)
+            log["rename_seconds"] = round(time.perf_counter() - rename_started_at, 3)
             part_path = None
             log["stderr"] = stderr
             log["uncompressed_size"] = uncompressed_size
             log["compressed_size"] = os.path.getsize(destination_path)
+            log["finished_at"] = datetime.now().isoformat()
+            log["duration_seconds"] = round(time.perf_counter() - backup_started_at, 3)
 
         except Exception as e:
             # log stack trace and error message
