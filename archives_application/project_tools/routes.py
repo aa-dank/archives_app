@@ -4,7 +4,6 @@ import flask
 import json
 import re
 import pandas as pd
-from datetime import datetime
 from flask_login import current_user
 from archives_application import db, bcrypt
 from archives_application import utils
@@ -13,169 +12,98 @@ from archives_application.project_tools.forms import CAANSearchForm
 from sqlalchemy import or_, and_
 
 
-FILEMAKER_API_VERSION = 'v1'
-FILEMAKER_CAAN_LAYOUT = 'caan_table'
-FILEMAKER_PROJECTS_LAYOUT = 'projects_table'
-FILEMAKER_PROJECT_CAANS_LAYOUT = 'caan_project_join'
-FILEMAKER_TABLE_INDEX_COLUMN_NAME = 'ID_Primary'
-VERIFY_FILEMAKER_SSL = False
 DEFAULT_TASK_TIMEOUT = 18000 # 5 hours
 
 project_tools = flask.Blueprint('project_tools', __name__)
 
-@project_tools.route("/fmp_reconciliation", methods=['GET', 'POST'])
-def filemaker_reconciliation():
-    """
-    The purpose of this endpoint is to ensure that any changes made to the FileMaker database are reflected in the
-    application database. This is done by comparing the FileMaker database to the application database and making
-    changes to the application database as needed.
-    Request parameters can be sent in either the url or request headers.
-    Request parameters:
-        user: email of the user making the request (Required)
-        password: password of the user making the request (Required)
-        confirm_locations: whether to confirm the locations of projects in the application database
-        update_projects: whether to update the projects in the application database to match the FileMaker database
-        timeout: the maximum time in seconds that the task is allowed to run
-
-    :return: JSON response with the results of the reconciliation
-    """
-    
-    from archives_application.project_tools.project_tools_tasks import fmp_caan_project_reconciliation_task
-
-    # Check if the request includes user credentials or is from a logged in user. 
-    # User needs to have ADMIN role.
-    request_is_authenticated = False
-    try:
-        user_param = utils.FlaskAppUtils.retrieve_request_param("user")
-        password_param = None
-        if user_param:
-            password_param = utils.FlaskAppUtils.retrieve_request_param("password")
-            user = UserModel.query.filter_by(email=user_param).first()
-
-            # If there is a matching user to the request parameter, the password matches and that account has admin role...
-            if user \
-                and bcrypt.check_password_hash(user.password, password_param) \
-                and utils.FlaskAppUtils.has_admin_role(user):
-                request_is_authenticated = True
-
-        elif current_user:
-            if current_user.is_authenticated \
-                and utils.FlaskAppUtils.has_admin_role(current_user):
-                request_is_authenticated = True
-    
-    except Exception as e:
-        m ="Error authenticating user permissions."
-        return utils.FlaskAppUtils.api_exception_subroutine(m, e)    
-
-    if request_is_authenticated:
-        # extract fmp_caan_project_reconciliation_task params from request
-        to_confirm = utils.FlaskAppUtils.retrieve_request_param('confirm_locations')
-        to_confirm = True if (to_confirm and to_confirm.lower() == "true") else False
-        to_update = utils.FlaskAppUtils.retrieve_request_param('update_projects')
-        to_update = True if (to_update and to_update.lower() == "true") else False
-        timeout = utils.FlaskAppUtils.retrieve_request_param('timeout') if utils.FlaskAppUtils.retrieve_request_param('timeout') else DEFAULT_TASK_TIMEOUT
-
-        task_info = {"confirm_locations": to_confirm,
-                     "update_projects": to_update,
-                     "user": user_param if user_param else current_user.email,
-                     "password": password_param if password_param else "logged_in_user"}  
-        task_kwargs = {"confirm_locations": to_confirm, "update_existing": to_update}
-        nq_kwargs = {"timeout": timeout}
-        nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
-                                                        enqueued_function=fmp_caan_project_reconciliation_task,
-                                                        task_info=task_info,
-                                                        task_kwargs=task_kwargs,
-                                                        enqueue_call_kwargs=nq_kwargs)
-        return flask.Response(json.dumps(utils.serializable_dict(nq_results)), status=200)
-    else:
-        return flask.Response("Unauthorized", status=401)
-        
-
-@project_tools.route("/test/fmp_reconciliation", methods=['GET', 'POST'])
-def test_fmp_reconciliation():
-    """
-    Endpoint for testing the task that reconciles the application database with the FileMaker database.
-
-    This endpoint enqueues a task to reconcile the application database with the FileMaker database.
-    Optionally, it can also confirm the locations of projects in the application database.
-    Request parameters can be sent in either th url or request headers.
-    
-    Query Parameters:
-        confirm_locations (str): Whether to confirm the locations of projects in the application database. 
-                                 Accepts 'true' or 'false'. Default is 'false'.
-        update_projects (str): Whether to update the projects in the application database to match the FileMaker database.
-                               Accepts 'true' or 'false'. Default is 'false'.
-
-    Returns:
-        Response: A JSON response with the results of the reconciliation and confirmation tasks.
-    """
-    from archives_application.project_tools.project_tools_tasks import fmp_caan_project_reconciliation_task, confirm_project_locations_task
-
-    roles_allowed = ['ADMIN']
-    has_correct_permissions = lambda user: any([role in user.roles.split(",") for role in roles_allowed]) 
-    request_is_authenticated = False
-
-    # Check if the request includes user credentials or is from a logged in user.
-    user_param = utils.FlaskAppUtils.retrieve_request_param('user', None)
+def admin_request_user():
+    user_param = utils.FlaskAppUtils.retrieve_request_param("user", None)
     if user_param:
-        password_param = utils.FlaskAppUtils.retrieve_request_param('password')
+        password_param = utils.FlaskAppUtils.retrieve_request_param("password")
         user = UserModel.query.filter_by(email=user_param).first()
+        if user and bcrypt.check_password_hash(user.password, password_param or "") and utils.FlaskAppUtils.has_admin_role(user):
+            return user, password_param
+        return None, password_param
 
-        # If there is a matching user to the request parameter, the password matches and that account has admin role...
-        if user and bcrypt.check_password_hash(user.password, password_param) and has_correct_permissions(user=user):
-            request_is_authenticated = True
+    if current_user and current_user.is_authenticated and utils.FlaskAppUtils.has_admin_role(current_user):
+        return current_user, None
 
-    elif current_user:
-        if current_user.is_authenticated and has_correct_permissions(current_user):
-            user = current_user
-            request_is_authenticated = True
+    return None, None
 
-    if not request_is_authenticated:
+
+def requested_projects_list():
+    project_param = utils.FlaskAppUtils.retrieve_request_param("project", None)
+    projects_param = utils.FlaskAppUtils.retrieve_request_param("projects", None)
+    project_values = []
+    if project_param:
+        project_values.append(project_param)
+    if projects_param:
+        project_values.extend(projects_param.split(","))
+
+    return [project.strip() for project in project_values if project.strip()] or None
+
+
+@project_tools.route("/confirm_project_locations", methods=['GET', 'POST'])
+def confirm_project_locations():
+    """
+    Enqueues a task that refreshes ``projects.file_server_location`` from the file server.
+
+    Request parameters can be sent in either the URL or request headers:
+        user: email of the user making the request when not already logged in
+        password: password for the request user
+        project: optional single project number to check
+        projects: optional comma-separated project numbers to check
+        timeout: maximum task runtime in seconds
+    """
+    from archives_application.project_tools.project_tools_tasks import confirm_project_locations_task
+
+    try:
+        user, _ = admin_request_user()
+    except Exception as e:
+        return utils.FlaskAppUtils.api_exception_subroutine("Error authenticating user permissions.", e)
+
+    if not user:
         return flask.Response("Unauthorized", status=401)
-    
-    results = {"confirm_results":{},
-               "reconciliation_results":{}}
-    
-    to_confirm = utils.FlaskAppUtils.retrieve_request_param('confirm_locations')
-    to_confirm = True if (to_confirm and to_confirm.lower() == "true") else False
-    update_existing = utils.FlaskAppUtils.retrieve_request_param('update_projects')
-    update_existing = True if (update_existing and update_existing.lower() == "true") else False
-    if not to_confirm and not update_existing:
-        return flask.Response("Bad Request: Must confirm locations or update projects", status=400)
-    
-    
-    if update_existing:
-        recon_job_id = f"{fmp_caan_project_reconciliation_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
-        new_task_record = WorkerTaskModel(task_id=recon_job_id,
+
+    timeout = int(utils.FlaskAppUtils.retrieve_request_param("timeout") or DEFAULT_TASK_TIMEOUT)
+    projects_list = requested_projects_list()
+    task_info = {
+        "projects": projects_list or "all",
+        "user": user.email
+    }
+    task_kwargs = {"projects_list": projects_list}
+    nq_kwargs = {"timeout": timeout}
+    nq_results = utils.RQTaskUtils.enqueue_new_task(
+        db=db,
+        enqueued_function=confirm_project_locations_task,
+        task_info=task_info,
+        task_kwargs=task_kwargs,
+        enqueue_call_kwargs=nq_kwargs
+    )
+    return flask.Response(json.dumps(utils.serializable_dict(nq_results)), status=200)
+
+
+@project_tools.route("/test/confirm_project_locations", methods=['GET', 'POST'])
+def test_confirm_project_locations():
+    """Runs the project location confirmation task synchronously for admin testing."""
+    from datetime import datetime
+    from archives_application.project_tools.project_tools_tasks import confirm_project_locations_task
+
+    user, _ = admin_request_user()
+    if not user:
+        return flask.Response("Unauthorized", status=401)
+
+    projects_list = requested_projects_list()
+    confirm_job_id = f"{confirm_project_locations_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
+    confirm_task_record = WorkerTaskModel(task_id=confirm_job_id,
                                           time_enqueued=str(datetime.now()),
                                           origin="test",
-                                          function_name=fmp_caan_project_reconciliation_task.__name__,
+                                          function_name=confirm_project_locations_task.__name__,
                                           status="queued")
-        db.session.add(new_task_record)
-        db.session.commit()
-        reconciliation_results = fmp_caan_project_reconciliation_task(queue_id=recon_job_id,
-                                                                    confirm_locations=False, # call this seperately
-                                                                    update_existing=update_existing)
-        results["reconciliation_results"] = reconciliation_results
-
-    if to_confirm:
-        # get list of projects with existing locations to confirm
-        to_confirm_foundset = ProjectModel.query.filter(ProjectModel.file_server_location.isnot(None)).all()
-        project_nums_list = [proj.number for proj in to_confirm_foundset]
-        confirm_job_id = f"{confirm_project_locations_task.__name__}_test_{datetime.now().strftime(r'%Y%m%d%H%M%S')}"
-        confirm_task_record = WorkerTaskModel(task_id=confirm_job_id,
-                                              time_enqueued=str(datetime.now()),
-                                              origin="test",
-                                              function_name=confirm_project_locations_task.__name__,
-                                              status="queued")
-        db.session.add(confirm_task_record)
-        db.session.commit()
-        confirm_results = confirm_project_locations_task(queue_id=confirm_job_id,
-                                                         projects_list=project_nums_list)
-        results["confirm_results"] = confirm_results
-    
-    results = utils.serializable_dict(results)
-    return flask.Response(json.dumps(results), status=200)
+    db.session.add(confirm_task_record)
+    db.session.commit()
+    results = confirm_project_locations_task(queue_id=confirm_job_id, projects_list=projects_list)
+    return flask.Response(json.dumps(utils.serializable_dict(results)), status=200)
 
 @project_tools.route("/caan_search", methods=['GET', 'POST'])
 def caan_search():
@@ -273,8 +201,8 @@ def caan_info(caan):
     Endpoint for displaying details and associated projects for a given CAAN.
 
     This endpoint retrieves and displays CAAN details plus all projects associated with the CAAN.
-    It includes a "Drawings?" status column based on FileMaker data and links each row to
-    the root project folder path on the archives server.
+    It includes a "Drawings?" status column from the project record and links each row to
+    the root project folder path recorded for the archives server.
 
     Path Parameters:
         caan (str): The CAAN identifier for which to retrieve project and metadata details.

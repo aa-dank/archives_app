@@ -27,7 +27,6 @@ TASK_RECORD_LIFESPANS = {'add_file_to_db_task': 90,
                          'task_records_clean_up_task': 90,
                          'temp_file_clean_up_task': 90,
                          'db_backup_task': 180,
-                         'fmp_caan_project_reconciliation_task': 365,
                          'confirm_project_locations_task': 365,
                          'consolidation_target_removal_task': 365,
                          'consolidate_dirs_edit_task': 365,
@@ -402,10 +401,6 @@ def get_app_config():
         "server_change_data_limit": flask.current_app.config.get("SERVER_CHANGE_DATA_LIMIT"),
         "redis_url": flask.current_app.config.get("REDIS_URL"),
         "user_archives_location": flask.current_app.config.get("USER_ARCHIVES_LOCATION"),
-        "filemaker_host_location": flask.current_app.config.get("FILEMAKER_HOST_LOCATION"),
-        "filemaker_user": flask.current_app.config.get("FILEMAKER_USER"),
-        "filemaker_password": flask.current_app.config.get("FILEMAKER_PASSWORD"),
-        "filemaker_database": flask.current_app.config.get("FILEMAKER_DATABASE_NAME"),
         "app_workers_restart_command": flask.current_app.config.get("APP_WORKERS_RESTART_COMMAND"),
         "app_restart_command": flask.current_app.config.get("APP_RESTART_COMMAND")
     }
