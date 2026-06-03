@@ -86,3 +86,55 @@ behavior users still need while leaving all FileMaker sync behavior to
 - If Docker is still part of active deployment, build the image once after this
   change to confirm the Python 3.13 base image works with the exported
   requirements and required system packages.
+
+---
+
+## Entry 002 - Branch purpose map
+**Date:** 2026-05-28  
+**Author:** OpenAI Codex (GPT-5)
+
+---
+
+### Context
+
+To make future maintenance easier, this entry records what each branch appears
+to be for based on branch names and each branch tip commit subject.
+
+### Branch summaries
+
+#### Active local branches
+
+| Branch | Purpose summary |
+|---|---|
+| `master` | Primary integration branch; current baseline includes FileMaker reconciliation removal and project location-only maintenance. |
+| `feature/archiving_dashboard_plot_upgrades` | Workstream for archiving dashboard improvements plus related input validation hardening (project number regex validation in forms). |
+| `feature/dir-contents-summary` | Workstream for directory contents summary capabilities and supporting version/logic updates. |
+| `project-server-location-endpoint` | Adds or refines API-backed scraping/location endpoints (notably `scrape_location` and `scrape_files` behavior). |
+| `default-nesting-behavior` | Fix branch for destination path resolution when no existing project path is present (nesting/path fallback behavior). |
+| `batch-archive-feat` | Batch archive/inbox processing enhancements, including lifecycle and HTML flow updates around `batch_process_inbox_task`. |
+| `caan-gui-upgrades` | UI and UX updates around CAAN views/search (sidebar search, docstrings, and version rollover changes). |
+| `fs-coordination-added` | File-system coordination/concurrency work branch; appears to be a sync branch after merging CAAN GUI upgrades with coordination logic. |
+
+#### Remote-only and legacy branches
+
+| Branch | Purpose summary |
+|---|---|
+| `origin/ServerEdit-redis-async` | Early async ServerEdit work integrating Redis-backed task handling and DB follow-up task wiring. |
+| `origin/add-rq-attempt` | Initial RQ adoption branch for background task queueing. |
+| `origin/fix_app_context_issue_for_rq_worker` | Stabilization branch to correct Flask app-context usage inside RQ worker task execution. |
+| `origin/add-celery` and `origin/implement-Flask-CeleryExt` | Experimental Celery integration attempts that appear to have been superseded by RQ. |
+| `origin/add-google-auth` | Google sign-in/authentication implementation branch. |
+| `origin/blueprint_app` | Historical Flask blueprint refactor branch. |
+| `origin/application_maintenance` | Added/finished admin maintenance route and app maintenance workflows. |
+| `origin/confirmation_page` | Early confirmation/inbox flow implementation branch. |
+| `origin/add_inbox_items_to_app_db` | Workstream for ingesting inbox items into the application database. |
+| `origin/adding-batch_move_edit` | Batch move/edit feature branch, including validation and user-facing error-text refinements. |
+| `origin/avoid_new_postgres_conns` | Database efficiency branch aimed at reducing unnecessary new Postgres connections. |
+| `origin/add_filemaker_data` | Historical FileMaker-related data/config integration branch (predates current FileMaker reconciliation removal). |
+
+### Notes
+
+- Several remote branches have corresponding local tracking branches and share
+  the same purpose; summaries above avoid repeating duplicate pairs.
+- Purpose descriptions are inferred from branch names plus latest commit
+  subjects and should be treated as operational guidance, not strict ownership.
