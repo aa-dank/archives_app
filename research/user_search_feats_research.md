@@ -136,6 +136,194 @@ Design implications:
 - OCR/image formats need nuanced messaging: some have text, many do not.
 - Coverage reporting should be part of the result page and exports.
 
+## Empirical Feature Research
+
+Additional profiling was performed on 2026-06-04 in:
+
+- `/home/projects/business_services_db/notebooks/fts_feat_research.ipynb`
+- `/home/projects/business_services_db/output/*.csv`
+
+### Scope Sizes
+
+Top-level Records directory scope is highly uneven:
+
+- 98 top-level directory scopes were profiled.
+- Median top-level scope size was about 2,859 distinct files.
+- The largest top-level scope was `49xx   Long Marine Lab` with 86,944 distinct files and 112,252 location rows.
+- The top 10 top-level directories accounted for about 387,085 distinct file appearances across scopes.
+- Median top-level content-searchable coverage was about 54.7%.
+- Coverage varied widely, from 5.9% to 100% depending on the top-level directory.
+- Large scopes can have low content-searchable coverage: `49xx   Long Marine Lab` was only 27.9% content-searchable.
+- Only 1.43% of distinct files appeared in more than one top-level directory.
+
+Design implication: every scoped search page should show scope-level coverage. A user searching a low-coverage scope needs to see that content search covers only part of the files in that folder tree.
+
+Operational implication: the research query for top-level scope sizing took about 101 seconds. Request-path search should not recompute expensive scope membership summaries from scratch.
+
+### Project Scope Quality
+
+Project folder metadata is usable but not complete:
+
+| Metric | Count |
+|---|---:|
+| total projects | 10,043 |
+| projects with null `file_server_location` | 2,150 |
+| projects with recorded root | 7,888 |
+| projects with matching files | 7,320 |
+| projects with recorded root but no matching files | 568 |
+| distinct recorded project roots | 7,866 |
+| distinct project roots with matches | 7,298 |
+
+Design implication: project-scoped search should explicitly report when a project has no recorded file server location or when the recorded location does not match any indexed file locations.
+
+Implementation implication: project scope resolution should normalize recorded roots once and avoid per-request path-prefix expansion over all `file_locations`.
+
+### CAAN Expansion
+
+The CAAN expansion notebook result showed unexpectedly sparse linkage:
+
+- 1,343 CAAN rows were analyzed.
+- The maximum linked-project count per CAAN was 1.
+- Only one CAAN in the sampled result had a linked project root with files.
+- The selected latency-test CAAN, `7376` Kerr Hall, mapped to one project root with 19 files.
+
+This conflicts with earlier reference documentation describing `project_caans` as a much larger many-to-many table. Treat the notebook result as a data-quality/data-sync warning, not as a stable product assumption.
+
+Design implication: CAAN-scoped search remains desirable, but the build spec should include a preflight check that confirms `project_caans` is populated as expected in the target database. If CAAN linkage is sparse in production, the UI should explain that CAAN scope depends on project-CAAN linkage and may be incomplete.
+
+### Multi-Location Behavior
+
+Duplicate file locations are common enough to affect presentation:
+
+| Metric | Count |
+|---|---:|
+| files with locations | 754,591 |
+| hashes with more than one location | 132,835 |
+| hashes crossing project boundaries | 13,749 |
+| hashes crossing CAAN boundaries | 0 in this analysis |
+| hashes with some unmatched locations | 33,525 |
+| multi-location hashes crossing project boundaries | 10.35% |
+
+Design implication: HTML should remain file-hash-centered. Showing one row per location would overrepresent duplicated files. Excel should carry full location detail in a separate sheet.
+
+Data caveat: CAAN boundary results depend on the sparse CAAN linkage noted above.
+
+### Chunk Freshness And Chunk Sets
+
+FTS chunk freshness is currently clean:
+
+- `file_contents` rows in the notebook run: 427,077.
+- Hashes with any chunks: 342,798.
+- Hashes with no chunks: 84,279.
+- Stale chunk hashes where `file_contents.updated_at` is newer than latest chunking: 0.
+- Only one file hash had more than one distinct `chunked_at` value.
+
+Design implication: v1 query logic should still select the latest chunk set defensively, but multiple chunk sets are not currently a major ranking concern.
+
+Coverage implication: a large no-chunk population remains and should appear in coverage reporting.
+
+### Query Latency
+
+A representative `fixture` content search showed a large gap between scoped and unscoped search:
+
+| Scenario | Rows | Median Seconds |
+|---|---:|---:|
+| CAAN-scoped content search | 0 | 1.142 |
+| project-scoped content search | 50 | 1.536 |
+| location-scoped content search | 50 | 1.818 |
+| unscoped content search | 50 | 45.379 |
+
+Caveats:
+
+- This is one query term and one selected scope family.
+- The CAAN result is not representative because CAAN linkage was sparse and returned no hits.
+- The research notebook's scope compilation and query shapes may not be final production query shapes.
+
+Design implication: v1 should strongly encourage users to search within a project, CAAN, or location scope. Unscoped content search may need a warning, stricter result limits, a minimum query length, or an async/export-oriented path if further latency tests confirm this result.
+
+Implementation implication: global content search should not be assumed fast enough for normal request/response UX without more query tuning.
+
+### Thin Text
+
+Thin or empty extracted text is common:
+
+| Text Length Bucket | Files | Share |
+|---|---:|---:|
+| 0 | 71,551 | 16.7% |
+| 1-49 | 22,664 | 5.3% |
+| 50-199 | 10,661 | 2.5% |
+| 200-999 | 56,507 | 13.2% |
+| 1k-4.9k | 149,821 | 35.1% |
+| 5k-19.9k | 66,527 | 15.6% |
+| 20k-99.9k | 34,054 | 8.0% |
+| 100k+ | 15,491 | 3.6% |
+
+About 22.1% of profiled files had fewer than 50 characters of text, and about 24.5% had fewer than 200 characters.
+
+Design implication: `empty_or_thin_text` should be a real status, not an edge case. Thin-text files can remain filename/path-searchable, but content-search snippets and "searched text" claims should be cautious.
+
+### Failure Taxonomy
+
+All failure rows in the notebook summary were extraction-stage failures:
+
+- `extract`: 41,366 distinct failed hashes.
+
+Top failure extensions from the normalized taxonomy:
+
+| Extension | Failures |
+|---|---:|
+| tif | 9,417 |
+| pdf | 6,620 |
+| msg | 1,619 |
+| xml | 1,574 |
+| no extension | 1,538 |
+| jpg | 1,102 |
+| gif | 131 |
+| jpeg | 55 |
+| docx | 29 |
+| doc | 25 |
+| eml | 23 |
+
+Dominant failure patterns include missing file paths, oversized/decompression-bomb image guardrails, PDF OCR producing no text, PDF OCR below threshold, and known `.msg` parsing/timezone issues.
+
+Design implication: failed extraction should be visible in coverage summaries and exports. It should not be collapsed into "not searched" without explanation.
+
+Scraper implication: TIFF/image extraction failures and `.msg` extraction deserve separate follow-up from the UI feature.
+
+### Unsupported Or Zero-Text Extensions
+
+High-count zero-text extensions include:
+
+| Extension | Files With No Text |
+|---|---:|
+| zip | 4,045 |
+| lnk | 3,207 |
+| mov | 1,744 |
+| pl | 1,670 |
+| tfw | 742 |
+| plt | 647 |
+| ctb | 578 |
+| db | 559 |
+| exe | 458 |
+| gdbtable | 433 |
+| shx | 387 |
+| mpp | 364 |
+| dbf | 362 |
+
+Design implication: many files should be treated as filename/path-only by default. This is especially important for ZIPs, shortcuts, video, GIS sidecar files, AutoCAD support files, executables, and database-like files.
+
+### OCR Usefulness
+
+Image OCR usefulness varies sharply by image type:
+
+- Onsite-photo-proxy JPGs: 108,734 files; 18.87% had text; median nonzero text length was only 10 characters.
+- Onsite-photo-proxy JPEGs: 5,454 files; 25.23% had text; median nonzero text length was 15 characters.
+- Plan-sheet-proxy TIFs: 86,648 files; 67.38% had text; median nonzero text length was 1,577 characters.
+- Plan-sheet-proxy TIFFs: 2,614 files; 72.30% had text; median nonzero text length was 2,270 characters.
+- Plan-sheet-proxy JPGs: 5,418 files; 36.08% had text; median nonzero text length was 230 characters.
+
+Design implication: image-derived text should not be treated uniformly. Plan-sheet TIFF OCR appears useful for content search. Onsite/photo JPG OCR is often too thin for confident text search and should be labeled accordingly.
+
 ## User Search Model
 
 The most useful product model is one search page with scoped retrieval modes.
@@ -155,7 +343,7 @@ Recommended shared filters:
 
 - Location prefix: direct file server path or database-relative path.
 - Project: project number lookup resolves to `projects.file_server_location` when present; projects without a file server location should be called out as unscoped/unsearchable for project-limited file search.
-- CAAN: CAAN resolves to all directly linked projects through `project_caans`, then uses those projects' file server roots when present.
+- CAAN: CAAN resolves to all directly linked projects through `project_caans`, then uses those projects' file server roots when present. Validate `project_caans` population before relying on this in v1.
 - File type/extension.
 - Searchable status: content searchable, filename-only, extraction failed, not yet scraped, unsupported/low-value format.
 - Optional later date filters using `file_date_mentions`.
@@ -167,7 +355,8 @@ Location, project, and CAAN should probably all compile into directory-prefix co
 Important nuance:
 
 - Project scoping depends on `projects.file_server_location`. If that value is null, no files should be included for that project-limited search unless a separate fallback rule is explicitly designed later.
-- CAAN scoping can expand to many directly linked project roots through `project_caans`; linked projects with null file server locations should be counted and explained.
+- CAAN scoping should expand to directly linked project roots through `project_caans`; linked projects with null file server locations should be counted and explained.
+- The 2026-06-04 notebook showed unexpectedly sparse CAAN linkage, so CAAN-scoped search needs a data preflight before final implementation.
 - The same file hash can appear inside and outside the selected scope.
 
 Recommended behavior:
@@ -196,6 +385,7 @@ Core behavior:
 - Include result-level and query-level coverage counts.
 - Default HTML display limit: approximately 300 results.
 - Default Excel export limit: approximately 3,000 file-level results, plus associated locations for those results.
+- Encourage project, CAAN, or location scoping for content search. Unscoped content search should be treated as potentially slow until additional tuning proves otherwise.
 
 Potential result columns:
 
@@ -219,6 +409,7 @@ Potential coverage summary above results:
 - Files included in FTS chunks
 - Files with extraction failures
 - Files not attempted or not content-searchable
+- Files with empty or thin extracted text
 - Files searched only by filename/path
 
 This is especially important because users may otherwise read "no content hits" as "the archive does not contain it."
@@ -229,6 +420,7 @@ Potential narrative companion above the result tables:
 - Report result limits, for example "Showing the top 300 results; download Excel for up to 3,000 results."
 - Report projects/CAAN-linked projects excluded from scope because no `file_server_location` is recorded.
 - Summarize searchable coverage, extraction failures, and filename-only/unsearchable files in the selected scope.
+- Warn when a content search is unscoped or very broad and may be slower or less useful.
 - Warn when the result set hit the display or export limit.
 
 ## Query Shape Direction
@@ -289,7 +481,7 @@ results = files in selected scope AND files matching the search query
 
 Do not globally limit content matches before applying scope, because that can drop valid scoped results that ranked below out-of-scope matches.
 
-Open technical question: because `chunked_at` allows multiple chunk sets, confirm whether production currently has multiple chunk sets per file hash. If yes, query logic needs to select the current/latest chunk set per file hash before ranking.
+The 2026-06-04 notebook found only one file hash with multiple chunk sets and no stale chunk hashes. Query logic should still select the latest chunk set defensively, but multiple chunk sets are not currently a major ranking concern.
 
 ## UX Considerations
 
@@ -301,7 +493,8 @@ Recommended UI choices:
 - Keep a filename-only mode for known file names.
 - Provide project and CAAN inputs as structured fields, not only free-text location fields.
 - Offer an advanced section for raw file server location prefix, extension filters, and result limits.
-- Keep search synchronous for normal keyword queries.
+- Keep scoped keyword searches synchronous if latency tests remain in the low-second range.
+- Treat unscoped document-content search as a separate UX case: warn, require a more specific query/scope, or route to a slower/asynchronous workflow if needed.
 - Show "Searching..." and prevent duplicate submissions, as the current page does.
 - For very large exports, consider generating the export asynchronously later; do not block phase 1 on that unless early testing proves it necessary.
 
@@ -334,14 +527,16 @@ The UI and exports need vocabulary for coverage. Draft statuses:
 - `not_attempted`: no content row and no failure row.
 - `unsupported_or_low_value_format`: extension/path category normally excluded from content extraction.
 - `filename_only`: not content-searchable but included in filename/path search.
+- `image_ocr_thin`: image-derived text exists but is likely too sparse for confident content search.
+- `image_ocr_searchable`: image-derived OCR is substantial enough to support snippets, especially common for plan-sheet TIFFs.
 
 The status can be computed at query time initially. If it becomes expensive, materialize a view/table later.
 
-The "thin text" threshold needs empirical tuning. For a first pass, use reporting only rather than exclusion. Example: flag files with fewer than 50 or 100 extracted characters as thin, but still allow filename/path matching.
+The 2026-06-04 thin-text profile suggests a threshold around 50 or 200 characters is worth testing. About 22.1% of profiled files had fewer than 50 characters, and about 24.5% had fewer than 200. For a first pass, use reporting only rather than exclusion, and still allow filename/path matching.
 
-## Data Analysis Needed Before Build Spec
+## Data Analysis Status Before Build Spec
 
-Useful database analyses:
+Mostly completed in `/home/projects/business_services_db/notebooks/fts_feat_research.ipynb`:
 
 - Scope sizes: file counts and content-searchable counts by top-level Records directory.
 - Project scope quality: count projects with null `file_server_location`; count project roots that actually match file_locations.
@@ -354,7 +549,14 @@ Useful database analyses:
 - Failure taxonomy: top failure messages by extension and extractor stage.
 - Unsupported format inventory: extensions with high file counts and no text.
 - OCR usefulness: sample JPG/TIF text quality, especially for onsite photos vs scanned plan sheets.
+
+Still needed before build spec:
+
 - Result evaluation: manually test 20-30 likely user searches and judge relevance.
+- Verify `project_caans` population and CAAN expansion behavior in the target database, because the notebook result was unexpectedly sparse.
+- Run more latency tests with several terms (`soil`, `lighting`, `fixture`, `submittal`, known report names) and several scope sizes.
+- Decide whether v1 needs a materialized or cached scope map for project/location/CAAN -> file hash membership.
+- Decide whether unscoped content search should be available synchronously in v1.
 
 Potential profiling SQL should be written as saved research queries or notebooks, not embedded directly into the Flask request path.
 
@@ -383,6 +585,8 @@ Remaining design questions:
 - Validate whether users prefer the recommended HTML grouping by file hash, or whether they need one row per matching location with a duplicate hash column.
 - Decide whether the Excel export's 3,000 limit should apply to file-level results, with all locations for those files included, or to total location rows.
 - Which fields are essential for PMs versus archivists in the first result table?
+- Should v1 permit unscoped content search synchronously, require a scope for document-content search, or allow unscoped search only with warnings/async handling?
+- Should CAAN-scoped search be included in v1 if `project_caans` linkage is not populated as expected?
 
 ## External Research That Could Help
 
@@ -405,7 +609,9 @@ Key risks:
 - A "no results" page can mislead users if it does not explain content coverage.
 - Content quality varies sharply by extension and extractor; junk text can create false confidence.
 - Some documents have real but low-signal text, especially drawing sets with repeated title blocks.
-- Search scoped by CAAN may surprise users because CAAN/project relationships are many-to-many and project folder locations are incomplete.
+- Search scoped by CAAN may surprise users if `project_caans` linkage is sparse or project folder locations are incomplete.
+- Unscoped content search may be too slow for normal synchronous request/response UX; the `fixture` test took about 45 seconds median unscoped versus about 1.5-1.8 seconds scoped.
+- Scope membership compilation can itself be expensive if performed from raw `file_locations` each request.
 - Excel exports can become memory-heavy if generated from very large dataframes inside a request.
 - Future JSON export can accidentally become an unsupported public API unless versioned/defined.
 - The app's current `db_query_to_df()` pattern may be too blunt for large search/export workflows.
@@ -420,13 +626,14 @@ Operational risks:
 
 ## Recommended Next Step
 
-Before writing the implementation specification, produce a short empirical profiling notebook or SQL report answering:
+Before writing the implementation specification:
 
-1. How many files are content-searchable within common location/project/CAAN scopes?
-2. How fast are representative content searches with the expected filters?
-3. How many files fall into each proposed searchable-status category?
-4. How stale are FTS chunks relative to `file_contents.updated_at`?
-5. What result format best handles duplicate locations?
+1. Validate 20-30 representative searches manually for relevance and snippet quality.
+2. Verify `project_caans` population in the target database and decide whether CAAN-scoped search belongs in v1.
+3. Run a second latency pass across several terms and scope sizes, especially unscoped content search.
+4. Decide whether to require/strongly encourage a scope for document-content search in v1.
+5. Decide whether v1 needs a precomputed scope-membership map or can ship with direct SQL over `file_locations`.
+6. Confirm result grouping with PMs/archivists: file-hash rows in HTML, full locations in Excel.
 
 After that, write a feature spec for a PostgreSQL-native phase 1 search page:
 
