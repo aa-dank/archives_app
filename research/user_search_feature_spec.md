@@ -89,7 +89,17 @@ The current `/file_search` route:
 - Writes one Excel sheet to a temporary `.xlsx`.
 - Displays up to 1,000 HTML rows.
 
-V1 may either extend `/file_search` or introduce a clearer route such as `/archive_search`. If a new route is introduced, keep the old route working or redirect it until users have migrated.
+## Endpoint Placement And Beta Rollout
+
+V1 archive search should initially ship as a beta endpoint separate from the existing `/file_search` route.
+
+The current `/file_search` endpoint should remain unchanged during the beta period so users can fall back to the existing filename/path search while the new document-content search is validated in production context.
+
+Use `/archive_search` as the beta endpoint for the new workflow. This endpoint should implement the broader archive search experience: filename-only, filename/path, document text, combined search, scope filters, file-hash result grouping, coverage/status messaging, and multi-sheet Excel export.
+
+The new `/archive_search` workflow is intended to replace `/file_search` after validation. Do not design it as a permanent parallel product. Once the new search is stable, update navigation to point users to the new workflow and decide whether `/file_search` should redirect to `/archive_search` or be replaced in place.
+
+Preserve filename-only behavior inside `/archive_search`; it becomes one search mode in the new workflow rather than a separate product.
 
 ## User Workflows
 
