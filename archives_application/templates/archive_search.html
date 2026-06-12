@@ -1,0 +1,128 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <form method="POST" action="" id="archive-search-form">
+            {{ form.hidden_tag() }}
+            <fieldset class="form-group">
+                <legend class="border-bottom mb-4">Archive Search</legend>
+
+                <div class="form-group">
+                    {{ form.search_term.label(class="form-control-label") }}
+                    {% if form.search_term.errors %}
+                        {{ form.search_term(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.search_term.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.search_term(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group col-md-6">
+                        {{ form.search_mode.label(class="form-control-label") }}
+                        {{ form.search_mode(class="form-control") }}
+                    </div>
+                    <div class="form-group col-md-6">
+                        {{ form.scope_type.label(class="form-control-label") }}
+                        {% if form.scope_type.errors %}
+                            {{ form.scope_type(class="form-control is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in form.scope_type.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ form.scope_type(class="form-control") }}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="form-group archive-scope-field" data-scope="location">
+                    {{ form.location_scope.label(class="form-control-label") }}
+                    {% if form.location_scope.errors %}
+                        {{ form.location_scope(class="form-control is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.location_scope.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.location_scope(class="form-control", placeholder="N:\\PPDO\\Records\\12xx   Hahn or 12xx   Hahn/1200") }}
+                    {% endif %}
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group col-md-6 archive-scope-field" data-scope="project">
+                        {{ form.project_number.label(class="form-control-label") }}
+                        {% if form.project_number.errors %}
+                            {{ form.project_number(class="form-control is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in form.project_number.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ form.project_number(class="form-control") }}
+                        {% endif %}
+                    </div>
+                    <div class="form-group col-md-6 archive-scope-field" data-scope="caan">
+                        {{ form.caan.label(class="form-control-label") }}
+                        {% if form.caan.errors %}
+                            {{ form.caan(class="form-control is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in form.caan.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ form.caan(class="form-control") }}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    {{ form.file_extension.label(class="form-control-label") }}
+                    {{ form.file_extension(class="form-control", placeholder="pdf") }}
+                </div>
+            </fieldset>
+            <div class="form-group">
+                {{ form.submit(class="btn btn-outline-info", id="archive-search-button") }}
+            </div>
+        </form>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var scopeSelect = document.getElementById('scope_type');
+            var scopeFields = document.querySelectorAll('.archive-scope-field');
+
+            function updateScopeFields() {
+                var selectedScope = scopeSelect ? scopeSelect.value : 'all';
+                scopeFields.forEach(function(field) {
+                    field.style.display = field.getAttribute('data-scope') === selectedScope ? 'block' : 'none';
+                });
+            }
+
+            if (scopeSelect) {
+                scopeSelect.addEventListener('change', updateScopeFields);
+                updateScopeFields();
+            }
+
+            var searchForm = document.getElementById('archive-search-form');
+            if (searchForm) {
+                searchForm.addEventListener('submit', function(event) {
+                    var button = document.getElementById('archive-search-button');
+                    if (button) {
+                        button.value = 'Searching...';
+                        setTimeout(function() { button.disabled = true; }, 10);
+                    }
+                    event.preventDefault();
+                    setTimeout(function() { HTMLFormElement.prototype.submit.call(searchForm); }, 350);
+                });
+            }
+        });
+    </script>
+{% endblock content %}

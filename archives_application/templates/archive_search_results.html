@@ -1,0 +1,194 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <h2>Archive Search Results</h2>
+        <p>
+            Results for '{{ search.query_text }}' in {{ search.scope_label }}.
+            Showing {{ search.html_result_count }} file-level result{% if search.html_result_count != 1 %}s{% endif %}.
+        </p>
+
+        {% if search.messages %}
+            <div class="alert alert-info">
+                {% for message in search.messages %}
+                    <div>{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+        {% if search.warnings %}
+            <div class="alert alert-warning">
+                {% for warning in search.warnings %}
+                    <div>{{ warning }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+        {% if search.html_limit_hit %}
+            <div class="alert alert-secondary">
+                HTML display is limited to {{ search.html_file_limit }} file-level results.
+            </div>
+        {% endif %}
+        {% if search.export_limit_hit %}
+            <div class="alert alert-secondary">
+                Excel export hit the {{ search.excel_file_limit }} file-level result limit.
+            </div>
+        {% endif %}
+
+        <p>
+            <a href="{{ url_for('archiver.archives_search', timestamp=timestamp) }}">Download Excel workbook.</a>
+            <span class="text-muted">Sheets: Results, Locations, Coverage.</span>
+        </p>
+    </div>
+
+    <div class="content-section">
+        <h4>Coverage</h4>
+        <div class="table-responsive">
+            <table class="table table-dark table-striped table-bordered table-hover table-sm">
+                <tbody>
+                    <tr>
+                        <th>Search mode</th>
+                        <td>{{ search.search_mode_label }}</td>
+                    </tr>
+                    <tr>
+                        <th>Scope roots</th>
+                        <td>
+                            {% if search.scope.prefixes %}
+                                {% for prefix in search.scope.prefixes %}
+                                    <div class="archive-path">{{ prefix }}</div>
+                                {% endfor %}
+                            {% else %}
+                                All archives
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Files in selected scope</th>
+                        <td>{{ search.coverage.files_in_scope }}</td>
+                    </tr>
+                    <tr>
+                        <th>Content-searchable files</th>
+                        <td>{{ search.coverage.content_searchable_files }}</td>
+                    </tr>
+                    <tr>
+                        <th>Files with FTS chunks</th>
+                        <td>{{ search.coverage.files_with_fts_chunks }}</td>
+                    </tr>
+                    <tr>
+                        <th>Files with nonempty extracted text</th>
+                        <td>{{ search.coverage.files_with_nonempty_text }}</td>
+                    </tr>
+                    <tr>
+                        <th>Empty or thin text files</th>
+                        <td>{{ search.coverage.files_with_empty_or_thin_text }}</td>
+                    </tr>
+                    <tr>
+                        <th>Extraction failures</th>
+                        <td>{{ search.coverage.files_with_extraction_failures }}</td>
+                    </tr>
+                    <tr>
+                        <th>Not attempted</th>
+                        <td>{{ search.coverage.files_not_attempted }}</td>
+                    </tr>
+                    <tr>
+                        <th>Unsupported/low-value formats</th>
+                        <td>{{ search.coverage.unsupported_or_low_value_format_files }}</td>
+                    </tr>
+                    <tr>
+                        <th>Filename/path-searchable files</th>
+                        <td>{{ search.coverage.filename_path_searchable_files }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="content-section archive-results-wide">
+        <h4>Results</h4>
+        {% if search.results %}
+            <div class="table-responsive">
+                <table class="table table-dark table-striped table-bordered table-hover table-sm archive-results-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Match</th>
+                            <th>Filename</th>
+                            <th>Primary Location</th>
+                            <th>More</th>
+                            <th>Status</th>
+                            <th>Snippet</th>
+                            <th>Hash</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for result in search.results %}
+                            <tr>
+                                <td>{{ result.result_rank }}</td>
+                                <td>{{ result.match_source }}</td>
+                                <td>
+                                    <div>{{ result.filename }}</div>
+                                    <div class="text-muted">{{ result.extension }} {{ result.size_display }}</div>
+                                </td>
+                                <td class="archive-path">{{ result.primary_location }}</td>
+                                <td>
+                                    {% if result.additional_location_count > 0 %}
+                                        <details>
+                                            <summary>{{ result.additional_location_count }} additional</summary>
+                                            {% for location in result.locations %}
+                                                {% if location.location_id != result.primary_location_id %}
+                                                    <div class="archive-location-detail archive-path">
+                                                        {% if location.in_scope %}<strong>in scope</strong>{% else %}out of scope{% endif %}
+                                                        {{ location.user_path }}
+                                                    </div>
+                                                {% endif %}
+                                            {% endfor %}
+                                        </details>
+                                    {% else %}
+                                        0
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div>{{ result.text_status_label }}</div>
+                                    {% if result.failure_stage %}
+                                        <div class="text-muted">{{ result.failure_stage }}</div>
+                                    {% endif %}
+                                </td>
+                                <td class="archive-snippet">
+                                    {% if result.snippet %}
+                                        {{ result.snippet | safe }}
+                                    {% endif %}
+                                </td>
+                                <td><code>{{ result.short_hash }}</code></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p>No file-level results matched this search.</p>
+        {% endif %}
+    </div>
+
+    <style>
+        .archive-results-wide {
+            overflow-x: auto;
+        }
+        .archive-results-table {
+            min-width: 1200px;
+        }
+        .archive-path {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .archive-snippet {
+            min-width: 260px;
+            max-width: 420px;
+        }
+        .archive-location-detail {
+            margin-top: 0.5rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        mark {
+            background: #ffe58a;
+            padding: 0 0.1rem;
+        }
+    </style>
+{% endblock content %}

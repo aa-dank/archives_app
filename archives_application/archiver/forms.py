@@ -177,6 +177,75 @@ class FileSearchForm(FlaskForm):
         path_validation_subroutine(search_location, path_type="dir", require_user_mount=True)
 
 
+class ArchiveSearchForm(FlaskForm):
+    search_term = StringField('Search Term', validators=[DataRequired()])
+    search_mode = SelectField(
+        'Search Mode',
+        choices=[
+            ('combined', 'Filename/path + document text'),
+            ('filename_only', 'Filename only'),
+            ('filepath', 'Filename/path'),
+            ('content', 'Document text'),
+        ],
+        default='combined'
+    )
+    scope_type = SelectField(
+        'Search Scope',
+        choices=[
+            ('all', 'All archives'),
+            ('location', 'Location prefix'),
+            ('project', 'Project'),
+            ('caan', 'CAAN'),
+        ],
+        default='all'
+    )
+    location_scope = StringField('Location Prefix')
+    project_number = StringField('Project Number')
+    caan = StringField('CAAN')
+    file_extension = StringField('File Extension')
+    submit = SubmitField('Search')
+
+    def validate(self, extra_validators=None):
+        if not super().validate(extra_validators=extra_validators):
+            return False
+
+        scope_values = {
+            'location': (self.location_scope.data or '').strip(),
+            'project': (self.project_number.data or '').strip(),
+            'caan': (self.caan.data or '').strip(),
+        }
+        selected_scope_value = scope_values.get(self.scope_type.data)
+        other_scope_values = [
+            value for scope, value in scope_values.items()
+            if scope != self.scope_type.data and value
+        ]
+
+        if self.scope_type.data != 'all' and not selected_scope_value:
+            field_by_scope = {
+                'location': self.location_scope,
+                'project': self.project_number,
+                'caan': self.caan,
+            }
+            field_by_scope[self.scope_type.data].errors.append(
+                "Provide a value for the selected scope."
+            )
+            return False
+
+        if self.scope_type.data == 'all' and any(scope_values.values()):
+            self.scope_type.errors.append(
+                "Select a scoped search type before entering a location, project, or CAAN."
+            )
+            return False
+
+        if other_scope_values:
+            self.scope_type.errors.append(
+                "Use one scope at a time: location, project, CAAN, or all archives."
+            )
+            return False
+
+        return True
+
+
 class DirContentsSummaryForm(FlaskForm):
     path = StringField('Directory Path', validators=[DataRequired()])
     submit = SubmitField('View')
