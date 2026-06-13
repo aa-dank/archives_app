@@ -103,8 +103,18 @@
     <div class="content-section archive-results-wide">
         <h4>Results</h4>
         {% if search.results %}
-            <div class="table-responsive">
+            <div class="archive-results-scroll">
                 <table class="table table-dark table-striped table-bordered table-hover table-sm archive-results-table">
+                    <colgroup>
+                        <col class="archive-col-rank">
+                        <col class="archive-col-match">
+                        <col class="archive-col-filename">
+                        <col class="archive-col-location">
+                        <col class="archive-col-more">
+                        <col class="archive-col-status">
+                        <col class="archive-col-snippet">
+                        <col class="archive-col-hash">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>#</th>
@@ -167,19 +177,57 @@
     </div>
 
     <style>
+        main.container {
+            max-width: calc(100vw - 32px);
+        }
         .archive-results-wide {
+            padding-left: 12px;
+            padding-right: 12px;
+            overflow-x: visible;
+        }
+        .archive-results-scroll {
             overflow-x: auto;
+            padding-bottom: 0.35rem;
         }
         .archive-results-table {
-            min-width: 1200px;
+            table-layout: fixed;
+            min-width: 1720px;
+            margin-bottom: 0;
+        }
+        .archive-results-table th,
+        .archive-results-table td {
+            vertical-align: top;
+        }
+        .archive-col-rank {
+            width: 54px;
+        }
+        .archive-col-match {
+            width: 118px;
+        }
+        .archive-col-filename {
+            width: 260px;
+        }
+        .archive-col-location {
+            width: 470px;
+        }
+        .archive-col-more {
+            width: 210px;
+        }
+        .archive-col-status {
+            width: 190px;
+        }
+        .archive-col-snippet {
+            width: 330px;
+        }
+        .archive-col-hash {
+            width: 90px;
         }
         .archive-path {
             white-space: pre-wrap;
             word-break: break-word;
         }
         .archive-snippet {
-            min-width: 260px;
-            max-width: 420px;
+            word-break: break-word;
         }
         .archive-location-detail {
             margin-top: 0.5rem;

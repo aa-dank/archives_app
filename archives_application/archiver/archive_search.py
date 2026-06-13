@@ -36,6 +36,8 @@ UNSUPPORTED_OR_LOW_VALUE_EXTENSIONS = {
 
 @dataclass
 class ScopeResolution:
+    """Compiled archive-search scope plus user-facing resolution notes."""
+
     scope_type: str
     display_value: str = ""
     prefixes: list[str] = field(default_factory=list)
@@ -50,10 +52,12 @@ class ScopeResolution:
 
     @property
     def has_scope(self) -> bool:
+        """Return True when the scope has one or more directory prefixes."""
         return bool(self.prefixes)
 
     @property
     def label(self) -> str:
+        """Build a compact label for displaying the active scope."""
         if self.scope_type == "all":
             return "All archives"
         base = SCOPE_LABELS.get(self.scope_type, self.scope_type)
@@ -61,6 +65,7 @@ class ScopeResolution:
 
 
 def _clean_archive_prefix(prefix: str | None) -> str:
+    """Normalize a Records-relative directory prefix for DB comparisons."""
     if prefix is None:
         return ""
     prefix = str(prefix).strip().replace("\\", "/").strip("/")
@@ -70,6 +75,7 @@ def _clean_archive_prefix(prefix: str | None) -> str:
 
 
 def _windows_parts(path_value: str) -> list[str]:
+    """Split a user-facing Windows path into normalized comparable parts."""
     return [
         part.strip("\\/").lower()
         for part in PureWindowsPath(path_value).parts
@@ -78,6 +84,7 @@ def _windows_parts(path_value: str) -> list[str]:
 
 
 def _path_starts_with_user_mount(path_value: str, user_mount: str | None) -> bool:
+    """Return True when a user-entered path starts under the configured mount."""
     if not path_value or not user_mount:
         return False
     entered_parts = _windows_parts(path_value)
@@ -86,6 +93,7 @@ def _path_starts_with_user_mount(path_value: str, user_mount: str | None) -> boo
 
 
 def _location_input_to_prefix(location_value: str, app) -> str:
+    """Convert a user path or DB-relative location input to a DB prefix."""
     user_archives_location = app.config.get("USER_ARCHIVES_LOCATION")
     archives_location = app.config.get("ARCHIVES_LOCATION")
     if _path_starts_with_user_mount(location_value, user_archives_location):
@@ -96,11 +104,13 @@ def _location_input_to_prefix(location_value: str, app) -> str:
 
 
 def _like_pattern(prefix: str) -> str:
+    """Build an escaped LIKE pattern for descendants of a directory prefix."""
     escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"{escaped}/%"
 
 
 def _scope_clause(column_expr: str, prefixes: list[str], params: dict) -> str:
+    """Build a directory-boundary SQL predicate for the supplied prefixes."""
     if not prefixes:
         return "TRUE"
     clauses = []
@@ -116,6 +126,7 @@ def _scope_clause(column_expr: str, prefixes: list[str], params: dict) -> str:
 
 
 def _scope_paths_values(prefixes: list[str], params: dict) -> str:
+    """Build a parameterized VALUES list for scope-prefix SQL CTEs."""
     values = []
     for idx, prefix in enumerate(prefixes):
         key = f"scope_value_{idx}"
@@ -125,6 +136,7 @@ def _scope_paths_values(prefixes: list[str], params: dict) -> str:
 
 
 def _root_indexed_file_status(prefixes: list[str]) -> list[str]:
+    """Return scope roots that do not match any indexed file locations."""
     if not prefixes:
         return []
     params = {}
@@ -147,6 +159,7 @@ def _root_indexed_file_status(prefixes: list[str]) -> list[str]:
 
 
 def resolve_scope(form, app) -> ScopeResolution:
+    """Resolve form scope input into Records-relative directory prefixes."""
     scope_type = form.scope_type.data or "all"
     resolution = ScopeResolution(scope_type=scope_type)
 
@@ -248,6 +261,7 @@ def resolve_scope(form, app) -> ScopeResolution:
 
 
 def _file_hash_scope_cte(scope: ScopeResolution, params: dict) -> str:
+    """Build the scoped file-hash CTE used by search and coverage queries."""
     if not scope.has_scope:
         return "scoped_file_hashes AS (SELECT f.hash AS file_hash FROM files f)"
     scope_filter = _scope_clause("fl.file_server_directories", scope.prefixes, params)
@@ -262,6 +276,7 @@ def _file_hash_scope_cte(scope: ScopeResolution, params: dict) -> str:
 
 
 def _extension_clause(file_alias: str, extension_value: str | None, params: dict) -> str:
+    """Build an optional case-normalized file-extension SQL predicate."""
     extension = (extension_value or "").strip().lower().lstrip(".")
     if not extension:
         return "TRUE"
@@ -270,10 +285,12 @@ def _extension_clause(file_alias: str, extension_value: str | None, params: dict
 
 
 def _scope_allows_search(scope: ScopeResolution) -> bool:
+    """Return True when the resolved scope can be safely searched."""
     return scope.scope_type == "all" or bool(scope.prefixes)
 
 
 def _execute_content_search(query_text: str, scope: ScopeResolution, extension: str | None, file_limit: int, app) -> list[dict]:
+    """Run scoped PostgreSQL FTS over chunk search vectors."""
     params = {
         "query_text": query_text,
         "file_limit": file_limit,
@@ -331,6 +348,7 @@ def _execute_content_search(query_text: str, scope: ScopeResolution, extension: 
 
 
 def _execute_filename_search(query_text: str, scope: ScopeResolution, extension: str | None, file_limit: int, filename_only: bool) -> list[dict]:
+    """Run grouped filename or filename/path FTS at file-hash level."""
     params = {"query_text": query_text, "file_limit": file_limit}
     path_vector = "" if filename_only else " || to_tsvector('english', coalesce(fl.file_server_directories, ''))"
     scope_filter = _scope_clause("fl.file_server_directories", scope.prefixes, params)
@@ -374,6 +392,7 @@ def _execute_filename_search(query_text: str, scope: ScopeResolution, extension:
 
 
 def _merge_results(content_rows: list[dict], filepath_rows: list[dict], file_limit: int) -> list[dict]:
+    """Merge content and filename/path matches into ranked file results."""
     merged: dict[str, dict] = {}
     for row in content_rows:
         merged[row["file_hash"]] = {
@@ -422,10 +441,12 @@ def _merge_results(content_rows: list[dict], filepath_rows: list[dict], file_lim
 
 
 def _hash_filter_stmt(sql: str):
+    """Return a SQL text statement with expanding file-hash bind params."""
     return text(sql).bindparams(bindparam("file_hashes", expanding=True))
 
 
 def _fetch_file_metadata(file_hashes: list[str]) -> dict[str, dict]:
+    """Fetch file, content, and failure metadata for result hashes."""
     if not file_hashes:
         return {}
     sql = """
@@ -451,6 +472,7 @@ def _fetch_file_metadata(file_hashes: list[str]) -> dict[str, dict]:
 
 
 def _fetch_locations(file_hashes: list[str], user_archives_location: str, scope: ScopeResolution) -> dict[str, list[dict]]:
+    """Fetch all file locations for results and mark in-scope paths."""
     if not file_hashes:
         return {}
     sql = """
@@ -481,6 +503,7 @@ def _fetch_locations(file_hashes: list[str], user_archives_location: str, scope:
 
 
 def _location_in_scope(file_server_directories: str | None, scope: ScopeResolution) -> bool:
+    """Return True when a location is inside the active search scope."""
     if not scope.has_scope:
         return True
     location = _clean_archive_prefix(file_server_directories)
@@ -491,6 +514,7 @@ def _location_in_scope(file_server_directories: str | None, scope: ScopeResoluti
 
 
 def _select_primary_location(result: dict, locations: list[dict]) -> dict | None:
+    """Choose the best display location for a file-level result."""
     if not locations:
         return None
     best_location_id = result.get("best_location_id")
@@ -512,6 +536,7 @@ def _select_primary_location(result: dict, locations: list[dict]) -> dict | None
 
 
 def _status_from_metadata(metadata: dict) -> str:
+    """Classify content-search coverage for a single file."""
     extension = (metadata.get("extension") or "").lower().lstrip(".")
     text_length = metadata.get("text_length")
     has_content = text_length is not None
@@ -536,6 +561,7 @@ def _status_from_metadata(metadata: dict) -> str:
 
 
 def status_label(status: str) -> str:
+    """Convert an internal status code to a friendly display label."""
     return {
         "content_searchable": "Content searchable",
         "text_extracted_not_chunked": "Text extracted, not chunked",
@@ -550,6 +576,7 @@ def status_label(status: str) -> str:
 
 
 def _fetch_snippets(query_text: str, chunk_ids: list[int]) -> dict[int, str]:
+    """Generate safe highlighted snippets for narrowed content matches."""
     if not chunk_ids:
         return {}
     sql = """
@@ -577,6 +604,7 @@ def _fetch_snippets(query_text: str, chunk_ids: list[int]) -> dict[int, str]:
 
 
 def _format_size(byte_count: int | None) -> str:
+    """Format a byte count for display."""
     if byte_count is None:
         return ""
     value = float(byte_count)
@@ -588,6 +616,7 @@ def _format_size(byte_count: int | None) -> str:
 
 
 def _coverage_summary(scope: ScopeResolution, extension: str | None, app) -> dict:
+    """Compute scope-level content coverage and status counts."""
     if not _scope_allows_search(scope):
         return {
             "files_in_scope": 0,
@@ -677,6 +706,7 @@ def _coverage_summary(scope: ScopeResolution, extension: str | None, app) -> dic
 
 
 def run_archive_search(form, app, file_limit: int) -> dict:
+    """Run the full archive search workflow and return display data."""
     query_text = (form.search_term.data or "").strip()
     mode = form.search_mode.data or "combined"
     extension = (form.file_extension.data or "").strip().lower().lstrip(".")
@@ -761,6 +791,7 @@ def run_archive_search(form, app, file_limit: int) -> dict:
 
 
 def build_archive_search_workbook(search_data: dict, generated_at: datetime) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Build Results, Locations, and Coverage dataframes for Excel export."""
     result_rows = []
     location_rows = []
     for result in search_data["results"]:
