@@ -6,6 +6,21 @@
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Archive Search</legend>
 
+                <details class="archive-search-overview mb-4">
+                    <summary>Search overview</summary>
+                    <div class="archive-search-overview-body">
+                        <p>
+                            Enter words or quoted phrases, choose what to search, then choose one scope. Project and CAAN scopes use recorded project file-server locations; location scope accepts a copied Records path or a Records-relative folder prefix.
+                        </p>
+                        <p>
+                            Document text searches extracted file content where available. Results are grouped by file hash, so duplicate files appear once with additional locations available in the result row and Excel export.
+                        </p>
+                        <p>
+                            For broad content searches, use a project, CAAN, or location scope when possible. The results page shows coverage counts so gaps in extracted text are visible.
+                        </p>
+                    </div>
+                </details>
+
                 <div class="form-group">
                     {{ form.search_term.label(class="form-control-label") }}
                     {% if form.search_term.errors %}
@@ -93,6 +108,26 @@
             </div>
         </form>
     </div>
+
+    <style>
+        .archive-search-overview {
+            border: 1px solid #dddddd;
+            border-radius: 3px;
+            background: #f8f9fa;
+            padding: 0.75rem 1rem;
+        }
+        .archive-search-overview summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: #444444;
+        }
+        .archive-search-overview-body {
+            margin-top: 0.75rem;
+        }
+        .archive-search-overview-body p:last-child {
+            margin-bottom: 0;
+        }
+    </style>
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {

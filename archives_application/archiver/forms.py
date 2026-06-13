@@ -178,6 +178,8 @@ class FileSearchForm(FlaskForm):
 
 
 class ArchiveSearchForm(FlaskForm):
+    """Form for the archive search workflow and its scope controls."""
+
     search_term = StringField('Search Term', validators=[DataRequired()])
     search_mode = SelectField(
         'Search Mode',
@@ -206,6 +208,7 @@ class ArchiveSearchForm(FlaskForm):
     submit = SubmitField('Search')
 
     def validate(self, extra_validators=None):
+        """Validate that the user selected at most one search scope."""
         if not super().validate(extra_validators=extra_validators):
             return False
 
