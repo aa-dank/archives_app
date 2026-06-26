@@ -7,6 +7,36 @@
             Showing {{ search.html_result_count }} file-level result{% if search.html_result_count != 1 %}s{% endif %}.
         </p>
 
+        <div class="archive-results-actions">
+            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('archiver.archives_search') }}">Back to search</a>
+            <a class="btn btn-outline-info btn-sm" href="{{ url_for('archiver.archives_search', timestamp=timestamp) }}">Download Excel workbook</a>
+            <button
+                class="btn btn-outline-info btn-sm archive-results-guide-toggle"
+                type="button"
+                data-toggle="collapse"
+                data-target="#archiveResultsGuide"
+                aria-expanded="false"
+                aria-controls="archiveResultsGuide"
+            >
+                How to interpret results <span class="collapse-toggle-icon">&#9660;</span>
+            </button>
+        </div>
+
+        <div class="collapse archive-results-guide" id="archiveResultsGuide">
+            <p>
+                Start with the Results table when you want the most likely matching files. Each row is one file-level result grouped by file hash, so duplicate copies of the same file are combined. Use Primary Location to open or review the file, and open More when the same file appears in additional indexed locations.
+            </p>
+            <p>
+                Match shows whether the query was found in the filename, path, extracted document text, or a combination. Status describes whether the file's extracted content is searchable. Snippet appears when document text matched and gives a short preview of the matching text.
+            </p>
+            <p>
+                Coverage explains how much of the selected scope could actually be searched by content. A content search with low coverage can miss relevant files whose text has not been extracted, failed extraction, has not been chunked, or is in a format that is not useful for text extraction.
+            </p>
+            <p>
+                The Excel workbook contains up to the top {{ search.excel_file_limit }} file-level results and is intended for further filtering, sorting, and searching. It includes a Results sheet for the grouped matches, a Locations sheet with all indexed locations for exported files, and a Coverage sheet with the search settings and coverage counts.
+            </p>
+        </div>
+
         {% if search.messages %}
             <div class="alert alert-info">
                 {% for message in search.messages %}
@@ -32,23 +62,53 @@
             </div>
         {% endif %}
 
-        <p>
+        <p class="archive-workbook-note">
             <a href="{{ url_for('archiver.archives_search', timestamp=timestamp) }}">Download Excel workbook.</a>
-            <span class="text-muted">Sheets: Results, Locations, Coverage.</span>
+            <span class="text-muted">Includes up to {{ search.excel_file_limit }} top results. Sheets: Results, Locations, Coverage.</span>
         </p>
     </div>
 
-    <div class="content-section">
-        <h4>Coverage</h4>
+    {% macro help_label(label, explanation) -%}
+        <span
+            class="archive-help-label"
+            tabindex="0"
+            data-toggle="tooltip"
+            data-placement="right"
+            data-container="body"
+            data-trigger="hover focus"
+            title="{{ explanation }}"
+        >{{ label }} <span class="archive-help-icon" aria-hidden="true">?</span></span>
+    {%- endmacro %}
+
+    <div class="content-section archive-coverage-section">
+        <div class="archive-coverage-header">
+            <div>
+                <h4>Coverage</h4>
+                <div class="text-muted">
+                    {{ search.coverage.content_searchable_files }} of {{ search.coverage.files_in_scope }} files content-searchable in this scope.
+                </div>
+            </div>
+            <button
+                class="btn btn-outline-info btn-sm archive-coverage-toggle"
+                type="button"
+                data-toggle="collapse"
+                data-target="#archiveCoverageDetails"
+                aria-expanded="false"
+                aria-controls="archiveCoverageDetails"
+            >
+                Details <span class="collapse-toggle-icon">&#9660;</span>
+            </button>
+        </div>
+        <div class="collapse archive-coverage-details" id="archiveCoverageDetails">
         <div class="table-responsive">
             <table class="table table-dark table-striped table-bordered table-hover table-sm">
                 <tbody>
                     <tr>
-                        <th>Search mode</th>
+                        <th>{{ help_label("Search mode", "Which parts of the archive were searched for this query: filename, path, extracted document text, or a combined search.") }}</th>
                         <td>{{ search.search_mode_label }}</td>
                     </tr>
                     <tr>
-                        <th>Scope roots</th>
+                        <th>{{ help_label("Scope roots", "The archive folder roots used to limit this search. If blank, the search covered all indexed archives.") }}</th>
                         <td>
                             {% if search.scope.prefixes %}
                                 {% for prefix in search.scope.prefixes %}
@@ -60,43 +120,44 @@
                         </td>
                     </tr>
                     <tr>
-                        <th>Files in selected scope</th>
+                        <th>{{ help_label("Files in selected scope", "Total indexed files found under the selected project, CAAN, location, or all-archive scope.") }}</th>
                         <td>{{ search.coverage.files_in_scope }}</td>
                     </tr>
                     <tr>
-                        <th>Content-searchable files</th>
+                        <th>{{ help_label("Content-searchable files", "Files with enough extracted text and current full-text-search chunks to support document text searching.") }}</th>
                         <td>{{ search.coverage.content_searchable_files }}</td>
                     </tr>
                     <tr>
-                        <th>Files with FTS chunks</th>
+                        <th>{{ help_label("Files with FTS chunks", "Files that have searchable text chunks in the full-text-search index.") }}</th>
                         <td>{{ search.coverage.files_with_fts_chunks }}</td>
                     </tr>
                     <tr>
-                        <th>Files with nonempty extracted text</th>
+                        <th>{{ help_label("Files with nonempty extracted text", "Files where text extraction produced at least some text, whether or not it is currently chunked for text search.") }}</th>
                         <td>{{ search.coverage.files_with_nonempty_text }}</td>
                     </tr>
                     <tr>
-                        <th>Empty or thin text files</th>
+                        <th>{{ help_label("Empty or thin text files", "Files with an extraction record but too little text to be useful for reliable content searching.") }}</th>
                         <td>{{ search.coverage.files_with_empty_or_thin_text }}</td>
                     </tr>
                     <tr>
-                        <th>Extraction failures</th>
+                        <th>{{ help_label("Extraction failures", "Files where content extraction was attempted but recorded a failure.") }}</th>
                         <td>{{ search.coverage.files_with_extraction_failures }}</td>
                     </tr>
                     <tr>
-                        <th>Not attempted</th>
+                        <th>{{ help_label("Not attempted", "Files with no extracted-content record and no recorded extraction failure yet.") }}</th>
                         <td>{{ search.coverage.files_not_attempted }}</td>
                     </tr>
                     <tr>
-                        <th>Unsupported/low-value formats</th>
+                        <th>{{ help_label("Unsupported/low-value formats", "Files whose extension is usually not useful or supported for document text extraction, such as media, shortcut, database, or CAD support files.") }}</th>
                         <td>{{ search.coverage.unsupported_or_low_value_format_files }}</td>
                     </tr>
                     <tr>
-                        <th>Filename/path-searchable files</th>
+                        <th>{{ help_label("Filename/path-searchable files", "Files available to filename and path searches. Content availability is separate and may be lower.") }}</th>
                         <td>{{ search.coverage.filename_path_searchable_files }}</td>
                     </tr>
                 </tbody>
             </table>
+        </div>
         </div>
     </div>
 
@@ -117,14 +178,14 @@
                     </colgroup>
                     <thead>
                         <tr>
-                            <th>#</th>
-                            <th>Match</th>
-                            <th>Filename</th>
-                            <th>Primary Location</th>
-                            <th>More</th>
-                            <th>Status</th>
-                            <th>Snippet</th>
-                            <th>Hash</th>
+                            <th><span data-toggle="tooltip" data-container="body" title="Result order after combining filename, path, and content matches.">#</span></th>
+                            <th><span data-toggle="tooltip" data-container="body" title="Where the query matched for this file.">Match</span></th>
+                            <th><span data-toggle="tooltip" data-container="body" title="The file name, extension, and size for this grouped file result.">Filename</span></th>
+                            <th><span data-toggle="tooltip" data-container="body" title="The best available location for opening or reviewing the file.">Primary Location</span></th>
+                            <th><span data-toggle="tooltip" data-container="body" title="Additional indexed locations for the same file hash.">More</span></th>
+                            <th><span data-toggle="tooltip" data-container="body" title="Whether extracted document text is searchable for this file.">Status</span></th>
+                            <th><span data-toggle="tooltip" data-container="body" title="A short excerpt from the matched document text, when content matched.">Snippet</span></th>
+                            <th><span data-toggle="tooltip" data-container="body" title="The first characters of the file hash used to group duplicate files.">Hash</span></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -185,6 +246,61 @@
             padding-right: 12px;
             overflow-x: visible;
         }
+        .archive-results-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .archive-results-guide {
+            border: 1px solid #dddddd;
+            border-radius: 3px;
+            background: #f8f9fa;
+            margin-bottom: 1rem;
+            padding: 0.75rem 1rem;
+        }
+        .archive-results-guide p:last-child,
+        .archive-workbook-note {
+            margin-bottom: 0;
+        }
+        button[aria-expanded="true"] .collapse-toggle-icon {
+            transform: rotate(180deg);
+        }
+        button[aria-expanded="false"] .collapse-toggle-icon {
+            transform: rotate(0deg);
+        }
+        .archive-coverage-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+        .archive-coverage-header h4 {
+            margin-bottom: 0.25rem;
+        }
+        .archive-coverage-toggle {
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+        .archive-coverage-details {
+            margin-top: 1rem;
+        }
+        .archive-help-label,
+        .archive-results-table thead span[data-toggle="tooltip"] {
+            cursor: help;
+        }
+        .archive-help-icon {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            margin-left: 0.25rem;
+            border: 1px solid currentColor;
+            border-radius: 50%;
+            font-size: 0.72rem;
+            line-height: 0.95rem;
+            text-align: center;
+            opacity: 0.85;
+        }
         .archive-results-scroll {
             overflow-x: auto;
             padding-bottom: 0.35rem;
@@ -238,5 +354,19 @@
             background: #ffe58a;
             padding: 0 0.1rem;
         }
+        @media (max-width: 575.98px) {
+            .archive-coverage-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+        }
     </style>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.jQuery && jQuery.fn.tooltip) {
+                jQuery('[data-toggle="tooltip"]').tooltip();
+            }
+        });
+    </script>
 {% endblock content %}
