@@ -10,13 +10,16 @@
                     <summary>Search overview</summary>
                     <div class="archive-search-overview-body">
                         <p>
-                            Enter words or quoted phrases, choose what to search, then choose one scope. Project and CAAN scopes use recorded project file-server locations; location scope accepts a copied Records path or a Records-relative folder prefix.
+                            Enter one or more search terms. Multiple plain terms are searched together, so <code>annual report</code> looks for both words. Use quotes for a phrase, such as <code>"annual report"</code>.
                         </p>
                         <p>
-                            Document text searches extracted file content where available. Results are grouped by file hash, so duplicate files appear once with additional locations available in the result row and Excel export.
+                            Search terms support simple web-style operators: <code>OR</code> broadens a search, as in <code>budget OR invoice</code>, and a leading minus excludes a term, as in <code>budget -draft</code>. Parentheses, wildcards, and regular expressions are not supported.
                         </p>
                         <p>
-                            For broad content searches, use a project, CAAN, or location scope when possible. The results page shows coverage counts so gaps in extracted text are visible.
+                            Choose one search mode and one scope. Project and CAAN scopes use recorded project file-server locations; location scope accepts a copied Records path or a Records-relative folder prefix.
+                        </p>
+                        <p>
+                            File Extension accepts one extension only, such as <code>pdf</code> or <code>.pdf</code>. Leave it blank to search all extensions; use the Excel workbook on the results page for additional extension filtering.
                         </p>
                     </div>
                 </details>

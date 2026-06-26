@@ -138,3 +138,126 @@ to be for based on branch names and each branch tip commit subject.
   the same purpose; summaries above avoid repeating duplicate pairs.
 - Purpose descriptions are inferred from branch names plus latest commit
   subjects and should be treated as operational guidance, not strict ownership.
+
+---
+
+## Entry 003 - Archive search implementation
+**Date:** 2026-06-15
+**Author:** OpenAI Codex (GPT-5)
+
+---
+
+### Context
+
+The archive app needed a v1 search workflow that can search file names, file
+paths, and extracted document text while preserving the existing `/file_search`
+endpoint during validation. The implementation is based on:
+
+- `research/user_search_feature_spec.md`
+- `research/user_search_feats_research.md`
+- `/home/projects/business_services_db/reference/ARCHIVES_DB_AND_FILE_SERVER_REFERENCE.md`
+- `/home/projects/business_services_db/reference/business_services_db_schema_20260520.md`
+- `/home/projects/business_services_db/reference/historical/archive_search_chunked_fts_plan.md`
+
+The core product model is:
+
+```text
+file hash = canonical result identity
+file locations = access/display metadata
+content chunks = retrieval evidence
+```
+
+### What changed
+
+A new `/archives_search` workflow was added as the intended replacement path for
+the older `/file_search` workflow. The old `/file_search` endpoint remains
+unchanged.
+
+The new search supports:
+
+- filename-only search
+- filename/path search
+- document text search over `file_content_fts_chunks.search_vector`
+- combined filename/path plus document text search
+- one primary scope at a time: all archives, location prefix, project, or CAAN
+- project and CAAN scope compilation through `projects.file_server_location`
+- CAAN expansion through `project_caans`
+- file-hash-level HTML result grouping
+- primary in-scope location selection plus additional location details
+- coverage/status messaging for content-searchable, thin text, failed
+  extraction, not attempted, unsupported/low-value formats, and related states
+- multi-sheet Excel export with `Results`, `Locations`, and `Coverage` sheets
+
+The result page was later widened to better accommodate the search results table,
+and the search form gained a default-collapsed overview section for short usage
+guidance.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `archives_application/archiver/archive_search.py` | Added the search service/helper layer for scope resolution, FTS queries, result merging, coverage summaries, snippets, location selection, and Excel dataframe construction. |
+| `archives_application/archiver/forms.py` | Added `ArchiveSearchForm` with search-mode, scope, location/project/CAAN, and extension controls plus one-scope-at-a-time validation. |
+| `archives_application/archiver/routes.py` | Added `/archives_search` and timestamped Excel download handling while leaving `/file_search` unchanged. |
+| `archives_application/templates/archive_search.html` | Added the archive search form and default-collapsed search overview. |
+| `archives_application/templates/archive_search_results.html` | Added coverage summary, file-hash-level results table, additional location details, snippets, Excel link, and wider table layout. |
+| `archives_application/templates/layout.html` | Added an `Archive Search` navigation link while preserving the existing `File Search` link. |
+
+### Implementation notes
+
+Document-content search uses raw SQL rather than ORM query construction because
+the request path needs PostgreSQL-specific FTS functions, generated
+`search_vector` access, CTEs, `ts_rank_cd`, `ts_headline`, and precise
+directory-boundary scope predicates. Project and CAAN scope resolution still use
+the app's SQLAlchemy models where the ORM is a good fit.
+
+Search result limiting is configurable through app config values:
+
+- `ARCHIVE_SEARCH_HTML_LIMIT`, default `300`
+- `ARCHIVE_SEARCH_EXCEL_LIMIT`, default `3000`
+- `ARCHIVE_SEARCH_CHUNK_CANDIDATE_LIMIT`, default `50000`
+- `ARCHIVE_SEARCH_CHUNK_CANDIDATE_MULTIPLIER`, default `20`
+
+Unscoped content search is allowed but warns users that project, CAAN, or
+location scopes are preferred because prior profiling showed high latency for
+all-archive content queries.
+
+### Why this matters
+
+Users can now search across extracted document text without losing the archive
+database's duplicate-file semantics. Results are centered on `files.hash`, while
+locations remain available for access and review. Coverage messaging reduces the
+risk that users interpret "no content hits" as proof that the archive lacks a
+document when extraction may be incomplete, thin, failed, unsupported, or not yet
+attempted.
+
+### Operational notes
+
+- `/archives_search` is the new workflow to validate and eventually promote.
+- `/file_search` remains available as a fallback during validation.
+- Search is synchronous; Redis and the worker process are not used by this
+  feature's request path.
+- Excel files are generated in the app process and written to the existing temp
+  file location for timestamped download.
+- CAAN search quality depends on `project_caans` population and linked projects'
+  recorded `file_server_location` values.
+
+### Verification
+
+- `python3 -m compileall archives_application/archiver/archive_search.py archives_application/archiver/forms.py archives_application/archiver/routes.py` passed during implementation.
+- `uv run python -m compileall ...` also passed when run with dependency-cache
+  access.
+- `git diff --check` passed for the edited templates after layout updates.
+- A live Flask route/database search was not run in this workspace because local
+  app import depends on a `deploy_app_config.json` that is not present here.
+
+### Follow-on work
+
+- Smoke-test `/archives_search` in a configured environment with real database
+  access.
+- Run representative scoped content searches and review latency/query plans.
+- Verify CAAN expansion quality in the target database.
+- Consider mapping `file_content_fts_chunks.search_vector` in both app and
+  canonical model metadata if future work moves more search construction into
+  SQLAlchemy expressions.
+- Tune result ranking and displayed columns after PM/archivist review.
