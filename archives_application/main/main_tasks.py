@@ -137,16 +137,6 @@ class AppCustodian:
             utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
             return log
 
-
-    def confirm_project_locations_task(self, queue_id: str):
-        """
-        Refresh all project file server locations as part of routine application maintenance.
-        """
-        from archives_application.project_tools.project_tools_tasks import confirm_project_locations_task
-
-        return confirm_project_locations_task(queue_id=queue_id)
-
-
 def restart_app_task(queue_id: str, delay: int = 0):
     """
     This task will restart the app using the supervisorctl command.
