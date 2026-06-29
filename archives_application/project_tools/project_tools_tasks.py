@@ -45,6 +45,8 @@ def confirm_project_locations_task(queue_id: str, projects_list: Optional[list] 
         )
 
         try:
+            # Limit the scan to requested project numbers when provided, and
+            # report any requested numbers that do not exist in the database.
             if projects_list:
                 projects = ProjectModel.query.filter(ProjectModel.number.in_(projects_list)).all()
                 found_project_numbers = {project.number for project in projects}
@@ -63,10 +65,18 @@ def confirm_project_locations_task(queue_id: str, projects_list: Optional[list] 
                         project_number=project.number,
                         archives_location=archives_location
                     )
+
+                    # If the folder cannot be resolved, clear any stale stored
+                    # location and record the project as missing from the server.
                     if not project_location:
                         if project.file_server_location:
+                            old_file_server_location = project.file_server_location
                             project.file_server_location = None
-                            task_log["projects cleared"].append(project.number)
+                            task_log["projects cleared"].append({
+                                "project": project.number,
+                                "old file_server_location": old_file_server_location,
+                                "new file_server_location": project.file_server_location
+                            })
                         task_log["projects missing"].append(project.number)
                         continue
 
@@ -74,23 +84,36 @@ def confirm_project_locations_task(queue_id: str, projects_list: Optional[list] 
                         project_location=project_location,
                         archives_location=archives_location
                     )
+
+                    # Store only relative paths so records are portable across
+                    # environments with different ARCHIVES_LOCATION roots.
                     if project.file_server_location != relative_project_location:
+                        old_file_server_location = project.file_server_location
                         logging.info(
                             "Updating location for project %s from %s to %s",
                             project.number,
-                            project.file_server_location,
+                            old_file_server_location,
                             relative_project_location
                         )
                         project.file_server_location = relative_project_location
-                        task_log["projects updated"].append(project.number)
+                        task_log["projects updated"].append({
+                            "project": project.number,
+                            "old file_server_location": old_file_server_location,
+                            "new file_server_location": project.file_server_location
+                        })
 
+                    # Commit periodically so a large full-database scan can
+                    # report progress and avoid holding every change until the end.
                     if task_log["projects checked"]["count"] % 200 == 0:
                         db.session.commit()
                         progress_update(log=task_log)
 
                 except utils.ArchivesPathException:
+                    # Path helper failures mean the expected project directory
+                    # was not found; keep processing the remaining projects.
                     task_log["projects missing"].append(project.number)
                 except Exception as e:
+                    # Capture per-project errors without failing the entire task.
                     task_log["errors"].append({
                         "message": f"Error confirming location for {project.number}:",
                         "exception": str(e)
