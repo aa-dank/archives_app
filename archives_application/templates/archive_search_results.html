@@ -24,10 +24,10 @@
 
         <div class="collapse archive-results-guide" id="archiveResultsGuide">
             <p>
-                Start with the Results table when you want the most likely matching files. Each row is one file-level result grouped by file hash, so duplicate copies of the same file are combined. Use Primary Location to open or review the file, and open More when the same file appears in additional indexed locations.
+                Start with the Results table when you want the most likely matching files. Each row is one file-level result grouped by file hash, so duplicate copies of the same file are combined. Use Primary Location to open or review the file, and expand the row details when the same file appears in additional indexed locations.
             </p>
             <p>
-                Match shows whether the query was found in the filename, path, extracted document text, or a combination. Status describes whether the file's extracted content is searchable. Snippet appears when document text matched and gives a short preview of the matching text.
+                Match shows whether the query was found in the filename, path, extracted document text, or a combination. Snippet appears when document text matched and gives a short preview of the matching text. Expanded row details include all indexed locations, searchability status, and file hash information.
             </p>
             <p>
                 Coverage explains how much of the selected scope could actually be searched by content. A content search with low coverage can miss relevant files whose text has not been extracted, failed extraction, has not been chunked, or is in a format that is not useful for text extraction.
@@ -171,10 +171,7 @@
                         <col class="archive-col-match">
                         <col class="archive-col-filename">
                         <col class="archive-col-location">
-                        <col class="archive-col-more">
-                        <col class="archive-col-status">
                         <col class="archive-col-snippet">
-                        <col class="archive-col-hash">
                     </colgroup>
                     <thead>
                         <tr>
@@ -182,51 +179,109 @@
                             <th><span data-toggle="tooltip" data-container="body" title="Where the query matched for this file.">Match</span></th>
                             <th><span data-toggle="tooltip" data-container="body" title="The file name, extension, and size for this grouped file result.">Filename</span></th>
                             <th><span data-toggle="tooltip" data-container="body" title="The best available location for opening or reviewing the file.">Primary Location</span></th>
-                            <th><span data-toggle="tooltip" data-container="body" title="Additional indexed locations for the same file hash.">More</span></th>
-                            <th><span data-toggle="tooltip" data-container="body" title="Whether extracted document text is searchable for this file.">Status</span></th>
                             <th><span data-toggle="tooltip" data-container="body" title="A short excerpt from the matched document text, when content matched.">Snippet</span></th>
-                            <th><span data-toggle="tooltip" data-container="body" title="The first characters of the file hash used to group duplicate files.">Hash</span></th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for result in search.results %}
-                            <tr>
-                                <td>{{ result.result_rank }}</td>
+                            <tr class="archive-result-row archive-result-row-{{ loop.cycle('odd', 'even') }}">
+                                <td>
+                                    <div class="archive-rank-cell">
+                                        <button
+                                            class="archive-row-toggle"
+                                            type="button"
+                                            aria-expanded="false"
+                                            aria-controls="archiveResultDetails{{ loop.index }}"
+                                        >
+                                            <span class="collapse-toggle-icon" aria-hidden="true">&#9660;</span>
+                                            <span class="sr-only">Show details for result {{ result.result_rank }}</span>
+                                        </button>
+                                        <span>{{ result.result_rank }}</span>
+                                    </div>
+                                </td>
                                 <td>{{ result.match_source }}</td>
                                 <td>
                                     <div>{{ result.filename }}</div>
                                     <div class="text-muted">{{ result.extension }} {{ result.size_display }}</div>
                                 </td>
                                 <td class="archive-path">{{ result.primary_location }}</td>
-                                <td>
-                                    {% if result.additional_location_count > 0 %}
-                                        <details>
-                                            <summary>{{ result.additional_location_count }} additional</summary>
-                                            {% for location in result.locations %}
-                                                {% if location.location_id != result.primary_location_id %}
-                                                    <div class="archive-location-detail archive-path">
-                                                        {% if location.in_scope %}<strong>in scope</strong>{% else %}out of scope{% endif %}
-                                                        {{ location.user_path }}
-                                                    </div>
-                                                {% endif %}
-                                            {% endfor %}
-                                        </details>
-                                    {% else %}
-                                        0
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <div>{{ result.text_status_label }}</div>
-                                    {% if result.failure_stage %}
-                                        <div class="text-muted">{{ result.failure_stage }}</div>
-                                    {% endif %}
-                                </td>
                                 <td class="archive-snippet">
                                     {% if result.snippet %}
                                         {{ result.snippet | safe }}
                                     {% endif %}
                                 </td>
-                                <td><code>{{ result.short_hash }}</code></td>
+                            </tr>
+                            <tr id="archiveResultDetails{{ loop.index }}" class="archive-result-detail-row archive-result-row-{{ loop.cycle('odd', 'even') }}" hidden>
+                                <td colspan="5">
+                                    <div class="archive-result-detail-grid">
+                                        <section class="archive-result-detail-section archive-result-detail-section-locations">
+                                            <h5>Locations</h5>
+                                            <div class="archive-detail-note text-muted">
+                                                {{ result.additional_location_count }} additional indexed location{% if result.additional_location_count != 1 %}s{% endif %}.
+                                            </div>
+                                            <div class="archive-location-list">
+                                                {% for location in result.locations %}
+                                                    <div class="archive-location-detail archive-path">
+                                                        <div class="archive-detail-badges">
+                                                            {% if location.location_id == result.primary_location_id %}
+                                                                <span class="badge badge-light">Primary</span>
+                                                            {% endif %}
+                                                            {% if location.in_scope %}
+                                                                <span class="badge badge-success">In scope</span>
+                                                            {% else %}
+                                                                <span class="badge badge-secondary">Out of scope</span>
+                                                            {% endif %}
+                                                            {% if location.location_id in result.matching_location_ids %}
+                                                                <span class="badge badge-info">Matched query</span>
+                                                            {% endif %}
+                                                            {% if location.existence_confirmed %}
+                                                                <span class="badge badge-light">Exists confirmed</span>
+                                                            {% endif %}
+                                                            {% if location.hash_confirmed %}
+                                                                <span class="badge badge-light">Hash confirmed</span>
+                                                            {% endif %}
+                                                        </div>
+                                                        <div>{{ location.user_path }}</div>
+                                                    </div>
+                                                {% else %}
+                                                    <div class="text-muted">No indexed locations available.</div>
+                                                {% endfor %}
+                                            </div>
+                                        </section>
+
+                                        <section class="archive-result-detail-section">
+                                            <h5>Searchability</h5>
+                                            <dl class="archive-detail-list">
+                                                <dt>Status</dt>
+                                                <dd>{{ result.text_status_label }}</dd>
+                                                {% if result.failure_stage %}
+                                                    <dt>Failure stage</dt>
+                                                    <dd>{{ result.failure_stage }}</dd>
+                                                {% endif %}
+                                                {% if result.failure_summary %}
+                                                    <dt>Failure summary</dt>
+                                                    <dd>{{ result.failure_summary }}</dd>
+                                                {% endif %}
+                                                {% if result.text_length is not none %}
+                                                    <dt>Extracted text length</dt>
+                                                    <dd>{{ result.text_length }}</dd>
+                                                {% endif %}
+                                            </dl>
+                                        </section>
+
+                                        <section class="archive-result-detail-section">
+                                            <h5>File Identity</h5>
+                                            <dl class="archive-detail-list">
+                                                <dt>Hash</dt>
+                                                <dd><code>{{ result.file_hash }}</code></dd>
+                                                <dt>Size</dt>
+                                                <dd>{{ result.size_display }}</dd>
+                                                <dt>Extension</dt>
+                                                <dd>{{ result.extension }}</dd>
+                                            </dl>
+                                        </section>
+                                    </div>
+                                </td>
                             </tr>
                         {% endfor %}
                     </tbody>
@@ -307,7 +362,7 @@
         }
         .archive-results-table {
             table-layout: fixed;
-            min-width: 1720px;
+            min-width: 1600px;
             margin-bottom: 0;
         }
         .archive-results-table th,
@@ -315,28 +370,90 @@
             vertical-align: top;
         }
         .archive-col-rank {
-            width: 54px;
+            width: 72px;
         }
         .archive-col-match {
-            width: 118px;
+            width: 130px;
         }
         .archive-col-filename {
-            width: 260px;
+            width: 280px;
         }
         .archive-col-location {
-            width: 470px;
-        }
-        .archive-col-more {
-            width: 210px;
-        }
-        .archive-col-status {
-            width: 190px;
+            width: 650px;
         }
         .archive-col-snippet {
-            width: 330px;
+            width: 468px;
         }
-        .archive-col-hash {
-            width: 90px;
+        .archive-result-row {
+            cursor: pointer;
+        }
+        .archive-results-table tbody tr.archive-result-row-odd > td {
+            background-color: transparent;
+        }
+        .archive-results-table tbody tr.archive-result-row-even > td {
+            background-color: rgba(255, 255, 255, 0.035);
+        }
+        .archive-result-row-open td,
+        .archive-result-detail-row td {
+            background-color: rgba(255, 255, 255, 0.07);
+        }
+        .archive-rank-cell {
+            align-items: flex-start;
+            display: flex;
+            gap: 0.35rem;
+        }
+        .archive-row-toggle {
+            align-items: center;
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            border-radius: 3px;
+            color: inherit;
+            display: inline-flex;
+            height: 1.35rem;
+            justify-content: center;
+            line-height: 1;
+            padding: 0;
+            width: 1.35rem;
+        }
+        .archive-row-toggle:focus {
+            box-shadow: 0 0 0 0.15rem rgba(23, 162, 184, 0.45);
+            outline: none;
+        }
+        .archive-result-detail-row > td {
+            padding: 0.85rem 1rem;
+        }
+        .archive-result-detail-grid {
+            display: grid;
+            gap: 1.25rem;
+            grid-template-columns: minmax(520px, 1.5fr) minmax(260px, 0.75fr) minmax(280px, 0.75fr);
+        }
+        .archive-result-detail-section h5 {
+            font-size: 0.95rem;
+            margin-bottom: 0.4rem;
+        }
+        .archive-detail-note {
+            margin-bottom: 0.5rem;
+        }
+        .archive-detail-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem;
+            margin-bottom: 0.25rem;
+        }
+        .archive-detail-list {
+            margin-bottom: 0;
+        }
+        .archive-detail-list dt {
+            color: rgba(255, 255, 255, 0.72);
+            font-weight: 600;
+            margin-top: 0.55rem;
+        }
+        .archive-detail-list dt:first-child {
+            margin-top: 0;
+        }
+        .archive-detail-list dd {
+            margin-bottom: 0;
+            overflow-wrap: anywhere;
         }
         .archive-path {
             white-space: pre-wrap;
@@ -346,13 +463,20 @@
             word-break: break-word;
         }
         .archive-location-detail {
-            margin-top: 0.5rem;
-            padding-top: 0.5rem;
             border-top: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 0.55rem 0;
+        }
+        .archive-location-detail:first-child {
+            border-top: 0;
         }
         mark {
             background: #ffe58a;
             padding: 0 0.1rem;
+        }
+        @media (max-width: 991.98px) {
+            .archive-result-detail-grid {
+                grid-template-columns: 1fr;
+            }
         }
         @media (max-width: 575.98px) {
             .archive-coverage-header {
@@ -367,6 +491,38 @@
             if (window.jQuery && jQuery.fn.tooltip) {
                 jQuery('[data-toggle="tooltip"]').tooltip();
             }
+
+            function setResultRowOpen(button, open) {
+                var detailRow = document.getElementById(button.getAttribute('aria-controls'));
+                if (!detailRow) {
+                    return;
+                }
+                var resultRow = button.closest('.archive-result-row');
+                detailRow.hidden = !open;
+                button.setAttribute('aria-expanded', open ? 'true' : 'false');
+                if (resultRow) {
+                    resultRow.classList.toggle('archive-result-row-open', open);
+                }
+            }
+
+            document.querySelectorAll('.archive-row-toggle').forEach(function (button) {
+                button.addEventListener('click', function (event) {
+                    event.stopPropagation();
+                    setResultRowOpen(button, button.getAttribute('aria-expanded') !== 'true');
+                });
+            });
+
+            document.querySelectorAll('.archive-result-row').forEach(function (row) {
+                row.addEventListener('click', function (event) {
+                    if (event.target.closest('button, a, input, select, textarea')) {
+                        return;
+                    }
+                    var button = row.querySelector('.archive-row-toggle');
+                    if (button) {
+                        button.click();
+                    }
+                });
+            });
         });
     </script>
 {% endblock content %}
