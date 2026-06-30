@@ -720,10 +720,6 @@ def run_archive_search(form, app, file_limit: int) -> dict:
 
     content_rows = []
     filepath_rows = []
-    if mode in ["content", "combined"] and (scope.scope_type == "all"):
-        warnings.append(
-            "This search includes all archive document text and may take noticeably longer than a scoped search."
-        )
 
     if mode in ["content", "combined"] and _scope_allows_search(scope):
         content_rows = _execute_content_search(query_text, scope, extension, file_limit, app)
@@ -770,7 +766,6 @@ def run_archive_search(form, app, file_limit: int) -> dict:
             "text_length": meta.get("text_length"),
             "failure_stage": meta.get("failure_stage") or "",
             "failure_summary": meta.get("failure_summary") or "",
-            "short_hash": row["file_hash"][:12],
             "matching_location_ids": row.get("matching_location_ids") or set(),
         })
 

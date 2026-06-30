@@ -19,6 +19,9 @@
                             Choose one search mode and one scope. Project and CAAN scopes use recorded project file-server locations; location scope accepts a copied Records path or a Records-relative folder prefix.
                         </p>
                         <p>
+                            All-archive document text searches can take longer than scoped searches.
+                        </p>
+                        <p>
                             File Extension accepts one extension only, such as <code>pdf</code> or <code>.pdf</code>. Leave it blank to search all extensions; use the Excel workbook on the results page for additional extension filtering.
                         </p>
                     </div>
@@ -68,7 +71,7 @@
                             {% endfor %}
                         </div>
                     {% else %}
-                        {{ form.location_scope(class="form-control", placeholder="N:\\PPDO\\Records\\12xx   Hahn or 12xx   Hahn/1200") }}
+                        {{ form.location_scope(class="form-control", placeholder="e.g. 'N:\\PPDO\\Records\\12xx   Hahn' or '12xx   Hahn/1200'") }}
                     {% endif %}
                 </div>
 
