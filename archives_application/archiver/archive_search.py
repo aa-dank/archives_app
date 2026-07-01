@@ -275,13 +275,28 @@ def _file_hash_scope_cte(scope: ScopeResolution, params: dict) -> str:
     """
 
 
-def _extension_clause(file_alias: str, extension_value: str | None, params: dict) -> str:
+def _parse_extension_filter(extension_value: str | None) -> list[str]:
+    """Normalize a comma-delimited extension filter into distinct extension values."""
+    extensions = []
+    seen = set()
+    for raw_extension in (extension_value or "").split(","):
+        extension = raw_extension.strip().lower().lstrip(".")
+        if extension and extension not in seen:
+            extensions.append(extension)
+            seen.add(extension)
+    return extensions
+
+
+def _extension_clause(file_alias: str, extension_values: list[str] | None, params: dict) -> str:
     """Build an optional case-normalized file-extension SQL predicate."""
-    extension = (extension_value or "").strip().lower().lstrip(".")
-    if not extension:
+    if not extension_values:
         return "TRUE"
-    params["extension_filter"] = extension
-    return f"lower(coalesce({file_alias}.extension, '')) = :extension_filter"
+    extension_params = []
+    for idx, extension in enumerate(extension_values):
+        key = f"extension_filter_{idx}"
+        params[key] = extension
+        extension_params.append(f":{key}")
+    return f"lower(coalesce({file_alias}.extension, '')) IN ({', '.join(extension_params)})"
 
 
 def _scope_allows_search(scope: ScopeResolution) -> bool:
@@ -289,7 +304,7 @@ def _scope_allows_search(scope: ScopeResolution) -> bool:
     return scope.scope_type == "all" or bool(scope.prefixes)
 
 
-def _execute_content_search(query_text: str, scope: ScopeResolution, extension: str | None, file_limit: int, app) -> list[dict]:
+def _execute_content_search(query_text: str, scope: ScopeResolution, extensions: list[str], file_limit: int, app) -> list[dict]:
     """Run scoped PostgreSQL FTS over chunk search vectors."""
     params = {
         "query_text": query_text,
@@ -300,7 +315,7 @@ def _execute_content_search(query_text: str, scope: ScopeResolution, extension: 
         ),
     }
     scoped_cte = _file_hash_scope_cte(scope, params)
-    extension_filter = _extension_clause("f", extension, params)
+    extension_filter = _extension_clause("f", extensions, params)
     sql = f"""
         WITH q AS (
             SELECT websearch_to_tsquery('simple', :query_text) AS query
@@ -347,12 +362,12 @@ def _execute_content_search(query_text: str, scope: ScopeResolution, extension: 
     return [dict(row) for row in db.session.execute(text(sql), params).mappings().all()]
 
 
-def _execute_filename_search(query_text: str, scope: ScopeResolution, extension: str | None, file_limit: int, filename_only: bool) -> list[dict]:
+def _execute_filename_search(query_text: str, scope: ScopeResolution, extensions: list[str], file_limit: int, filename_only: bool) -> list[dict]:
     """Run grouped filename or filename/path FTS at file-hash level."""
     params = {"query_text": query_text, "file_limit": file_limit}
     path_vector = "" if filename_only else " || to_tsvector('english', coalesce(fl.file_server_directories, ''))"
     scope_filter = _scope_clause("fl.file_server_directories", scope.prefixes, params)
-    extension_filter = _extension_clause("f", extension, params)
+    extension_filter = _extension_clause("f", extensions, params)
     sql = f"""
         WITH q AS (
             SELECT websearch_to_tsquery('english', :query_text) AS query
@@ -615,7 +630,7 @@ def _format_size(byte_count: int | None) -> str:
     return str(byte_count)
 
 
-def _coverage_summary(scope: ScopeResolution, extension: str | None, app) -> dict:
+def _coverage_summary(scope: ScopeResolution, extensions: list[str], app) -> dict:
     """Compute scope-level content coverage and status counts."""
     if not _scope_allows_search(scope):
         return {
@@ -639,7 +654,7 @@ def _coverage_summary(scope: ScopeResolution, extension: str | None, app) -> dic
         "low_context_threshold": LOW_CONTEXT_TEXT_THRESHOLD,
     }
     scoped_cte = _file_hash_scope_cte(scope, params)
-    extension_filter = _extension_clause("f", extension, params)
+    extension_filter = _extension_clause("f", extensions, params)
     sql = f"""
         WITH {scoped_cte},
         status_rows AS (
@@ -709,7 +724,7 @@ def run_archive_search(form, app, file_limit: int) -> dict:
     """Run the full archive search workflow and return display data."""
     query_text = (form.search_term.data or "").strip()
     mode = form.search_mode.data or "combined"
-    extension = (form.file_extension.data or "").strip().lower().lstrip(".")
+    extensions = _parse_extension_filter(form.file_extension.data)
     scope = resolve_scope(form, app)
     warnings = list(scope.warnings)
     messages = list(scope.messages)
@@ -722,13 +737,13 @@ def run_archive_search(form, app, file_limit: int) -> dict:
     filepath_rows = []
 
     if mode in ["content", "combined"] and _scope_allows_search(scope):
-        content_rows = _execute_content_search(query_text, scope, extension, file_limit, app)
+        content_rows = _execute_content_search(query_text, scope, extensions, file_limit, app)
     elif mode in ["content", "combined"] and scope.scope_type != "all" and not scope.prefixes:
         messages.append("Document-content search was skipped because the selected scope resolved to no usable root paths.")
 
     if mode in ["filename_only", "filepath", "combined"] and _scope_allows_search(scope):
         filename_only = mode == "filename_only"
-        filepath_rows = _execute_filename_search(query_text, scope, extension, file_limit, filename_only)
+        filepath_rows = _execute_filename_search(query_text, scope, extensions, file_limit, filename_only)
     elif mode in ["filename_only", "filepath", "combined"] and scope.scope_type != "all" and not scope.prefixes:
         messages.append("Filename/path search was skipped because the selected scope resolved to no usable root paths.")
 
@@ -769,14 +784,15 @@ def run_archive_search(form, app, file_limit: int) -> dict:
             "matching_location_ids": row.get("matching_location_ids") or set(),
         })
 
-    coverage = _coverage_summary(scope, extension, app)
+    coverage = _coverage_summary(scope, extensions, app)
     return {
         "query_text": query_text,
         "search_mode": mode,
         "search_mode_label": SEARCH_MODE_LABELS.get(mode, mode),
         "scope": scope,
         "scope_label": scope.label,
-        "extension": extension,
+        "extension": ", ".join(extensions),
+        "extensions": extensions,
         "results": results,
         "coverage": coverage,
         "messages": messages,
@@ -828,6 +844,7 @@ def build_archive_search_workbook(search_data: dict, generated_at: datetime) -> 
     coverage_rows = [
         {"field": "query_text", "value": search_data["query_text"]},
         {"field": "search_mode", "value": search_data["search_mode_label"]},
+        {"field": "file_extensions", "value": search_data["extension"]},
         {"field": "scope_type", "value": scope.scope_type},
         {"field": "scope_display_value", "value": scope.display_value},
         {"field": "scope_roots", "value": "\n".join(scope.prefixes)},

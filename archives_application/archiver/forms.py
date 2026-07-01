@@ -15,6 +15,7 @@ from .. import utils
 # Valid project numbers currently supported by project-directory resolution logic.
 # Examples: 1234, 12345A, 1234-001, 12345-001A
 PROJECT_NUMBER_RE_PATTERN = r'^\d{4,5}(?:[A-Z])?(?:-\d{3})?(?:[A-Z])?$'
+FILE_EXTENSION_RE_PATTERN = r'^[A-Za-z0-9][A-Za-z0-9_-]*$'
 
 
 def project_number_pattern_validation(project_number_field: StringField):
@@ -204,7 +205,7 @@ class ArchiveSearchForm(FlaskForm):
     location_scope = StringField('Location Prefix')
     project_number = StringField('Project Number')
     caan = StringField('CAAN')
-    file_extension = StringField('File Extension')
+    file_extension = StringField('File Extensions')
     submit = SubmitField('Search')
 
     def validate(self, extra_validators=None):
@@ -243,6 +244,21 @@ class ArchiveSearchForm(FlaskForm):
         if other_scope_values:
             self.scope_type.errors.append(
                 "Use one scope at a time: location, project, CAAN, or all archives."
+            )
+            return False
+
+        extension_values = [
+            extension.strip().lstrip(".")
+            for extension in (self.file_extension.data or "").split(",")
+            if extension.strip().lstrip(".")
+        ]
+        invalid_extensions = [
+            extension for extension in extension_values
+            if not re.fullmatch(FILE_EXTENSION_RE_PATTERN, extension)
+        ]
+        if invalid_extensions:
+            self.file_extension.errors.append(
+                "Separate extensions with commas, such as pdf, docx, tif."
             )
             return False
 

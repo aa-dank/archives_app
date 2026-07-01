@@ -234,12 +234,6 @@
                                                             {% if location.location_id in result.matching_location_ids %}
                                                                 <span class="badge badge-info">Matched query</span>
                                                             {% endif %}
-                                                            {% if location.existence_confirmed %}
-                                                                <span class="badge badge-light">Exists confirmed</span>
-                                                            {% endif %}
-                                                            {% if location.hash_confirmed %}
-                                                                <span class="badge badge-light">Hash confirmed</span>
-                                                            {% endif %}
                                                         </div>
                                                         <div>{{ location.user_path }}</div>
                                                     </div>
