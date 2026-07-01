@@ -127,34 +127,6 @@
                         <th>{{ help_label("Content-searchable files", "Files with enough extracted text and current full-text-search chunks to support document text searching.") }}</th>
                         <td>{{ search.coverage.content_searchable_files }}</td>
                     </tr>
-                    <tr>
-                        <th>{{ help_label("Files with FTS chunks", "Files that have searchable text chunks in the full-text-search index.") }}</th>
-                        <td>{{ search.coverage.files_with_fts_chunks }}</td>
-                    </tr>
-                    <tr>
-                        <th>{{ help_label("Files with nonempty extracted text", "Files where text extraction produced at least some text, whether or not it is currently chunked for text search.") }}</th>
-                        <td>{{ search.coverage.files_with_nonempty_text }}</td>
-                    </tr>
-                    <tr>
-                        <th>{{ help_label("Empty or thin text files", "Files with an extraction record but too little text to be useful for reliable content searching.") }}</th>
-                        <td>{{ search.coverage.files_with_empty_or_thin_text }}</td>
-                    </tr>
-                    <tr>
-                        <th>{{ help_label("Extraction failures", "Files where content extraction was attempted but recorded a failure.") }}</th>
-                        <td>{{ search.coverage.files_with_extraction_failures }}</td>
-                    </tr>
-                    <tr>
-                        <th>{{ help_label("Not attempted", "Files with no extracted-content record and no recorded extraction failure yet.") }}</th>
-                        <td>{{ search.coverage.files_not_attempted }}</td>
-                    </tr>
-                    <tr>
-                        <th>{{ help_label("Unsupported/low-value formats", "Files whose extension is usually not useful or supported for document text extraction, such as media, shortcut, database, or CAD support files.") }}</th>
-                        <td>{{ search.coverage.unsupported_or_low_value_format_files }}</td>
-                    </tr>
-                    <tr>
-                        <th>{{ help_label("Filename/path-searchable files", "Files available to filename and path searches. Content availability is separate and may be lower.") }}</th>
-                        <td>{{ search.coverage.filename_path_searchable_files }}</td>
-                    </tr>
                 </tbody>
             </table>
         </div>
