@@ -19,6 +19,7 @@ from urllib import parse
 
 # imports from this application
 import archives_application.archiver.forms as archiver_forms
+from archives_application.archiver import archive_search as archive_search_service
 from archives_application.archiver.archival_file import ArchivalFile
 from archives_application import utils
 from archives_application.models import *
@@ -2612,6 +2613,99 @@ def file_search():
             )
 
     return flask.render_template('file_search.html', form=form)
+
+
+@archiver.route("/archives_search", methods=['GET', 'POST'])
+def archives_search():
+    """
+    Archive search workflow.
+
+    This endpoint is the v1 replacement candidate for /file_search. The existing
+    /file_search route is intentionally left unchanged during validation.
+    """
+    form = archiver_forms.ArchiveSearchForm()
+    spreadsheet_filename_prefix = "archive_search_results_"
+    timestamp_format = r'%Y%m%d%H%M%S'
+    html_file_limit = int(flask.current_app.config.get("ARCHIVE_SEARCH_HTML_LIMIT", 300))
+    excel_file_limit = int(flask.current_app.config.get("ARCHIVE_SEARCH_EXCEL_LIMIT", 3000))
+
+    if utils.FlaskAppUtils.retrieve_request_param('timestamp'):
+        try:
+            timestamp = utils.FlaskAppUtils.retrieve_request_param('timestamp')
+            xlsx_filepath = utils.FlaskAppUtils.create_temp_filepath(
+                filename=f'{spreadsheet_filename_prefix}{timestamp}.xlsx',
+                unique_filepath=False
+            )
+
+            if os.path.exists(xlsx_filepath):
+                return flask.send_file(
+                    xlsx_filepath,
+                    as_attachment=True,
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+
+            readable_timestamp = datetime.strftime(datetime.strptime(timestamp, timestamp_format), r'%Y-%m-%d %H:%M:%S')
+            raise FileNotFoundError(
+                f"Archive search results from {readable_timestamp} not found. Expected file at {xlsx_filepath}"
+            )
+        except Exception as e:
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message="Error retrieving archive search results: ",
+                thrown_exception=e,
+                app_obj=flask.current_app
+            )
+
+    if form.validate_on_submit():
+        try:
+            timestamp = datetime.now().strftime(timestamp_format)
+            generated_at = datetime.now()
+            search_data = archive_search_service.run_archive_search(
+                form=form,
+                app=flask.current_app,
+                file_limit=excel_file_limit
+            )
+            results_df, locations_df, coverage_df = archive_search_service.build_archive_search_workbook(
+                search_data=search_data,
+                generated_at=generated_at
+            )
+            spreadsheet_filepath = utils.FlaskAppUtils.create_temp_filepath(
+                filename=f'{spreadsheet_filename_prefix}{timestamp}.xlsx'
+            )
+            with pd.ExcelWriter(spreadsheet_filepath, engine='openpyxl') as writer:
+                results_df.to_excel(writer, index=False, sheet_name='Results')
+                locations_df.to_excel(writer, index=False, sheet_name='Locations')
+                coverage_df.to_excel(writer, index=False, sheet_name='Coverage')
+
+            html_result_count = min(len(search_data["results"]), html_file_limit)
+            html_search_data = dict(search_data)
+            html_search_data["results"] = search_data["results"][:html_file_limit]
+            html_search_data["html_limit_hit"] = len(search_data["results"]) > html_file_limit
+            html_search_data["export_limit_hit"] = search_data["limit_hit"]
+            html_search_data["html_file_limit"] = html_file_limit
+            html_search_data["excel_file_limit"] = excel_file_limit
+            html_search_data["html_result_count"] = html_result_count
+
+            return flask.render_template(
+                "archive_search_results.html",
+                form=form,
+                search=html_search_data,
+                timestamp=timestamp,
+                generated_at=generated_at,
+                hide_sidebar=True
+            )
+        except Exception as e:
+            return utils.FlaskAppUtils.web_exception_subroutine(
+                flash_message="Error processing archive search: ",
+                thrown_exception=e,
+                app_obj=flask.current_app
+            )
+
+    return flask.render_template(
+        "archive_search.html",
+        form=form,
+        html_file_limit=html_file_limit,
+        excel_file_limit=excel_file_limit
+    )
             
       
 @archiver.route("/scrape_location", methods=['GET', 'POST'])

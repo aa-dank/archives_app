@@ -1,0 +1,178 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <form method="POST" action="" id="archive-search-form">
+            {{ form.hidden_tag() }}
+            <fieldset class="form-group">
+                <legend class="border-bottom mb-4">Archive Search</legend>
+
+                <details class="archive-search-overview mb-4">
+                    <summary>Search overview</summary>
+                    <div class="archive-search-overview-body">
+                        <p>
+                            Enter one or more search terms. Multiple plain terms are searched together, so <code>annual report</code> looks for both words. Use quotes for a phrase, such as <code>"annual report"</code>.
+                        </p>
+                        <p>
+                            Search terms support simple web-style operators: <code>OR</code> broadens a search, as in <code>budget OR invoice</code>, and a leading minus excludes a term, as in <code>budget -draft</code>. Parentheses, wildcards, and regular expressions are not supported.
+                        </p>
+                        <p>
+                            Choose one search mode and one scope. Project and CAAN scopes use recorded project file-server locations; location scope accepts a copied Records path or a Records-relative folder prefix.
+                        </p>
+                        <p>
+                            All-archive document text searches can take longer than scoped searches.
+                        </p>
+                        <p>
+                            The File Extensions field accepts a comma-delimited list, such as <code>pdf, docx, tif</code>. Leading dots are optional. Leave it blank to search all extensions.
+                        </p>
+                    </div>
+                </details>
+
+                <div class="form-group">
+                    {{ form.search_term.label(class="form-control-label") }}
+                    {% if form.search_term.errors %}
+                        {{ form.search_term(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.search_term.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.search_term(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group col-md-6">
+                        {{ form.search_mode.label(class="form-control-label") }}
+                        {{ form.search_mode(class="form-control") }}
+                    </div>
+                    <div class="form-group col-md-6">
+                        {{ form.scope_type.label(class="form-control-label") }}
+                        {% if form.scope_type.errors %}
+                            {{ form.scope_type(class="form-control is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in form.scope_type.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ form.scope_type(class="form-control") }}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="form-group archive-scope-field" data-scope="location">
+                    {{ form.location_scope.label(class="form-control-label") }}
+                    {% if form.location_scope.errors %}
+                        {{ form.location_scope(class="form-control is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.location_scope.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.location_scope(class="form-control", placeholder="e.g. 'N:\\PPDO\\Records\\12xx   Hahn' or '12xx   Hahn/1200'") }}
+                    {% endif %}
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group col-md-6 archive-scope-field" data-scope="project">
+                        {{ form.project_number.label(class="form-control-label") }}
+                        {% if form.project_number.errors %}
+                            {{ form.project_number(class="form-control is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in form.project_number.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ form.project_number(class="form-control") }}
+                        {% endif %}
+                    </div>
+                    <div class="form-group col-md-6 archive-scope-field" data-scope="caan">
+                        {{ form.caan.label(class="form-control-label") }}
+                        {% if form.caan.errors %}
+                            {{ form.caan(class="form-control is-invalid") }}
+                            <div class="invalid-feedback">
+                                {% for error in form.caan.errors %}
+                                    <span>{{ error }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            {{ form.caan(class="form-control") }}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    {{ form.file_extension.label(class="form-control-label") }}
+                    {% if form.file_extension.errors %}
+                        {{ form.file_extension(class="form-control is-invalid", placeholder="pdf, docx, tif") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.file_extension.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.file_extension(class="form-control", placeholder="pdf, docx, tif") }}
+                    {% endif %}
+                </div>
+            </fieldset>
+            <div class="form-group">
+                {{ form.submit(class="btn btn-outline-info", id="archive-search-button") }}
+            </div>
+        </form>
+    </div>
+
+    <style>
+        .archive-search-overview {
+            border: 1px solid #dddddd;
+            border-radius: 3px;
+            background: #f8f9fa;
+            padding: 0.75rem 1rem;
+        }
+        .archive-search-overview summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: #444444;
+        }
+        .archive-search-overview-body {
+            margin-top: 0.75rem;
+        }
+        .archive-search-overview-body p:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var scopeSelect = document.getElementById('scope_type');
+            var scopeFields = document.querySelectorAll('.archive-scope-field');
+
+            function updateScopeFields() {
+                var selectedScope = scopeSelect ? scopeSelect.value : 'all';
+                scopeFields.forEach(function(field) {
+                    field.style.display = field.getAttribute('data-scope') === selectedScope ? 'block' : 'none';
+                });
+            }
+
+            if (scopeSelect) {
+                scopeSelect.addEventListener('change', updateScopeFields);
+                updateScopeFields();
+            }
+
+            var searchForm = document.getElementById('archive-search-form');
+            if (searchForm) {
+                searchForm.addEventListener('submit', function(event) {
+                    var button = document.getElementById('archive-search-button');
+                    if (button) {
+                        button.value = 'Searching...';
+                        setTimeout(function() { button.disabled = true; }, 10);
+                    }
+                    event.preventDefault();
+                    setTimeout(function() { HTMLFormElement.prototype.submit.call(searchForm); }, 350);
+                });
+            }
+        });
+    </script>
+{% endblock content %}
