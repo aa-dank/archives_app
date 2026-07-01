@@ -22,7 +22,7 @@
                             All-archive document text searches can take longer than scoped searches.
                         </p>
                         <p>
-                            File Extension accepts one extension only, such as <code>pdf</code> or <code>.pdf</code>. Leave it blank to search all extensions; use the Excel workbook on the results page for additional extension filtering.
+                            The File Extensions field accepts a comma-delimited list, such as <code>pdf, docx, tif</code>. Leading dots are optional. Leave it blank to search all extensions.
                         </p>
                     </div>
                 </details>
@@ -106,7 +106,16 @@
 
                 <div class="form-group">
                     {{ form.file_extension.label(class="form-control-label") }}
-                    {{ form.file_extension(class="form-control", placeholder="pdf") }}
+                    {% if form.file_extension.errors %}
+                        {{ form.file_extension(class="form-control is-invalid", placeholder="pdf, docx, tif") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.file_extension.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.file_extension(class="form-control", placeholder="pdf, docx, tif") }}
+                    {% endif %}
                 </div>
             </fieldset>
             <div class="form-group">
