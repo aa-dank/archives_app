@@ -15,6 +15,7 @@ from .. import utils
 # Valid project numbers currently supported by project-directory resolution logic.
 # Examples: 1234, 12345A, 1234-001, 12345-001A
 PROJECT_NUMBER_RE_PATTERN = r'^\d{4,5}(?:[A-Z])?(?:-\d{3})?(?:[A-Z])?$'
+FILE_EXTENSION_RE_PATTERN = r'^[A-Za-z0-9][A-Za-z0-9_-]*$'
 
 
 def project_number_pattern_validation(project_number_field: StringField):
@@ -175,6 +176,93 @@ class FileSearchForm(FlaskForm):
         Ensures that the search location exists
         """
         path_validation_subroutine(search_location, path_type="dir", require_user_mount=True)
+
+
+class ArchiveSearchForm(FlaskForm):
+    """Form for the archive search workflow and its scope controls."""
+
+    search_term = StringField('Search Term', validators=[DataRequired()])
+    search_mode = SelectField(
+        'Search Mode',
+        choices=[
+            ('combined', 'Filename/path + document text'),
+            ('filename_only', 'Filename only'),
+            ('filepath', 'Filename/path'),
+            ('content', 'Document text'),
+        ],
+        default='combined'
+    )
+    scope_type = SelectField(
+        'Search Scope',
+        choices=[
+            ('all', 'All archives'),
+            ('location', 'Location prefix'),
+            ('project', 'Project'),
+            ('caan', 'CAAN'),
+        ],
+        default='all'
+    )
+    location_scope = StringField('Location Prefix')
+    project_number = StringField('Project Number')
+    caan = StringField('CAAN')
+    file_extension = StringField('File Extensions')
+    submit = SubmitField('Search')
+
+    def validate(self, extra_validators=None):
+        """Validate that the user selected at most one search scope."""
+        if not super().validate(extra_validators=extra_validators):
+            return False
+
+        scope_values = {
+            'location': (self.location_scope.data or '').strip(),
+            'project': (self.project_number.data or '').strip(),
+            'caan': (self.caan.data or '').strip(),
+        }
+        selected_scope_value = scope_values.get(self.scope_type.data)
+        other_scope_values = [
+            value for scope, value in scope_values.items()
+            if scope != self.scope_type.data and value
+        ]
+
+        if self.scope_type.data != 'all' and not selected_scope_value:
+            field_by_scope = {
+                'location': self.location_scope,
+                'project': self.project_number,
+                'caan': self.caan,
+            }
+            field_by_scope[self.scope_type.data].errors.append(
+                "Provide a value for the selected scope."
+            )
+            return False
+
+        if self.scope_type.data == 'all' and any(scope_values.values()):
+            self.scope_type.errors.append(
+                "Select a scoped search type before entering a location, project, or CAAN."
+            )
+            return False
+
+        if other_scope_values:
+            self.scope_type.errors.append(
+                "Use one scope at a time: location, project, CAAN, or all archives."
+            )
+            return False
+
+        extension_values = [
+            extension.strip().lstrip(".")
+            for extension in (self.file_extension.data or "").split(",")
+            if extension.strip().lstrip(".")
+        ]
+        invalid_extensions = [
+            extension for extension in extension_values
+            if not re.fullmatch(FILE_EXTENSION_RE_PATTERN, extension)
+        ]
+        if invalid_extensions:
+            self.file_extension.errors.append(
+                "Separate extensions with commas, such as pdf, docx, tif."
+            )
+            return False
+
+        return True
 
 
 class DirContentsSummaryForm(FlaskForm):

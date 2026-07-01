@@ -1,0 +1,494 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <h2>Archive Search Results</h2>
+        <p>
+            Results for '{{ search.query_text }}' in {{ search.scope_label }}.
+            Showing {{ search.html_result_count }} file-level result{% if search.html_result_count != 1 %}s{% endif %}.
+        </p>
+
+        <div class="archive-results-actions">
+            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('archiver.archives_search') }}">Back to search</a>
+            <a class="btn btn-outline-info btn-sm" href="{{ url_for('archiver.archives_search', timestamp=timestamp) }}">Download Excel workbook</a>
+            <button
+                class="btn btn-outline-info btn-sm archive-results-guide-toggle"
+                type="button"
+                data-toggle="collapse"
+                data-target="#archiveResultsGuide"
+                aria-expanded="false"
+                aria-controls="archiveResultsGuide"
+            >
+                How to interpret results <span class="collapse-toggle-icon">&#9660;</span>
+            </button>
+        </div>
+
+        <div class="collapse archive-results-guide" id="archiveResultsGuide">
+            <p>
+                Start with the Results table when you want the most likely matching files. Each row is one file-level result grouped by file hash, so duplicate copies of the same file are combined. Use Primary Location to open or review the file, and expand the row details when the same file appears in additional indexed locations.
+            </p>
+            <p>
+                Match shows whether the query was found in the filename, path, extracted document text, or a combination. Snippet appears when document text matched and gives a short preview of the matching text. Expanded row details include all indexed locations, searchability status, and file hash information.
+            </p>
+            <p>
+                Coverage explains how much of the selected scope could actually be searched by content. A content search with low coverage can miss relevant files whose text has not been extracted, failed extraction, has not been chunked, or is in a format that is not useful for text extraction.
+            </p>
+            <p>
+                The Excel workbook contains up to the top {{ search.excel_file_limit }} file-level results and is intended for further filtering, sorting, and searching. It includes a Results sheet for the grouped matches, a Locations sheet with all indexed locations for exported files, and a Coverage sheet with the search settings and coverage counts.
+            </p>
+        </div>
+
+        {% if search.messages %}
+            <div class="alert alert-info">
+                {% for message in search.messages %}
+                    <div>{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+        {% if search.warnings %}
+            <div class="alert alert-warning">
+                {% for warning in search.warnings %}
+                    <div>{{ warning }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+        {% if search.html_limit_hit %}
+            <div class="alert alert-secondary">
+                HTML display is limited to {{ search.html_file_limit }} file-level results.
+            </div>
+        {% endif %}
+        {% if search.export_limit_hit %}
+            <div class="alert alert-secondary">
+                Excel export hit the {{ search.excel_file_limit }} file-level result limit.
+            </div>
+        {% endif %}
+
+        <p class="archive-workbook-note">
+            <a href="{{ url_for('archiver.archives_search', timestamp=timestamp) }}">Download Excel workbook.</a>
+            <span class="text-muted">Includes up to {{ search.excel_file_limit }} top results. Sheets: Results, Locations, Coverage.</span>
+        </p>
+    </div>
+
+    {% macro help_label(label, explanation) -%}
+        <span
+            class="archive-help-label"
+            tabindex="0"
+            data-toggle="tooltip"
+            data-placement="right"
+            data-container="body"
+            data-trigger="hover focus"
+            title="{{ explanation }}"
+        >{{ label }} <span class="archive-help-icon" aria-hidden="true">?</span></span>
+    {%- endmacro %}
+
+    <div class="content-section archive-coverage-section">
+        <div class="archive-coverage-header">
+            <div>
+                <h4>Coverage</h4>
+                <div class="text-muted">
+                    {{ search.coverage.content_searchable_files }} of {{ search.coverage.files_in_scope }} files content-searchable in this scope.
+                </div>
+            </div>
+            <button
+                class="btn btn-outline-info btn-sm archive-coverage-toggle"
+                type="button"
+                data-toggle="collapse"
+                data-target="#archiveCoverageDetails"
+                aria-expanded="false"
+                aria-controls="archiveCoverageDetails"
+            >
+                Details <span class="collapse-toggle-icon">&#9660;</span>
+            </button>
+        </div>
+        <div class="collapse archive-coverage-details" id="archiveCoverageDetails">
+        <div class="table-responsive">
+            <table class="table table-dark table-striped table-bordered table-hover table-sm">
+                <tbody>
+                    <tr>
+                        <th>{{ help_label("Search mode", "Which parts of the archive were searched for this query: filename, path, extracted document text, or a combined search.") }}</th>
+                        <td>{{ search.search_mode_label }}</td>
+                    </tr>
+                    <tr>
+                        <th>{{ help_label("Scope roots", "The archive folder roots used to limit this search. If blank, the search covered all indexed archives.") }}</th>
+                        <td>
+                            {% if search.scope.prefixes %}
+                                {% for prefix in search.scope.prefixes %}
+                                    <div class="archive-path">{{ prefix }}</div>
+                                {% endfor %}
+                            {% else %}
+                                All archives
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>{{ help_label("Files in selected scope", "Total indexed files found under the selected project, CAAN, location, or all-archive scope.") }}</th>
+                        <td>{{ search.coverage.files_in_scope }}</td>
+                    </tr>
+                    <tr>
+                        <th>{{ help_label("Content-searchable files", "Files with enough extracted text and current full-text-search chunks to support document text searching.") }}</th>
+                        <td>{{ search.coverage.content_searchable_files }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        </div>
+    </div>
+
+    <div class="content-section archive-results-wide">
+        <h4>Results</h4>
+        {% if search.results %}
+            <div class="archive-results-scroll">
+                <table class="table table-dark table-striped table-bordered table-hover table-sm archive-results-table">
+                    <colgroup>
+                        <col class="archive-col-rank">
+                        <col class="archive-col-match">
+                        <col class="archive-col-filename">
+                        <col class="archive-col-location">
+                        <col class="archive-col-snippet">
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th><span data-toggle="tooltip" data-container="body" title="Result order after combining filename, path, and content matches.">#</span></th>
+                            <th><span data-toggle="tooltip" data-container="body" title="Where the query matched for this file.">Match</span></th>
+                            <th><span data-toggle="tooltip" data-container="body" title="The file name, extension, and size for this grouped file result.">Filename</span></th>
+                            <th><span data-toggle="tooltip" data-container="body" title="The best available location for opening or reviewing the file.">Primary Location</span></th>
+                            <th><span data-toggle="tooltip" data-container="body" title="A short excerpt from the matched document text, when content matched.">Snippet</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for result in search.results %}
+                            <tr class="archive-result-row archive-result-row-{{ loop.cycle('odd', 'even') }}">
+                                <td>
+                                    <div class="archive-rank-cell">
+                                        <button
+                                            class="archive-row-toggle"
+                                            type="button"
+                                            aria-expanded="false"
+                                            aria-controls="archiveResultDetails{{ loop.index }}"
+                                        >
+                                            <span class="collapse-toggle-icon" aria-hidden="true">&#9660;</span>
+                                            <span class="sr-only">Show details for result {{ result.result_rank }}</span>
+                                        </button>
+                                        <span>{{ result.result_rank }}</span>
+                                    </div>
+                                </td>
+                                <td>{{ result.match_source }}</td>
+                                <td>
+                                    <div>{{ result.filename }}</div>
+                                    <div class="text-muted">{{ result.extension }} {{ result.size_display }}</div>
+                                </td>
+                                <td class="archive-path">{{ result.primary_location }}</td>
+                                <td class="archive-snippet">
+                                    {% if result.snippet %}
+                                        {{ result.snippet | safe }}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr id="archiveResultDetails{{ loop.index }}" class="archive-result-detail-row archive-result-row-{{ loop.cycle('odd', 'even') }}" hidden>
+                                <td colspan="5">
+                                    <div class="archive-result-detail-grid">
+                                        <section class="archive-result-detail-section archive-result-detail-section-locations">
+                                            <h5>Locations</h5>
+                                            <div class="archive-detail-note text-muted">
+                                                {{ result.additional_location_count }} additional indexed location{% if result.additional_location_count != 1 %}s{% endif %}.
+                                            </div>
+                                            <div class="archive-location-list">
+                                                {% for location in result.locations %}
+                                                    <div class="archive-location-detail archive-path">
+                                                        <div class="archive-detail-badges">
+                                                            {% if location.location_id == result.primary_location_id %}
+                                                                <span class="badge badge-light">Primary</span>
+                                                            {% endif %}
+                                                            {% if location.in_scope %}
+                                                                <span class="badge badge-success">In scope</span>
+                                                            {% else %}
+                                                                <span class="badge badge-secondary">Out of scope</span>
+                                                            {% endif %}
+                                                            {% if location.location_id in result.matching_location_ids %}
+                                                                <span class="badge badge-info">Matched query</span>
+                                                            {% endif %}
+                                                        </div>
+                                                        <div>{{ location.user_path }}</div>
+                                                    </div>
+                                                {% else %}
+                                                    <div class="text-muted">No indexed locations available.</div>
+                                                {% endfor %}
+                                            </div>
+                                        </section>
+
+                                        <section class="archive-result-detail-section">
+                                            <h5>Searchability</h5>
+                                            <dl class="archive-detail-list">
+                                                <dt>Status</dt>
+                                                <dd>{{ result.text_status_label }}</dd>
+                                                {% if result.failure_stage %}
+                                                    <dt>Failure stage</dt>
+                                                    <dd>{{ result.failure_stage }}</dd>
+                                                {% endif %}
+                                                {% if result.failure_summary %}
+                                                    <dt>Failure summary</dt>
+                                                    <dd>{{ result.failure_summary }}</dd>
+                                                {% endif %}
+                                                {% if result.text_length is not none %}
+                                                    <dt>Extracted text length</dt>
+                                                    <dd>{{ result.text_length }}</dd>
+                                                {% endif %}
+                                            </dl>
+                                        </section>
+
+                                        <section class="archive-result-detail-section">
+                                            <h5>File Identity</h5>
+                                            <dl class="archive-detail-list">
+                                                <dt>Hash</dt>
+                                                <dd><code>{{ result.file_hash }}</code></dd>
+                                                <dt>Size</dt>
+                                                <dd>{{ result.size_display }}</dd>
+                                                <dt>Extension</dt>
+                                                <dd>{{ result.extension }}</dd>
+                                            </dl>
+                                        </section>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p>No file-level results matched this search.</p>
+        {% endif %}
+    </div>
+
+    <style>
+        main.container {
+            max-width: calc(100vw - 32px);
+        }
+        .archive-results-wide {
+            padding-left: 12px;
+            padding-right: 12px;
+            overflow-x: visible;
+        }
+        .archive-results-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .archive-results-guide {
+            border: 1px solid #dddddd;
+            border-radius: 3px;
+            background: #f8f9fa;
+            margin-bottom: 1rem;
+            padding: 0.75rem 1rem;
+        }
+        .archive-results-guide p:last-child,
+        .archive-workbook-note {
+            margin-bottom: 0;
+        }
+        button[aria-expanded="true"] .collapse-toggle-icon {
+            transform: rotate(180deg);
+        }
+        button[aria-expanded="false"] .collapse-toggle-icon {
+            transform: rotate(0deg);
+        }
+        .archive-coverage-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+        .archive-coverage-header h4 {
+            margin-bottom: 0.25rem;
+        }
+        .archive-coverage-toggle {
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+        .archive-coverage-details {
+            margin-top: 1rem;
+        }
+        .archive-help-label,
+        .archive-results-table thead span[data-toggle="tooltip"] {
+            cursor: help;
+        }
+        .archive-help-icon {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            margin-left: 0.25rem;
+            border: 1px solid currentColor;
+            border-radius: 50%;
+            font-size: 0.72rem;
+            line-height: 0.95rem;
+            text-align: center;
+            opacity: 0.85;
+        }
+        .archive-results-scroll {
+            overflow-x: auto;
+            padding-bottom: 0.35rem;
+        }
+        .archive-results-table {
+            table-layout: fixed;
+            min-width: 1600px;
+            margin-bottom: 0;
+        }
+        .archive-results-table th,
+        .archive-results-table td {
+            vertical-align: top;
+        }
+        .archive-col-rank {
+            width: 72px;
+        }
+        .archive-col-match {
+            width: 130px;
+        }
+        .archive-col-filename {
+            width: 280px;
+        }
+        .archive-col-location {
+            width: 650px;
+        }
+        .archive-col-snippet {
+            width: 468px;
+        }
+        .archive-result-row {
+            cursor: pointer;
+        }
+        .archive-results-table tbody tr.archive-result-row-odd > td {
+            background-color: transparent;
+        }
+        .archive-results-table tbody tr.archive-result-row-even > td {
+            background-color: rgba(255, 255, 255, 0.035);
+        }
+        .archive-result-row-open td,
+        .archive-result-detail-row td {
+            background-color: rgba(255, 255, 255, 0.07);
+        }
+        .archive-rank-cell {
+            align-items: flex-start;
+            display: flex;
+            gap: 0.35rem;
+        }
+        .archive-row-toggle {
+            align-items: center;
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            border-radius: 3px;
+            color: inherit;
+            display: inline-flex;
+            height: 1.35rem;
+            justify-content: center;
+            line-height: 1;
+            padding: 0;
+            width: 1.35rem;
+        }
+        .archive-row-toggle:focus {
+            box-shadow: 0 0 0 0.15rem rgba(23, 162, 184, 0.45);
+            outline: none;
+        }
+        .archive-result-detail-row > td {
+            padding: 0.85rem 1rem;
+        }
+        .archive-result-detail-grid {
+            display: grid;
+            gap: 1.25rem;
+            grid-template-columns: minmax(520px, 1.5fr) minmax(260px, 0.75fr) minmax(280px, 0.75fr);
+        }
+        .archive-result-detail-section h5 {
+            font-size: 0.95rem;
+            margin-bottom: 0.4rem;
+        }
+        .archive-detail-note {
+            margin-bottom: 0.5rem;
+        }
+        .archive-detail-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem;
+            margin-bottom: 0.25rem;
+        }
+        .archive-detail-list {
+            margin-bottom: 0;
+        }
+        .archive-detail-list dt {
+            color: rgba(255, 255, 255, 0.72);
+            font-weight: 600;
+            margin-top: 0.55rem;
+        }
+        .archive-detail-list dt:first-child {
+            margin-top: 0;
+        }
+        .archive-detail-list dd {
+            margin-bottom: 0;
+            overflow-wrap: anywhere;
+        }
+        .archive-path {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .archive-snippet {
+            word-break: break-word;
+        }
+        .archive-location-detail {
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 0.55rem 0;
+        }
+        .archive-location-detail:first-child {
+            border-top: 0;
+        }
+        mark {
+            background: #ffe58a;
+            padding: 0 0.1rem;
+        }
+        @media (max-width: 991.98px) {
+            .archive-result-detail-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        @media (max-width: 575.98px) {
+            .archive-coverage-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+        }
+    </style>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.jQuery && jQuery.fn.tooltip) {
+                jQuery('[data-toggle="tooltip"]').tooltip();
+            }
+
+            function setResultRowOpen(button, open) {
+                var detailRow = document.getElementById(button.getAttribute('aria-controls'));
+                if (!detailRow) {
+                    return;
+                }
+                var resultRow = button.closest('.archive-result-row');
+                detailRow.hidden = !open;
+                button.setAttribute('aria-expanded', open ? 'true' : 'false');
+                if (resultRow) {
+                    resultRow.classList.toggle('archive-result-row-open', open);
+                }
+            }
+
+            document.querySelectorAll('.archive-row-toggle').forEach(function (button) {
+                button.addEventListener('click', function (event) {
+                    event.stopPropagation();
+                    setResultRowOpen(button, button.getAttribute('aria-expanded') !== 'true');
+                });
+            });
+
+            document.querySelectorAll('.archive-result-row').forEach(function (row) {
+                row.addEventListener('click', function (event) {
+                    if (event.target.closest('button, a, input, select, textarea')) {
+                        return;
+                    }
+                    var button = row.querySelector('.archive-row-toggle');
+                    if (button) {
+                        button.click();
+                    }
+                });
+            });
+        });
+    </script>
+{% endblock content %}
