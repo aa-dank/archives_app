@@ -261,3 +261,30 @@ attempted.
   canonical model metadata if future work moves more search construction into
   SQLAlchemy expressions.
 - Tune result ranking and displayed columns after PM/archivist review.
+
+## Entry 004 - Archive Search Excel export sanitization (2026-07-06)
+
+### Context
+
+Archive search requests were failing after query execution when writing the
+workbook due to `openpyxl.utils.exceptions.IllegalCharacterError` from control
+characters embedded in OCR/extracted text snippets.
+
+### Changes made
+
+- Added workbook-bound string sanitization using
+  `openpyxl.cell.cell.ILLEGAL_CHARACTERS_RE` before `to_excel()` writes.
+- Applied sanitization to `Results`, `Locations`, and `Coverage` dataframe
+  exports in the archive search workbook builder.
+- Updated the `/archives_search` route to keep HTML results rendering even if
+  workbook export fails, with a warning shown to users and traceback logging for
+  operators.
+- Updated result-page controls so the Excel download action is disabled when an
+  export was not generated.
+
+### Performance note
+
+Workbook generation is currently part of the synchronous search-submit request
+path. The new sanitization step is linear over string/object cells and is
+expected to add only minor overhead relative to FTS query execution and Excel
+file writing.

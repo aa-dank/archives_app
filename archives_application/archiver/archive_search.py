@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import PureWindowsPath
 
 import pandas as pd
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from sqlalchemy import bindparam, text
 
 from archives_application import db, utils
@@ -630,6 +631,23 @@ def _format_size(byte_count: int | None) -> str:
     return str(byte_count)
 
 
+def _sanitize_excel_cell_value(value):
+    """Strip illegal XML control characters from string cell values before XLSX export."""
+    if isinstance(value, str):
+        return ILLEGAL_CHARACTERS_RE.sub("", value)
+    return value
+
+
+def _sanitize_excel_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Sanitize all object-typed columns so openpyxl can safely write the workbook."""
+    if df.empty:
+        return df
+    object_columns = df.select_dtypes(include=["object"]).columns
+    for column in object_columns:
+        df[column] = df[column].map(_sanitize_excel_cell_value)
+    return df
+
+
 def _coverage_summary(scope: ScopeResolution, extensions: list[str], app) -> dict:
     """Compute scope-level content coverage and status counts."""
     if not _scope_allows_search(scope):
@@ -871,7 +889,7 @@ def build_archive_search_workbook(search_data: dict, generated_at: datetime) -> 
     )
 
     return (
-        pd.DataFrame(result_rows),
-        pd.DataFrame(location_rows),
-        pd.DataFrame(coverage_rows),
+        _sanitize_excel_dataframe(pd.DataFrame(result_rows)),
+        _sanitize_excel_dataframe(pd.DataFrame(location_rows)),
+        _sanitize_excel_dataframe(pd.DataFrame(coverage_rows)),
     )

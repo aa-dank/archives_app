@@ -2650,7 +2650,7 @@ def archives_search():
             )
         except Exception as e:
             return utils.FlaskAppUtils.web_exception_subroutine(
-                flash_message="Error retrieving archive search results: ",
+                flash_message="Error retrieving archive search results",
                 thrown_exception=e,
                 app_obj=flask.current_app
             )
@@ -2671,10 +2671,22 @@ def archives_search():
             spreadsheet_filepath = utils.FlaskAppUtils.create_temp_filepath(
                 filename=f'{spreadsheet_filename_prefix}{timestamp}.xlsx'
             )
-            with pd.ExcelWriter(spreadsheet_filepath, engine='openpyxl') as writer:
-                results_df.to_excel(writer, index=False, sheet_name='Results')
-                locations_df.to_excel(writer, index=False, sheet_name='Locations')
-                coverage_df.to_excel(writer, index=False, sheet_name='Coverage')
+            export_available = True
+            try:
+                with pd.ExcelWriter(spreadsheet_filepath, engine='openpyxl') as writer:
+                    results_df.to_excel(writer, index=False, sheet_name='Results')
+                    locations_df.to_excel(writer, index=False, sheet_name='Locations')
+                    coverage_df.to_excel(writer, index=False, sheet_name='Coverage')
+            except Exception:
+                export_available = False
+                timestamp = None
+                search_data["warnings"].append(
+                    "Excel export was unavailable for this search run. The on-page results are still available."
+                )
+                flask.current_app.logger.error(
+                    "Archive search workbook export failed",
+                    exc_info=True,
+                )
 
             html_result_count = min(len(search_data["results"]), html_file_limit)
             html_search_data = dict(search_data)
@@ -2690,12 +2702,13 @@ def archives_search():
                 form=form,
                 search=html_search_data,
                 timestamp=timestamp,
+                export_available=export_available,
                 generated_at=generated_at,
                 hide_sidebar=True
             )
         except Exception as e:
             return utils.FlaskAppUtils.web_exception_subroutine(
-                flash_message="Error processing archive search: ",
+                flash_message="Error processing archive search",
                 thrown_exception=e,
                 app_obj=flask.current_app
             )
