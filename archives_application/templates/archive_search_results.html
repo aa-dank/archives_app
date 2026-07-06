@@ -63,8 +63,7 @@
         {% endif %}
 
         <p class="archive-workbook-note">
-            <a href="{{ url_for('archiver.archives_search', timestamp=timestamp) }}">Download Excel workbook.</a>
-            <span class="text-muted">Includes up to {{ search.excel_file_limit }} top results. Sheets: Results, Locations, Coverage.</span>
+            <span class="text-muted">Excel workbook includes up to {{ search.excel_file_limit }} top results. Sheets: Results, Locations, Coverage.</span>
         </p>
     </div>
 
@@ -394,11 +393,16 @@
             grid-template-columns: minmax(520px, 1.5fr) minmax(260px, 0.75fr) minmax(280px, 0.75fr);
         }
         .archive-result-detail-section h5 {
+            color: rgba(255, 255, 255, 0.94);
             font-size: 0.95rem;
             margin-bottom: 0.4rem;
         }
         .archive-detail-note {
             margin-bottom: 0.5rem;
+        }
+        .archive-result-detail-row .text-muted,
+        .archive-detail-note.text-muted {
+            color: rgba(255, 255, 255, 0.82) !important;
         }
         .archive-detail-badges {
             display: flex;
