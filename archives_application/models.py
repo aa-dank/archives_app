@@ -4,7 +4,8 @@ from archives_application import db, login_manager
 from datetime import datetime
 from flask_login import UserMixin
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import func, CheckConstraint, UniqueConstraint
+from sqlalchemy import func, CheckConstraint, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import JSONB
 
 
 @login_manager.user_loader
@@ -212,6 +213,10 @@ class FileContentModel(db.Model):
     __table_args__ = (
         db.Index('ix_file_contents_minilm_emb', 'minilm_emb', postgresql_using='ivfflat',
                  postgresql_ops={'minilm_emb': 'vector_cosine_ops'}, postgresql_with={'lists': 100}),
+        CheckConstraint(
+            "jsonb_typeof(source_metadata) = 'object'",
+            name='ck_file_contents_source_metadata_object',
+        ),
     )
     file_hash = db.Column(db.String,
                           db.ForeignKey("files.hash", ondelete="CASCADE"),
@@ -228,6 +233,11 @@ class FileContentModel(db.Model):
     minilm_emb = db.Column(Vector(384))
     updated_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
     text_length = db.Column(db.Integer)
+    source_metadata = db.Column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
 
     def __repr__(self):
         return f"FileContent: {self.file_hash}, text_length={self.text_length}, updated_at={self.updated_at}"
@@ -265,6 +275,10 @@ class FileContentFailureModel(db.Model):
     __tablename__ = 'file_content_failures'
     __table_args__ = (
         CheckConstraint("stage in ('extract', 'embed')", name='file_content_failures_stage_check'),
+        CheckConstraint(
+            "jsonb_typeof(source_metadata) = 'object'",
+            name='ck_file_content_failures_source_metadata_object',
+        ),
     )
 
     file_hash = db.Column(
@@ -277,6 +291,11 @@ class FileContentFailureModel(db.Model):
     error = db.Column(db.Text)
     attempts = db.Column(db.Integer, nullable=False, server_default="1")
     last_failed_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=func.now())
+    source_metadata = db.Column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
 
 
 class FileDateMentionModel(db.Model):
