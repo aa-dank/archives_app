@@ -2659,11 +2659,14 @@ def archives_search():
         try:
             timestamp = datetime.now().strftime(timestamp_format)
             generated_at = datetime.now()
-            search_data = archive_search_service.run_archive_search(
-                form=form,
+            search_request = archive_search_service.ArchiveSearchRequest.from_form(form)
+            search_run = archive_search_service.ArchiveSearchRun(
+                search_request=search_request,
                 app=flask.current_app,
-                file_limit=excel_file_limit
+                file_limit=excel_file_limit,
+                user_id=current_user.id if current_user.is_authenticated else None,
             )
+            search_data = search_run.execute()
             results_df, locations_df, coverage_df = archive_search_service.build_archive_search_workbook(
                 search_data=search_data,
                 generated_at=generated_at

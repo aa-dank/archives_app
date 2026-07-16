@@ -163,6 +163,96 @@ class WorkerTaskModel(db.Model):
         return f"Enqueued Task: {self.id}, {self.task_id}, {self.time_enqueued}, {self.origin}, {self.function_name}, {self.time_completed}, {self.status}, {self.task_results}"
 
 
+class ArchiveSearchRunModel(db.Model):
+    """Persisted execution metadata for a single archives search."""
+
+    __tablename__ = "archive_search_runs"
+
+    id = db.Column(db.BigInteger, primary_key=True)
+    search_timestamp = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    duration_ms = db.Column(db.BigInteger)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="SET NULL"),
+    )
+    query_text = db.Column(db.Text, nullable=False)
+    search_mode = db.Column(db.String(32), nullable=False)
+    requested_scope_type = db.Column(db.String(20), nullable=False)
+    requested_scope_value = db.Column(db.Text)
+    extension_filters = db.Column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="incomplete",
+        server_default=text("'incomplete'::character varying"),
+    )
+    returned_result_count = db.Column(db.Integer)
+    coverage_summary = db.Column(JSONB)
+    application_version = db.Column(db.String(50), nullable=False)
+
+    user = db.relationship("UserModel")
+
+    __table_args__ = (
+        CheckConstraint(
+            "duration_ms IS NULL OR duration_ms >= 0",
+            name="ck_archive_search_runs_duration_nonnegative",
+        ),
+        CheckConstraint(
+            "returned_result_count IS NULL OR returned_result_count >= 0",
+            name="ck_archive_search_runs_result_count_nonnegative",
+        ),
+        CheckConstraint(
+            "search_mode IN ('combined', 'filename_only', 'filepath', 'content')",
+            name="ck_archive_search_runs_search_mode",
+        ),
+        CheckConstraint(
+            "requested_scope_type IN ('all', 'location', 'project', 'caan')",
+            name="ck_archive_search_runs_scope_type",
+        ),
+        CheckConstraint(
+            "status IN ('successful', 'failed', 'incomplete')",
+            name="ck_archive_search_runs_status",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(extension_filters) = 'array'",
+            name="ck_archive_search_runs_extension_filters_json",
+        ),
+        CheckConstraint(
+            "coverage_summary IS NULL OR jsonb_typeof(coverage_summary) = 'object'",
+            name="ck_archive_search_runs_coverage_summary_json",
+        ),
+        db.Index(
+            "ix_archive_search_runs_timestamp",
+            search_timestamp.desc(),
+        ),
+        db.Index(
+            "ix_archive_search_runs_user_timestamp",
+            user_id,
+            search_timestamp.desc(),
+        ),
+        db.Index(
+            "ix_archive_search_runs_status_timestamp",
+            status,
+            search_timestamp.desc(),
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f"Archive Search Run: {self.id}, {self.search_timestamp}, "
+            f"{self.search_mode}, {self.status}"
+        )
+
+
 class ProjectCaanModel(db.Model):
     __tablename__ = 'project_caans'
     project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), primary_key=True)

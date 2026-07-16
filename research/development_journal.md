@@ -288,3 +288,82 @@ Workbook generation is currently part of the synchronous search-submit request
 path. The new sanitization step is linear over string/object cells and is
 expected to add only minor overhead relative to FTS query execution and Excel
 file writing.
+
+## Entry 005 - Archive search run telemetry (2026-07-16)
+
+### Context
+
+The production `business_services_db` now contains an `archive_search_runs`
+table for narrow, run-level search telemetry. The archives app needed to record
+search parameters, authenticated user identity when available, duration, result
+count, coverage, application version, and the final execution status. Recording
+applies only to `/archives_search`; the legacy `/file_search` workflow remains
+unchanged.
+
+The design also leaves a clean input boundary for a possible future JSON search
+API without implementing that endpoint yet.
+
+### Changes made
+
+- Added `ArchiveSearchRunModel`, matching the live PostgreSQL table, JSONB
+  columns, constraints, foreign key behavior, defaults, and indexes.
+- Added the immutable `ArchiveSearchRequest` service contract. The current HTML
+  route creates it from a validated WTForms form, while a future API can create
+  the same request from validated values.
+- Replaced the procedural `run_archive_search()` orchestration with the stateful
+  `ArchiveSearchRun` lifecycle while retaining stateless query, scope, metadata,
+  snippet, coverage, and workbook helpers as module-level functions.
+- Updated `/archives_search` to execute an `ArchiveSearchRun` and associate the
+  authenticated user ID when present.
+- Did not add telemetry to `/file_search`, initial form GET requests, invalid
+  form submissions, or timestamped workbook-download requests.
+
+### Search run lifecycle
+
+Each validated search submission follows this lifecycle:
+
+1. Insert and commit an `incomplete` row before search execution.
+2. Measure `ArchiveSearchRun._execute_search()` with a monotonic timer.
+3. On success, update the row with `successful`, `duration_ms`,
+   `returned_result_count`, and `coverage_summary`.
+4. On a search exception, update the row with `failed` and `duration_ms`, then
+   re-raise the original exception for the existing route-level handling.
+5. If the process terminates before finalization, the committed row remains
+   `incomplete`.
+
+Telemetry writes are best-effort. Insert, update, or rollback failures are
+logged but do not replace the search outcome or prevent successfully assembled
+results from being returned. Search completion is finalized before workbook
+generation, so an optional Excel export failure does not mark a completed
+database search as failed.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `archives_application/models.py` | Added the `ArchiveSearchRunModel` ORM mapping. |
+| `archives_application/archiver/archive_search.py` | Added `ArchiveSearchRequest` and `ArchiveSearchRun`; moved the existing search workflow into the run lifecycle. |
+| `archives_application/archiver/routes.py` | Updated only `/archives_search` to construct and execute the search run. |
+
+### Verification
+
+- `.venv/bin/python -m compileall` passed for the changed Python files.
+- `git diff --check` passed.
+- Confirmed there are no remaining application callers of the removed
+  `run_archive_search()` function.
+- Automated tests were not added because this repository currently uses manual
+  feature verification.
+
+### Manual follow-on
+
+- Confirm the deployed application database role has `INSERT`, `UPDATE`, and
+  `SELECT` access to `archive_search_runs` and sequence usage for
+  `archive_search_runs_id_seq`.
+- Exercise successful, failed, interrupted, zero-result, authenticated, and
+  anonymous searches in a configured environment and inspect their telemetry
+  rows.
+- Confirm `/file_search` and workbook-download requests do not create telemetry
+  rows.
+- If a JSON search endpoint is added, implement request validation and a JSON
+  result presenter around the existing `ArchiveSearchRequest` and
+  `ArchiveSearchRun` service boundary.

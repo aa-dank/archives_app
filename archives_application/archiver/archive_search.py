@@ -1,5 +1,6 @@
 import html
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import PureWindowsPath
@@ -9,7 +10,12 @@ from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from sqlalchemy import bindparam, text
 
 from archives_application import db, utils
-from archives_application.models import CAANModel, ProjectCaanModel, ProjectModel
+from archives_application.models import (
+    ArchiveSearchRunModel,
+    CAANModel,
+    ProjectCaanModel,
+    ProjectModel,
+)
 
 
 SEARCH_MODE_LABELS = {
@@ -33,6 +39,63 @@ UNSUPPORTED_OR_LOW_VALUE_EXTENSIONS = {
     "zip", "lnk", "mov", "mp4", "avi", "dwg", "dxf", "pl", "tfw", "plt",
     "ctb", "db", "exe", "gdbtable", "shx", "dbf", "dll", "bak", "tmp",
 }
+
+
+@dataclass(frozen=True)
+class ArchiveSearchRequest:
+    """Validated, transport-neutral inputs for an archives search."""
+
+    query_text: str
+    search_mode: str
+    requested_scope_type: str
+    requested_scope_value: str | None
+    extensions: tuple[str, ...] = ()
+
+    @classmethod
+    def from_values(
+        cls,
+        query_text: str,
+        search_mode: str = "combined",
+        requested_scope_type: str = "all",
+        requested_scope_value: str | None = None,
+        extension_filters=None,
+    ):
+        """Normalize validated values supplied by an HTML form or future API adapter."""
+        scope_type = (requested_scope_type or "all").strip().lower()
+        scope_value = (
+            str(requested_scope_value).strip()
+            if requested_scope_value is not None
+            else None
+        )
+        if scope_type == "all":
+            scope_value = None
+        elif scope_type == "project" and scope_value:
+            scope_value = scope_value.upper()
+
+        return cls(
+            query_text=(query_text or "").strip(),
+            search_mode=(search_mode or "combined").strip().lower(),
+            requested_scope_type=scope_type,
+            requested_scope_value=scope_value,
+            extensions=tuple(_parse_extension_filter(extension_filters)),
+        )
+
+    @classmethod
+    def from_form(cls, form):
+        """Adapt a validated ArchiveSearchForm into the search service contract."""
+        scope_type = form.scope_type.data or "all"
+        scope_fields = {
+            "location": form.location_scope.data,
+            "project": form.project_number.data,
+            "caan": form.caan.data,
+        }
+        return cls.from_values(
+            query_text=form.search_term.data,
+            search_mode=form.search_mode.data,
+            requested_scope_type=scope_type,
+            requested_scope_value=scope_fields.get(scope_type),
+            extension_filters=form.file_extension.data,
+        )
 
 
 @dataclass
@@ -159,16 +222,16 @@ def _root_indexed_file_status(prefixes: list[str]) -> list[str]:
     return [row["path_prefix"] for row in rows if not row["has_indexed_files"]]
 
 
-def resolve_scope(form, app) -> ScopeResolution:
-    """Resolve form scope input into Records-relative directory prefixes."""
-    scope_type = form.scope_type.data or "all"
+def resolve_scope(search_request: ArchiveSearchRequest, app) -> ScopeResolution:
+    """Resolve requested scope input into Records-relative directory prefixes."""
+    scope_type = search_request.requested_scope_type
     resolution = ScopeResolution(scope_type=scope_type)
 
     if scope_type == "all":
         return resolution
 
     if scope_type == "location":
-        display_value = (form.location_scope.data or "").strip()
+        display_value = search_request.requested_scope_value or ""
         prefix = _location_input_to_prefix(display_value, app)
         resolution.display_value = display_value
         resolution.prefixes = [prefix] if prefix else []
@@ -181,7 +244,7 @@ def resolve_scope(form, app) -> ScopeResolution:
         return resolution
 
     if scope_type == "project":
-        project_number = (form.project_number.data or "").strip().upper()
+        project_number = search_request.requested_scope_value or ""
         resolution.display_value = project_number
         projects = ProjectModel.query.filter(ProjectModel.number == project_number).all()
         resolution.project_count = len(projects)
@@ -211,7 +274,7 @@ def resolve_scope(form, app) -> ScopeResolution:
         return resolution
 
     if scope_type == "caan":
-        caan_value = (form.caan.data or "").strip()
+        caan_value = search_request.requested_scope_value or ""
         resolution.display_value = caan_value
         caan = CAANModel.query.filter(CAANModel.caan == caan_value).first()
         resolution.caan_found = bool(caan)
@@ -276,12 +339,17 @@ def _file_hash_scope_cte(scope: ScopeResolution, params: dict) -> str:
     """
 
 
-def _parse_extension_filter(extension_value: str | None) -> list[str]:
-    """Normalize a comma-delimited extension filter into distinct extension values."""
+def _parse_extension_filter(extension_value) -> list[str]:
+    """Normalize comma-delimited or iterable extension filters into distinct values."""
+    if isinstance(extension_value, str):
+        raw_extensions = extension_value.split(",")
+    else:
+        raw_extensions = extension_value or []
+
     extensions = []
     seen = set()
-    for raw_extension in (extension_value or "").split(","):
-        extension = raw_extension.strip().lower().lstrip(".")
+    for raw_extension in raw_extensions:
+        extension = str(raw_extension).strip().lower().lstrip(".")
         if extension and extension not in seen:
             extensions.append(extension)
             seen.add(extension)
@@ -738,85 +806,218 @@ def _coverage_summary(scope: ScopeResolution, extensions: list[str], app) -> dic
     return coverage
 
 
-def run_archive_search(form, app, file_limit: int) -> dict:
-    """Run the full archive search workflow and return display data."""
-    query_text = (form.search_term.data or "").strip()
-    mode = form.search_mode.data or "combined"
-    extensions = _parse_extension_filter(form.file_extension.data)
-    scope = resolve_scope(form, app)
-    warnings = list(scope.warnings)
-    messages = list(scope.messages)
-    if scope.roots_with_no_indexed_files:
-        messages.append(
-            f"{len(scope.roots_with_no_indexed_files)} scope root(s) did not match any indexed file locations."
+class ArchiveSearchRun:
+    """Execute one archive search and persist its run-level lifecycle metadata."""
+
+    STATUS_INCOMPLETE = "incomplete"
+    STATUS_SUCCESSFUL = "successful"
+    STATUS_FAILED = "failed"
+
+    def __init__(
+        self,
+        search_request: ArchiveSearchRequest,
+        app,
+        file_limit: int,
+        user_id: int | None = None,
+    ):
+        self.request = search_request
+        self.app = app
+        self.file_limit = file_limit
+        self.user_id = user_id
+
+        self.status = self.STATUS_INCOMPLETE
+        self.record_id: int | None = None
+        self.duration_ms: int | None = None
+        self.search_data: dict | None = None
+        self._executed = False
+
+    def execute(self) -> dict:
+        """Create an incomplete run, execute the search, and persist its outcome."""
+        if self._executed:
+            raise RuntimeError("An ArchiveSearchRun instance can only be executed once.")
+        self._executed = True
+
+        self._create_incomplete_record()
+        started_at = time.perf_counter()
+
+        try:
+            self.search_data = self._execute_search()
+        except Exception:
+            self.duration_ms = self._elapsed_ms(started_at)
+            self.status = self.STATUS_FAILED
+            self._persist_final_state()
+            raise
+
+        self.duration_ms = self._elapsed_ms(started_at)
+        self.status = self.STATUS_SUCCESSFUL
+        self._persist_final_state()
+        return self.search_data
+
+    def _create_incomplete_record(self):
+        """Commit the initial row so a terminated search remains incomplete."""
+        try:
+            record = ArchiveSearchRunModel(
+                user_id=self.user_id,
+                query_text=self.request.query_text,
+                search_mode=self.request.search_mode,
+                requested_scope_type=self.request.requested_scope_type,
+                requested_scope_value=self.request.requested_scope_value,
+                extension_filters=list(self.request.extensions),
+                status=self.STATUS_INCOMPLETE,
+                application_version=str(self.app.config["VERSION"]),
+            )
+            db.session.add(record)
+            db.session.flush()
+            record_id = record.id
+            db.session.commit()
+            self.record_id = record_id
+        except Exception:
+            self._rollback_session()
+            self.app.logger.error(
+                "Unable to create archive search telemetry record",
+                exc_info=True,
+            )
+
+    def _persist_final_state(self):
+        """Best-effort finalization that never replaces the search outcome."""
+        if self.record_id is None:
+            return
+
+        # A failed PostgreSQL statement leaves the session unusable until rollback.
+        # Search results are plain dictionaries, so resetting this transaction is safe.
+        self._rollback_session()
+        try:
+            record = db.session.get(ArchiveSearchRunModel, self.record_id)
+            if record is None:
+                self.app.logger.error(
+                    "Archive search telemetry record %s was not found during finalization",
+                    self.record_id,
+                )
+                return
+
+            record.status = self.status
+            record.duration_ms = self.duration_ms
+            if self.status == self.STATUS_SUCCESSFUL and self.search_data is not None:
+                record.returned_result_count = len(self.search_data["results"])
+                record.coverage_summary = dict(self.search_data["coverage"])
+
+            db.session.commit()
+        except Exception:
+            self._rollback_session()
+            self.app.logger.error(
+                "Unable to finalize archive search telemetry record %s",
+                self.record_id,
+                exc_info=True,
+            )
+
+    def _rollback_session(self):
+        """Best-effort rollback used by telemetry paths that must not mask a search."""
+        try:
+            db.session.rollback()
+        except Exception:
+            self.app.logger.error(
+                "Unable to roll back the database session during search telemetry",
+                exc_info=True,
+            )
+
+    @staticmethod
+    def _elapsed_ms(started_at: float) -> int:
+        """Return non-negative monotonic elapsed time rounded to milliseconds."""
+        return max(0, round((time.perf_counter() - started_at) * 1000))
+
+    def _execute_search(self) -> dict:
+        """Run the archive search workflow and return its result data."""
+        query_text = self.request.query_text
+        mode = self.request.search_mode
+        extensions = list(self.request.extensions)
+        scope = resolve_scope(self.request, self.app)
+        warnings = list(scope.warnings)
+        messages = list(scope.messages)
+        if scope.roots_with_no_indexed_files:
+            messages.append(
+                f"{len(scope.roots_with_no_indexed_files)} scope root(s) did not match any indexed file locations."
+            )
+
+        content_rows = []
+        filepath_rows = []
+
+        if mode in ["content", "combined"] and _scope_allows_search(scope):
+            content_rows = _execute_content_search(
+                query_text,
+                scope,
+                extensions,
+                self.file_limit,
+                self.app,
+            )
+        elif mode in ["content", "combined"] and scope.scope_type != "all" and not scope.prefixes:
+            messages.append(
+                "Document-content search was skipped because the selected scope resolved to no usable root paths."
+            )
+
+        if mode in ["filename_only", "filepath", "combined"] and _scope_allows_search(scope):
+            filepath_rows = _execute_filename_search(
+                query_text,
+                scope,
+                extensions,
+                self.file_limit,
+                mode == "filename_only",
+            )
+        elif mode in ["filename_only", "filepath", "combined"] and scope.scope_type != "all" and not scope.prefixes:
+            messages.append(
+                "Filename/path search was skipped because the selected scope resolved to no usable root paths."
+            )
+
+        results = _merge_results(content_rows, filepath_rows, self.file_limit)
+        file_hashes = [row["file_hash"] for row in results]
+        metadata = _fetch_file_metadata(file_hashes)
+        locations = _fetch_locations(
+            file_hashes,
+            self.app.config.get("USER_ARCHIVES_LOCATION"),
+            scope,
+        )
+        snippets = _fetch_snippets(
+            query_text,
+            [row["best_chunk_id"] for row in results if row.get("best_chunk_id")],
         )
 
-    content_rows = []
-    filepath_rows = []
+        for row in results:
+            meta = metadata.get(row["file_hash"], {})
+            file_locations = locations.get(row["file_hash"], [])
+            primary = _select_primary_location(row, file_locations) or {}
+            text_status = _status_from_metadata(meta) if meta else "not_attempted"
+            row.update({
+                "filename": primary.get("filename") or "",
+                "extension": meta.get("extension") or "",
+                "size_bytes": meta.get("size_bytes"),
+                "size_display": _format_size(meta.get("size_bytes")),
+                "primary_location": primary.get("user_path") or "",
+                "primary_location_id": primary.get("location_id"),
+                "additional_location_count": max(len(file_locations) - 1, 0),
+                "locations": file_locations,
+                "snippet": snippets.get(row.get("best_chunk_id"), ""),
+                "text_status": text_status,
+                "text_status_label": status_label(text_status),
+                "text_length": meta.get("text_length"),
+                "failure_stage": meta.get("failure_stage") or "",
+                "failure_summary": meta.get("failure_summary") or "",
+                "matching_location_ids": row.get("matching_location_ids") or set(),
+            })
 
-    if mode in ["content", "combined"] and _scope_allows_search(scope):
-        content_rows = _execute_content_search(query_text, scope, extensions, file_limit, app)
-    elif mode in ["content", "combined"] and scope.scope_type != "all" and not scope.prefixes:
-        messages.append("Document-content search was skipped because the selected scope resolved to no usable root paths.")
-
-    if mode in ["filename_only", "filepath", "combined"] and _scope_allows_search(scope):
-        filename_only = mode == "filename_only"
-        filepath_rows = _execute_filename_search(query_text, scope, extensions, file_limit, filename_only)
-    elif mode in ["filename_only", "filepath", "combined"] and scope.scope_type != "all" and not scope.prefixes:
-        messages.append("Filename/path search was skipped because the selected scope resolved to no usable root paths.")
-
-    results = _merge_results(content_rows, filepath_rows, file_limit)
-    file_hashes = [row["file_hash"] for row in results]
-    user_archives_location = app.config.get("USER_ARCHIVES_LOCATION")
-    metadata = _fetch_file_metadata(file_hashes)
-    locations = _fetch_locations(file_hashes, user_archives_location, scope)
-    snippets = _fetch_snippets(
-        query_text,
-        [row["best_chunk_id"] for row in results if row.get("best_chunk_id")],
-    )
-
-    for row in results:
-        meta = metadata.get(row["file_hash"], {})
-        file_locations = locations.get(row["file_hash"], [])
-        primary = _select_primary_location(row, file_locations) or {}
-        status = _status_from_metadata(meta) if meta else "not_attempted"
-        if status != "content_searchable" and row["match_source"] == "filename/path":
-            status_for_display = status
-        else:
-            status_for_display = status
-        row.update({
-            "filename": primary.get("filename") or "",
-            "extension": meta.get("extension") or "",
-            "size_bytes": meta.get("size_bytes"),
-            "size_display": _format_size(meta.get("size_bytes")),
-            "primary_location": primary.get("user_path") or "",
-            "primary_location_id": primary.get("location_id"),
-            "additional_location_count": max(len(file_locations) - 1, 0),
-            "locations": file_locations,
-            "snippet": snippets.get(row.get("best_chunk_id"), ""),
-            "text_status": status_for_display,
-            "text_status_label": status_label(status_for_display),
-            "text_length": meta.get("text_length"),
-            "failure_stage": meta.get("failure_stage") or "",
-            "failure_summary": meta.get("failure_summary") or "",
-            "matching_location_ids": row.get("matching_location_ids") or set(),
-        })
-
-    coverage = _coverage_summary(scope, extensions, app)
-    return {
-        "query_text": query_text,
-        "search_mode": mode,
-        "search_mode_label": SEARCH_MODE_LABELS.get(mode, mode),
-        "scope": scope,
-        "scope_label": scope.label,
-        "extension": ", ".join(extensions),
-        "extensions": extensions,
-        "results": results,
-        "coverage": coverage,
-        "messages": messages,
-        "warnings": warnings,
-        "limit_hit": len(results) >= file_limit,
-    }
+        coverage = _coverage_summary(scope, extensions, self.app)
+        return {
+            "query_text": query_text,
+            "search_mode": mode,
+            "search_mode_label": SEARCH_MODE_LABELS.get(mode, mode),
+            "scope": scope,
+            "scope_label": scope.label,
+            "extension": ", ".join(extensions),
+            "extensions": extensions,
+            "results": results,
+            "coverage": coverage,
+            "messages": messages,
+            "warnings": warnings,
+            "limit_hit": len(results) >= self.file_limit,
+        }
 
 
 def build_archive_search_workbook(search_data: dict, generated_at: datetime) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
