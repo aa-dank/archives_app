@@ -16,7 +16,8 @@ from archives_application import db, bcrypt
 from archives_application.models import *
 from archives_application import utils
 
-# This dictionary is used to determine how long to keep task records in the database
+# This dictionary is used to determine how long to keep task records in the database measured in days.
+# The keys are the names of the tasks and the values are the number of days to keep the records.
 TASK_RECORD_LIFESPANS = {'add_file_to_db_task': 90,
                          'scrape_file_data_task': 365,
                          'confirm_file_locations_task': 365,
@@ -32,6 +33,9 @@ TASK_RECORD_LIFESPANS = {'add_file_to_db_task': 90,
                          'consolidate_dirs_edit_task': 365,
                          'batch_move_edits_task': 365,
                          'batch_process_inbox_task': 365}
+
+# This is the default timeout for tasks that are enqueued via the RQ task queue. It is measured in minutes.
+TASK_DEFAULT_TIMEOUT_MINUTES = 90
 
 main = flask.Blueprint('main', __name__)
 
@@ -65,6 +69,7 @@ def backup_database():
     Query Parameters:
         user (str): The username for authentication.
         password (str): The password for authentication.
+        timeout (int): Optional task timeout in minutes. Defaults to TASK_DEFAULT_TIMEOUT_MINUTES.
 
     Returns:
         Response: A Flask Response object with the result of the backup operation,
@@ -93,9 +98,16 @@ def backup_database():
                 authenticated_to_make_request = True
 
         if authenticated_to_make_request:
+            timeout_minutes = TASK_DEFAULT_TIMEOUT_MINUTES
+            timeout_param = utils.FlaskAppUtils.retrieve_request_param('timeout', None)
+            if timeout_param not in [None, '']:
+                timeout_minutes = int(timeout_param)
+                if timeout_minutes < 1:
+                    raise ValueError("timeout must be a positive integer measured in minutes")
+
             nk_result = utils.RQTaskUtils.enqueue_new_task(db=db,
-                                                     enqueued_function=db_backup_task,
-                                                     timeout=60)
+                                                           enqueued_function=db_backup_task,
+                                                           timeout=timeout_minutes)
             job_id = nk_result["task_id"]
             if utils.FlaskAppUtils.retrieve_request_param('user'):
                 return flask.Response(f"Database Back-up Task Enqueued. Job ID: {job_id}", status=200)
