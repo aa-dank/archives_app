@@ -1121,7 +1121,7 @@ class RQTaskUtils:
         give the function access to the task id of the rq task. This can be used for updating the status of the task in the database.
         :param function: function to be executed
         :param function_kwargs: keyword arguments for the function
-        :param timeout: timeout for the function. Measured in minutes.
+        :param timeout: timeout for the function. Measured in seconds.
         :return: Dictionary containing information about the task, including the task id.
         """
         
@@ -1141,9 +1141,8 @@ class RQTaskUtils:
             job_id = f"{enqueued_function.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}_{random_string()}"
             
         task_kwargs['queue_id'] = job_id
-        timeout = timeout * 60 if timeout else None
-        
-        #TODO remove the timout param and just use the enqueue_call_kwargs
+
+        # TODO remove the timeout param and just use enqueue_call_kwargs.
         if not enqueue_call_kwargs.get('timeout'):
             enqueue_call_kwargs['timeout'] = timeout
 

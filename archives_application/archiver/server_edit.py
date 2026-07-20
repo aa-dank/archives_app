@@ -160,7 +160,7 @@ class ServerEdit:
             FileContentFailureModel.file_hash == file_hash
         ).delete(synchronize_session=False)
 
-    def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=15):
+    def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=900):
         """
         This function executes the server change that was specified during the creation of the ServerEdit object. The change can be of the following types:
 
@@ -176,7 +176,7 @@ class ServerEdit:
         :type files_limit: int
         :param effected_data_limit: Maximum amount of data that can be affected by the change (default is 50,000,000).
         :type effected_data_limit: int
-        :param timeout: Maximum time in seconds that the function can run before it is terminated (default is 600).
+        :param timeout: Maximum time in seconds that the function can run before it is terminated (default is 900).
         :return: Dictionary containing the results of the enqueuing task.
         :rtype: dict
         """
