@@ -12,7 +12,7 @@ from archives_application.project_tools.forms import CAANSearchForm
 from sqlalchemy import or_, and_
 
 
-DEFAULT_TASK_TIMEOUT = 18000 # 5 hours
+DEFAULT_TASK_TIMEOUT_SECONDS = 18000 # 5 hours
 
 project_tools = flask.Blueprint('project_tools', __name__)
 
@@ -65,14 +65,14 @@ def confirm_project_locations():
     if not user:
         return flask.Response("Unauthorized", status=401)
 
-    timeout = int(utils.FlaskAppUtils.retrieve_request_param("timeout") or DEFAULT_TASK_TIMEOUT)
+    timeout_seconds = int(utils.FlaskAppUtils.retrieve_request_param("timeout") or DEFAULT_TASK_TIMEOUT_SECONDS)
     projects_list = requested_projects_list()
     task_info = {
         "projects": projects_list or "all",
         "user": user.email
     }
     task_kwargs = {"projects_list": projects_list}
-    nq_kwargs = {"timeout": timeout}
+    nq_kwargs = {"timeout": timeout_seconds}
     nq_results = utils.RQTaskUtils.enqueue_new_task(
         db=db,
         enqueued_function=confirm_project_locations_task,
