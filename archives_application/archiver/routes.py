@@ -142,7 +142,6 @@ def _normalize_user_path_for_compare(path_value: str) -> str:
         return ''
     return str(PureWindowsPath(path_value)).rstrip('\\/').lower()
 
-
 def _path_starts_with_user_mount(path_value: str, user_mount: str) -> bool:
     """
     Return True when path_value is at or under user_mount using Windows path semantics.
@@ -1680,6 +1679,7 @@ def inbox_item():
             thrown_exception=e,
             app_obj=flask.current_app
         )
+
 
 @archiver.route("/batch_process_inbox", methods=['GET', 'POST'])
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
