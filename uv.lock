@@ -33,7 +33,7 @@ wheels = [
 
 [[package]]
 name = "archives-app"
-version = "1.14.3"
+version = "1.14.4"
 source = { virtual = "." }
 dependencies = [
     { name = "email-validator" },
