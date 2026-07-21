@@ -195,6 +195,11 @@ class ArchiveSearchRunModel(db.Model):
         default="incomplete",
         server_default=text("'incomplete'::character varying"),
     )
+    request_source = db.Column(
+        db.String(32),
+        nullable=False,
+        server_default=text("'web'::character varying"),
+    )
     returned_result_count = db.Column(db.Integer)
     coverage_summary = db.Column(JSONB)
     application_version = db.Column(db.String(50), nullable=False)
