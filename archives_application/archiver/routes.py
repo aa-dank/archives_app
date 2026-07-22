@@ -2615,6 +2615,109 @@ def file_search():
     return flask.render_template('file_search.html', form=form)
 
 
+def _archive_search_api_error(status_code: int, message: str):
+    """Return a consistent JSON error response for the archives search API."""
+    return flask.jsonify({"error": message}), status_code
+
+
+def _archive_search_api_user(payload: dict):
+    """Authenticate an API caller using the application's existing user/password pattern."""
+    credentials_supplied = "user" in payload or "password" in payload
+    if credentials_supplied:
+        user_email = payload.get("user")
+        password = payload.get("password")
+        if not isinstance(user_email, str) or not isinstance(password, str):
+            return None
+
+        user = UserModel.query.filter_by(email=user_email).first()
+        if user and user.password and bcrypt.check_password_hash(user.password, password):
+            return user
+        return None
+
+    if current_user.is_authenticated:
+        return current_user
+    return None
+
+
+@archiver.route("/api/archives_search", methods=["POST"])
+def archives_search_api():
+    """Execute an authenticated archive search and return up to 3,000 file-level JSON results.
+
+    The request body must be JSON and can contain ``user`` and ``password`` for
+    the existing API authentication pattern, plus ``query_text``, ``search_mode``,
+    ``scope_type``, ``scope_value``, ``extensions``, and an optional ``limit``.
+    ``extensions`` is a comma-separated string. The response deliberately returns
+    each file's primary location and duplicate-location count rather than every
+    duplicate location.
+    """
+    if not flask.request.is_json:
+        return _archive_search_api_error(415, "Content-Type must be application/json.")
+
+    try:
+        payload = flask.request.get_json()
+    except Exception:
+        return _archive_search_api_error(400, "Request body must contain valid JSON.")
+
+    if not isinstance(payload, dict):
+        return _archive_search_api_error(400, "The JSON request body must be an object.")
+
+    request_user = _archive_search_api_user(payload)
+    if request_user is None:
+        return _archive_search_api_error(401, "Unauthorized.")
+
+    try:
+        query_max_length = int(
+            flask.current_app.config.get("ARCHIVE_SEARCH_API_QUERY_MAX_LENGTH", 1000)
+        )
+        extensions_max_length = int(
+            flask.current_app.config.get("ARCHIVE_SEARCH_API_EXTENSIONS_MAX_LENGTH", 500)
+        )
+        configured_result_limit = int(
+            flask.current_app.config.get("ARCHIVE_SEARCH_API_RESULT_LIMIT", 3000)
+        )
+        if (
+            query_max_length < 1
+            or extensions_max_length < 0
+            or configured_result_limit < 1
+        ):
+            raise ValueError("Archive search API limits must be non-negative.")
+        result_limit_maximum = min(configured_result_limit, 3000)
+        search_request = archive_search_service.ArchiveSearchRequest.from_api_payload(
+            payload=payload,
+            query_max_length=query_max_length,
+            extensions_max_length=extensions_max_length,
+        )
+        result_limit = archive_search_service.archive_search_api_result_limit(
+            payload=payload,
+            maximum_limit=result_limit_maximum,
+        )
+    except archive_search_service.ArchiveSearchAPIValidationError as error:
+        return _archive_search_api_error(400, str(error))
+    except (TypeError, ValueError):
+        flask.current_app.logger.error("Invalid archive search API configuration", exc_info=True)
+        return _archive_search_api_error(500, "Archive search API is misconfigured.")
+
+    try:
+        search_run = archive_search_service.ArchiveSearchRun(
+            search_request=search_request,
+            app=flask.current_app,
+            file_limit=result_limit,
+            user_id=request_user.id,
+            request_source="api",
+        )
+        search_data = search_run.execute()
+        return flask.jsonify(
+            archive_search_service.build_archive_search_api_response(
+                search_data=search_data,
+                search_run_id=search_run.record_id,
+                result_limit=result_limit,
+            )
+        )
+    except Exception:
+        flask.current_app.logger.error("Archive search API request failed", exc_info=True)
+        return _archive_search_api_error(500, "Unable to complete archive search.")
+
+
 @archiver.route("/archives_search", methods=['GET', 'POST'])
 def archives_search():
     """

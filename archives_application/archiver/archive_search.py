@@ -39,6 +39,14 @@ UNSUPPORTED_OR_LOW_VALUE_EXTENSIONS = {
     "zip", "lnk", "mov", "mp4", "avi", "dwg", "dxf", "pl", "tfw", "plt",
     "ctb", "db", "exe", "gdbtable", "shx", "dbf", "dll", "bak", "tmp",
 }
+API_SEARCH_MODES = set(SEARCH_MODE_LABELS)
+API_SCOPE_TYPES = set(SCOPE_LABELS)
+API_REQUEST_SOURCES = {"web", "api"}
+API_EXTENSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
+class ArchiveSearchAPIValidationError(ValueError):
+    """Raised when an archives-search API request cannot be safely executed."""
 
 
 @dataclass(frozen=True)
@@ -95,6 +103,85 @@ class ArchiveSearchRequest:
             requested_scope_type=scope_type,
             requested_scope_value=scope_fields.get(scope_type),
             extension_filters=form.file_extension.data,
+        )
+
+    @classmethod
+    def from_api_payload(
+        cls,
+        payload: dict,
+        query_max_length: int,
+        extensions_max_length: int,
+    ):
+        """Validate and adapt an API JSON payload into the shared search contract."""
+        if not isinstance(payload, dict):
+            raise ArchiveSearchAPIValidationError("The JSON request body must be an object.")
+
+        allowed_fields = {
+            "user",
+            "password",
+            "query_text",
+            "search_mode",
+            "scope_type",
+            "scope_value",
+            "extensions",
+            "limit",
+        }
+        unknown_fields = sorted(set(payload) - allowed_fields)
+        if unknown_fields:
+            raise ArchiveSearchAPIValidationError(
+                f"Unknown request field(s): {', '.join(unknown_fields)}."
+            )
+
+        query_text = payload.get("query_text")
+        if not isinstance(query_text, str) or not query_text.strip():
+            raise ArchiveSearchAPIValidationError("query_text must be a non-empty string.")
+        if len(query_text) > query_max_length:
+            raise ArchiveSearchAPIValidationError(
+                f"query_text must not exceed {query_max_length} characters."
+            )
+
+        search_mode = payload.get("search_mode", "combined")
+        if not isinstance(search_mode, str) or search_mode.strip().lower() not in API_SEARCH_MODES:
+            raise ArchiveSearchAPIValidationError(
+                "search_mode must be one of: combined, filename_only, filepath, content."
+            )
+
+        scope_type = payload.get("scope_type", "all")
+        if not isinstance(scope_type, str) or scope_type.strip().lower() not in API_SCOPE_TYPES:
+            raise ArchiveSearchAPIValidationError(
+                "scope_type must be one of: all, location, project, caan."
+            )
+        scope_type = scope_type.strip().lower()
+
+        scope_value = payload.get("scope_value")
+        if scope_value is not None and not isinstance(scope_value, str):
+            raise ArchiveSearchAPIValidationError("scope_value must be a string or null.")
+        if scope_type == "all" and scope_value and scope_value.strip():
+            raise ArchiveSearchAPIValidationError("scope_value must be omitted when scope_type is all.")
+        if scope_type != "all" and (not isinstance(scope_value, str) or not scope_value.strip()):
+            raise ArchiveSearchAPIValidationError(
+                "scope_value is required when scope_type is location, project, or caan."
+            )
+
+        extensions = payload.get("extensions", "")
+        if not isinstance(extensions, str):
+            raise ArchiveSearchAPIValidationError("extensions must be a comma-separated string.")
+        if len(extensions) > extensions_max_length:
+            raise ArchiveSearchAPIValidationError(
+                f"extensions must not exceed {extensions_max_length} characters."
+            )
+        parsed_extensions = _parse_extension_filter(extensions)
+        if any(not API_EXTENSION_PATTERN.fullmatch(extension) for extension in parsed_extensions):
+            raise ArchiveSearchAPIValidationError(
+                "extensions must be comma-separated letters, numbers, underscores, or hyphens."
+            )
+
+        return cls.from_values(
+            query_text=query_text,
+            search_mode=search_mode,
+            requested_scope_type=scope_type,
+            requested_scope_value=scope_value,
+            extension_filters=parsed_extensions,
         )
 
 
@@ -819,11 +906,17 @@ class ArchiveSearchRun:
         app,
         file_limit: int,
         user_id: int | None = None,
+        request_source: str = "web",
     ):
+        if request_source not in API_REQUEST_SOURCES:
+            raise ValueError(
+                f"request_source must be one of: {', '.join(sorted(API_REQUEST_SOURCES))}."
+            )
         self.request = search_request
         self.app = app
         self.file_limit = file_limit
         self.user_id = user_id
+        self.request_source = request_source
 
         self.status = self.STATUS_INCOMPLETE
         self.record_id: int | None = None
@@ -864,6 +957,7 @@ class ArchiveSearchRun:
                 requested_scope_value=self.request.requested_scope_value,
                 extension_filters=list(self.request.extensions),
                 status=self.STATUS_INCOMPLETE,
+                request_source=self.request_source,
                 application_version=str(self.app.config["VERSION"]),
             )
             db.session.add(record)
@@ -1018,6 +1112,65 @@ class ArchiveSearchRun:
             "warnings": warnings,
             "limit_hit": len(results) >= self.file_limit,
         }
+
+
+def build_archive_search_api_response(
+    search_data: dict,
+    search_run_id: int | None,
+    result_limit: int,
+) -> dict:
+    """Serialize archive-search results for programmatic clients without HTML or Excel data."""
+    scope = search_data["scope"]
+    results = []
+    for result in search_data["results"]:
+        snippet = html.unescape(re.sub(r"</?mark>", "", result.get("snippet") or ""))
+        results.append({
+            "result_rank": result["result_rank"],
+            "file_hash": result["file_hash"],
+            "filename": result["filename"],
+            "extension": result["extension"],
+            "size_bytes": result["size_bytes"],
+            "primary_location": result["primary_location"],
+            "additional_location_count": result["additional_location_count"],
+            "match_source": result["match_source"],
+            "content_rank": float(result["content_rank"]) if result["content_rank"] is not None else None,
+            "filepath_rank": float(result["filepath_rank"]) if result["filepath_rank"] is not None else None,
+            "matching_chunks": result["matching_chunks"],
+            "snippet": snippet,
+            "text_status": result["text_status"],
+            "text_length": result["text_length"],
+        })
+
+    return {
+        "search_run_id": search_run_id,
+        "query_text": search_data["query_text"],
+        "search_mode": search_data["search_mode"],
+        "extensions": search_data["extensions"],
+        "scope": {
+            "type": scope.scope_type,
+            "display_value": scope.display_value,
+            "resolved_prefixes": scope.prefixes,
+        },
+        "results": results,
+        "returned_result_count": len(results),
+        "result_limit": result_limit,
+        "limit_hit": search_data["limit_hit"],
+        "coverage": search_data["coverage"],
+        "messages": search_data["messages"],
+        "warnings": search_data["warnings"],
+    }
+
+
+def archive_search_api_result_limit(payload: dict, maximum_limit: int) -> int:
+    """Validate the optional API result limit without allowing more than the server maximum."""
+    result_limit = payload.get("limit", maximum_limit)
+    if isinstance(result_limit, bool) or not isinstance(result_limit, int):
+        raise ArchiveSearchAPIValidationError("limit must be an integer.")
+    if result_limit < 1 or result_limit > maximum_limit:
+        raise ArchiveSearchAPIValidationError(
+            f"limit must be between 1 and {maximum_limit}."
+        )
+    return result_limit
 
 
 def build_archive_search_workbook(search_data: dict, generated_at: datetime) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
