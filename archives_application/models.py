@@ -119,34 +119,6 @@ class FileLocationModel(db.Model):
     def __repr__(self):
         return f"File Location: {self.id}, {self.file_id}, {self.file_server_directories}, {self.filename}, {self.existence_confirmed}, {self.hash_confirmed}"
     
-    @classmethod
-    def filepath_search_query(cls, query_str, full_path=True):
-        """
-        Search the file locations for a query string.
-        
-        Resources:
-        https://amitosh.medium.com/full-text-search-fts-with-postgresql-and-sqlalchemy-edc436330a0c
-        https://stackoverflow.com/questions/42388956/create-a-full-text-search-index-with-sqlalchemy-on-postgresql
-
-        :param query_str: str: The query string to search for.
-        :param full_path: bool: If true, search the full path and filename, otherwise just search the filename.
-        """
-        # replace periods with spaces in the filename to ensure file extensions are treated as separate words
-        adjusted_filename = func.regexp_replace(cls.filename, r'\.', ' ', 'gi')
-        
-        # create the tsvector and tsquery
-        vector = func.to_tsvector('english', adjusted_filename)
-        query_vector = func.websearch_to_tsquery(query_str)
-
-        # if full_path is true, then run the query against the combined path and filename
-        if full_path:
-            path_vector = func.to_tsvector('english', cls.file_server_directories)
-            vector = vector.op('||')(path_vector)
-        
-        query = cls.query.filter(vector.op('@@')(query_vector))
-        return query
-
-
 class WorkerTaskModel(db.Model):
     __tablename__ = 'worker_tasks'
     

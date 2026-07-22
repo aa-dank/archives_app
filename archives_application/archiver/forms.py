@@ -165,19 +165,6 @@ class BatchInboxItemsForm(FlaskForm):
     def validate_project_number(self, project_number):
         project_number_pattern_validation(project_number)
 
-class FileSearchForm(FlaskForm):
-    search_location = StringField('Limit Search to Location')
-    search_term = StringField('Search Term', validators=[DataRequired()])
-    filename_only = BooleanField('Search Filenames Only', default=True)
-    submit = SubmitField('Search')
-
-    def validate_search_location(self, search_location):
-        """
-        Ensures that the search location exists
-        """
-        path_validation_subroutine(search_location, path_type="dir", require_user_mount=True)
-
-
 class ArchiveSearchForm(FlaskForm):
     """Form for the archive search workflow and its scope controls."""
 
