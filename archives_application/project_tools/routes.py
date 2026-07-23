@@ -227,7 +227,14 @@ def caan_info(caan):
         return "Yes" if bool(drawings_value) else "No"
 
     def project_root_location(project_location, network_location):
-        if not project_location or not network_location:
+        # SQL NULL values are represented as numpy.nan after the project query is
+        # converted to a DataFrame.  ``bool(numpy.nan)`` is True, so a normal
+        # truthiness check would otherwise render the misleading path ending in
+        # ``\\nan``.
+        if pd.isna(project_location) or not isinstance(project_location, str) or not project_location.strip():
+            return "Not recorded in database"
+
+        if not network_location:
             return None
 
         return utils.FileServerUtils.user_path_from_db_data(
