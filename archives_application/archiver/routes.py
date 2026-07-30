@@ -1143,7 +1143,12 @@ def upload_file():
                                                                 task_kwargs=add_file_kwargs,
                                                                 timeout=None)
                 
-                flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
+                user_destination_path = utils.FileServerUtils.app_path_to_user_path(
+                    arch_file.get_destination_path(),
+                    flask.current_app.config.get('ARCHIVES_LOCATION'),
+                    flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+                )
+                flask.flash(f'File archived here: \n{user_destination_path}', 'success')
                 return flask.redirect(flask.url_for('archiver.upload_file'))
 
             else:
@@ -1650,7 +1655,12 @@ def inbox_item():
                     # make sure that the old file has been removed
                     if os.path.exists(arch_file_path):
                         os.remove(arch_file_path)
-                    flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
+                    user_destination_path = utils.FileServerUtils.app_path_to_user_path(
+                        arch_file.get_destination_path(),
+                        flask.current_app.config.get('ARCHIVES_LOCATION'),
+                        flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+                    )
+                    flask.flash(f'File archived here: \n{user_destination_path}', 'success')
 
                 except Exception as e:
                     # if the file wasn't deleted...

@@ -336,7 +336,6 @@ class BatchServerEditForm(FlaskForm):
         """
         path_validation_subroutine(destination_path, path_type="dir", require_user_mount=True)
 
-
     def validate_asset_path(self, asset_path):
         """
         Ensures that the asset path exists
