@@ -2641,14 +2641,172 @@ def _archive_search_api_user(payload: dict):
 
 @archiver.route("/api/archives_search", methods=["POST"])
 def archives_search_api():
-    """Execute an authenticated archive search and return up to 3,000 file-level JSON results.
+    """Search indexed archives and return canonical file-level JSON results.
 
-    The request body must be JSON and can contain ``user`` and ``password`` for
-    the existing API authentication pattern, plus ``query_text``, ``search_mode``,
-    ``scope_type``, ``scope_value``, ``extensions``, and an optional ``limit``.
-    ``extensions`` is a comma-separated string. The response deliberately returns
-    each file's primary location and duplicate-location count rather than every
-    duplicate location.
+    ``POST /api/archives_search`` is the programmatic counterpart to the HTML
+    ``/archives_search`` workflow. It searches indexed filenames, directory
+    paths, extracted document text, or a combination of those sources. Search
+    results are grouped by file hash: a file stored at several archive locations
+    is returned once rather than once per location.
+
+    Authentication:
+        Send ``user`` and ``password`` in the JSON request body, using an
+        existing application user account. A request made with an authenticated
+        application session may omit those fields. Missing or invalid credentials
+        return ``401``. The endpoint records successful and failed executions in
+        ``archive_search_runs`` with ``request_source`` set to ``"api"``.
+
+    Request format:
+        The endpoint accepts only ``POST`` requests with
+        ``Content-Type: application/json``. The JSON body must be an object and
+        may contain only these fields:
+
+        - ``user`` (string, conditionally required): Application user email.
+          Supply it with ``password`` unless using an authenticated browser
+          session.
+        - ``password`` (string, conditionally required): Password for ``user``.
+        - ``query_text`` (string, required): Non-empty PostgreSQL web-search
+          query. The default maximum is 1,000 characters; deployments may change
+          it with ``ARCHIVE_SEARCH_API_QUERY_MAX_LENGTH``.
+        - ``search_mode`` (string, optional; default ``"combined"``):
+          ``"filename_only"`` searches filenames, ``"filepath"`` searches file
+          names and indexed directory paths, ``"content"`` searches extracted
+          document-text chunks, and ``"combined"`` searches filename/path and
+          content, labelling a result's source as ``"filename/path"``,
+          ``"content"``, or ``"both"``.
+        - ``scope_type`` (string, optional; default ``"all"``): One of
+          ``"all"``, ``"location"``, ``"project"``, or ``"caan"``.
+        - ``scope_value`` (string, conditionally required): Required for
+          ``location``, ``project``, and ``caan`` scopes; omit it for ``all``.
+          A location may be a user-facing Windows/UNC archive path or a
+          Records-relative database prefix. Project scopes resolve through
+          ``projects.file_server_location``; CAAN scopes resolve through linked
+          projects in ``project_caans``.
+        - ``extensions`` (string, optional): Comma-separated extension filters,
+          for example ``"pdf,docx,tif"``. Leading periods are normalized away.
+          Omit or use an empty string to search all extensions. The default
+          maximum string length is 500 characters, configurable through
+          ``ARCHIVE_SEARCH_API_EXTENSIONS_MAX_LENGTH``.
+        - ``limit`` (integer, optional): Maximum number of returned canonical
+          files. It defaults to the configured API limit and must be between 1
+          and that limit. The endpoint will never return more than 3,000 files;
+          deployments may set a lower limit with
+          ``ARCHIVE_SEARCH_API_RESULT_LIMIT``.
+
+    Response schema:
+        A completed search, including one with no matches, returns ``200`` and
+        this object shape::
+
+            {
+              "search_run_id": 123,              // integer or null
+              "query_text": "soil report",       // string
+              "search_mode": "combined",         // string
+              "extensions": ["pdf", "docx"],     // normalized strings
+              "scope": {
+                "type": "project",               // resolved scope type
+                "display_value": "P12345",        // string
+                "resolved_prefixes": ["Projects/P12345"]
+              },
+              "results": [/* result objects, ordered by rank */],
+              "returned_result_count": 1,          // integer
+              "result_limit": 100,                 // integer
+              "limit_hit": false,                  // boolean
+              "coverage": {/* scope-level index/extraction counts */},
+              "messages": [],                      // informational strings
+              "warnings": []                       // caution strings
+            }
+
+        ``search_run_id`` is null only if telemetry persistence failed; it does
+        not mean that the search itself failed. ``limit_hit`` is true when the
+        returned count reaches ``result_limit``; callers should narrow the query
+        or scope when they need a more complete result set.
+
+        Each object in ``results`` has this shape::
+
+            {
+              "result_rank": 1,
+              "file_hash": "canonical-file-hash",
+              "filename": "Geotechnical Report.pdf",
+              "extension": "pdf",
+              "size_bytes": 1048576,
+              "primary_location": "\\\\server\\Records\\Projects\\P12345\\Geotechnical Report.pdf",
+              "additional_location_count": 2,
+              "match_source": "both",
+              "content_rank": 0.42,
+              "filepath_rank": 0.19,
+              "matching_chunks": 3,
+              "snippet": "...plain-text document excerpt...",
+              "text_status": "content_searchable",
+              "text_length": 12540
+            }
+
+        ``primary_location`` **is a user-facing path**. It is produced with the
+        configured ``USER_ARCHIVES_LOCATION`` mapping and includes the filename,
+        so it can be shown to a user or used to locate the file in the archive.
+        It is an empty string only when the index has no location for that file.
+        The response intentionally does not return every duplicate location;
+        ``additional_location_count`` reports how many more locations exist.
+        ``scope.resolved_prefixes``, in contrast, are Records-relative database
+        prefixes used to execute the search and should not be presented as
+        user-facing paths.
+
+        ``content_rank`` and ``filepath_rank`` are numbers when that retrieval
+        source matched and null otherwise. ``snippet`` is a plain-text excerpt
+        for content matches and is empty for filename/path-only matches.
+        ``text_status`` describes extraction coverage, such as
+        ``content_searchable``, ``image_ocr_searchable``,
+        ``text_extracted_not_chunked``, ``empty_or_thin_text``,
+        ``extraction_failed``, or ``not_attempted``. ``coverage`` contains the
+        analogous scope-level counts, including files in scope, files with FTS
+        chunks, extraction failures, thin text, and content-searchable files.
+
+    Errors:
+        - ``400``: Missing, malformed, unsupported, or over-limit JSON fields.
+          Unknown request fields are rejected.
+        - ``401``: Missing or invalid credentials.
+        - ``415``: Missing or non-JSON ``Content-Type``.
+        - ``500``: Invalid endpoint configuration or an unexpected search error.
+
+    Examples:
+        **Full-corpus combined search**
+
+        ::
+
+            POST /api/archives_search
+            Content-Type: application/json
+
+            {
+              "user": "archivist@example.edu",
+              "password": "example-password",
+              "query_text": "soil report",
+              "search_mode": "combined",
+              "scope_type": "all",
+              "extensions": "pdf,docx",
+              "limit": 100
+            }
+
+        **Project-scoped document-text search**
+
+        ::
+
+            POST /api/archives_search
+            Content-Type: application/json
+
+            {
+              "user": "archivist@example.edu",
+              "password": "example-password",
+              "query_text": "geotechnical recommendations",
+              "search_mode": "content",
+              "scope_type": "project",
+              "scope_value": "P12345",
+              "extensions": "pdf",
+              "limit": 25
+            }
+
+    Notes:
+        Full-corpus document-content searches can be substantially slower than
+        scoped or filename-only searches. Configure API-client, development
+        server, and production proxy timeouts accordingly.
     """
     if not flask.request.is_json:
         return _archive_search_api_error(415, "Content-Type must be application/json.")
