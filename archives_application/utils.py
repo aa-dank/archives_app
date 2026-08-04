@@ -1115,7 +1115,10 @@ class RQTaskUtils:
     """
 
     @staticmethod
-    def enqueue_new_task(db, enqueued_function: callable, task_kwargs: dict = {}, enqueue_call_kwargs: dict = {}, task_info={}, timeout: Union[int, None] = None):
+    def enqueue_new_task(db, enqueued_function: callable, task_kwargs: Union[dict, None] = None,
+                         enqueue_call_kwargs: Union[dict, None] = None,
+                         task_info: Union[dict, None] = None,
+                         timeout: Union[int, None] = None):
         """
         Adds a function to the rq task queue to be executed asynchronously. The function must have a paramater called 'queue_id' which will
         give the function access to the task id of the rq task. This can be used for updating the status of the task in the database.
@@ -1125,6 +1128,11 @@ class RQTaskUtils:
         :return: Dictionary containing information about the task, including the task id.
         """
         
+        # Copy caller-provided mappings so adding queue-specific data below does not mutate them.
+        task_kwargs = dict(task_kwargs) if task_kwargs is not None else {}
+        enqueue_call_kwargs = dict(enqueue_call_kwargs) if enqueue_call_kwargs is not None else {}
+        task_info = dict(task_info) if task_info is not None else {}
+
         def random_string(length=5):
             """
             sub-function to generate a random string of a given length.
@@ -1142,8 +1150,9 @@ class RQTaskUtils:
             
         task_kwargs['queue_id'] = job_id
 
-        # TODO remove the timeout param and just use enqueue_call_kwargs.
-        if not enqueue_call_kwargs.get('timeout'):
+        # An explicitly supplied enqueue_call_kwargs timeout takes precedence,
+        # including values that are falsey.
+        if 'timeout' not in enqueue_call_kwargs:
             enqueue_call_kwargs['timeout'] = timeout
 
         enqueue_call_kwargs['job_id'] = job_id
