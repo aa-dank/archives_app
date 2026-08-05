@@ -20,6 +20,7 @@ from urllib import parse
 # imports from this application
 import archives_application.archiver.forms as archiver_forms
 from archives_application.archiver import archive_search as archive_search_service
+from archives_application.archiver import file_info as file_info_service
 from archives_application.archiver.archival_file import ArchivalFile
 from archives_application import utils
 from archives_application.models import *
@@ -30,6 +31,64 @@ archiver = flask.Blueprint('archiver', __name__)
 
 EXCLUDED_FILENAMES = ['Thumbs.db', 'thumbs.db', 'desktop.ini']
 EXCLUDED_FILE_EXTENSIONS = ['DS_Store', '.ini', '.git']
+
+
+@archiver.route("/file_info", methods=["GET"])
+def file_info_from_path():
+    """Resolve an indexed user-facing file path to its canonical file-info URL."""
+    path_value = flask.request.args.get("path", "").strip()
+    if not path_value:
+        flask.abort(400, description="A file path is required.")
+
+    resolved_location = file_info_service.resolve_location_path(
+        path_value=path_value,
+        app=flask.current_app,
+    )
+    if resolved_location is None:
+        flask.abort(404)
+
+    return flask.redirect(
+        flask.url_for(
+            "archiver.file_info",
+            file_hash=resolved_location["file_hash"],
+            location=resolved_location["location_id"],
+        )
+    )
+
+
+@archiver.route("/file_info/<file_hash>", methods=["GET"])
+def file_info(file_hash):
+    """Render public file metadata and an authenticated extracted-text window."""
+    selected_location_id = None
+    location_value = flask.request.args.get("location")
+    if location_value:
+        try:
+            parsed_location_id = int(location_value)
+            if parsed_location_id > 0:
+                selected_location_id = parsed_location_id
+        except ValueError:
+            pass
+
+    can_view_text = file_info_service.can_view_file_text(current_user)
+    file_info_data = file_info_service.get_file_info(
+        file_hash=file_hash,
+        app=flask.current_app,
+        include_text=can_view_text,
+        selected_location_id=selected_location_id,
+    )
+    if file_info_data is None:
+        flask.abort(404)
+
+    response = flask.make_response(flask.render_template(
+        "file_info.html",
+        title=f"File Information: {file_info_data['display_filename']}",
+        file_info=file_info_data,
+        can_view_text=can_view_text,
+        login_url=flask.url_for("users.login", next=flask.request.full_path),
+    ))
+    if can_view_text:
+        response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
     """
