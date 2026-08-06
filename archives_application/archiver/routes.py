@@ -14,7 +14,6 @@ from pathlib import PureWindowsPath
 from datetime import timedelta, datetime
 from flask_login import login_required, current_user
 from sqlalchemy import func
-from urllib import parse
 
 
 # imports from this application
@@ -495,11 +494,7 @@ def server_change():
             user_email = user.email
             user_is_admin = utils.FlaskAppUtils.has_admin_role(user)
             new_path = utils.FlaskAppUtils.retrieve_request_param('new_path')
-            if new_path:
-                new_path = parse.unquote(new_path)
             old_path = utils.FlaskAppUtils.retrieve_request_param('old_path')
-            if old_path:
-                old_path = parse.unquote(old_path)
             edit_type = utils.FlaskAppUtils.retrieve_request_param('edit_type')
             
 
