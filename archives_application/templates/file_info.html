@@ -32,11 +32,8 @@
                     </thead>
                     <tbody>
                         {% for location in file_info.locations %}
-                            <tr{% if location.location_id == file_info.selected_location_id %} class="table-info"{% endif %}>
+                            <tr>
                                 <td class="file-info-path">
-                                    {% if location.location_id == file_info.selected_location_id %}
-                                        <span class="badge badge-info">Selected</span>
-                                    {% endif %}
                                     {{ location.user_path }}
                                 </td>
                                 <td>

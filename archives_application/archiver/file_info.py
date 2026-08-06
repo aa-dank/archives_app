@@ -1,7 +1,5 @@
 """Read-only data access for the archive file-information page."""
 
-from pathlib import PureWindowsPath
-
 from sqlalchemy import text
 
 from archives_application import db, utils
@@ -150,7 +148,6 @@ def get_file_info(
     file_hash: str,
     app,
     include_text: bool = False,
-    selected_location_id: int | None = None,
 ) -> dict | None:
     """Return the complete view model for an indexed archive file.
 
@@ -164,11 +161,7 @@ def get_file_info(
         file_hash=file_hash,
         user_archives_location=app.config.get("USER_ARCHIVES_LOCATION"),
     )
-    selected_location = next(
-        (location for location in locations if location["location_id"] == selected_location_id),
-        None,
-    )
-    display_location = selected_location or (min(locations, key=_location_sort_key) if locations else None)
+    display_location = min(locations, key=_location_sort_key) if locations else None
     mention_limit = date_mention_limit(app)
     date_mentions, date_mentions_truncated = _fetch_date_mentions(file_hash, mention_limit)
 
@@ -188,7 +181,6 @@ def get_file_info(
         "extension": metadata.get("extension") or "",
         "location_count": len(locations),
         "locations": locations,
-        "selected_location_id": selected_location_id if selected_location else None,
         "text_status": text_status,
         "text_status_label": archive_search.status_label(text_status),
         "text_length": stored_text_length,
@@ -205,48 +197,3 @@ def get_file_info(
             and stored_text_length > returned_text_length
         ),
     }
-
-
-def _path_relative_to_user_root(path_value: str, user_archives_location: str) -> tuple[str, str] | None:
-    """Convert an exact user-facing file path to database directory and filename values."""
-    if not path_value or not user_archives_location:
-        return None
-    try:
-        relative_path = PureWindowsPath(path_value).relative_to(PureWindowsPath(user_archives_location))
-    except ValueError:
-        return None
-
-    parts = [part for part in relative_path.parts if part not in {"", ".", "\\", "/"}]
-    if not parts:
-        return None
-    return "/".join(parts[:-1]), parts[-1]
-
-
-def resolve_location_path(path_value: str, app) -> dict | None:
-    """Resolve an exact user-facing archive path to an indexed file location."""
-    relative_path = _path_relative_to_user_root(
-        path_value=path_value,
-        user_archives_location=app.config.get("USER_ARCHIVES_LOCATION"),
-    )
-    if relative_path is None:
-        return None
-    file_server_directories, filename = relative_path
-    sql = """
-        SELECT
-            f.hash AS file_hash,
-            fl.id AS location_id
-        FROM file_locations fl
-        JOIN files f ON f.id = fl.file_id
-        WHERE lower(coalesce(fl.file_server_directories, '')) = lower(:file_server_directories)
-          AND lower(coalesce(fl.filename, '')) = lower(:filename)
-        ORDER BY fl.id ASC
-        LIMIT 1
-    """
-    row = db.session.execute(
-        text(sql),
-        {
-            "file_server_directories": file_server_directories,
-            "filename": filename,
-        },
-    ).mappings().first()
-    return dict(row) if row else None
