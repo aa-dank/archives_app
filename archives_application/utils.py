@@ -862,7 +862,8 @@ class FlaskAppUtils:
     def retrieve_request_param(param_name: str, default_value: str = None):
         """
         Retrieves a parameter from the request. If the parameter is not found, the default value is returned.
-        Looks in the url, headers, and body of the request.
+        Looks in the URL query string, headers, form data, and a JSON object
+        request body, in that order.
         :param param_name: the name of the parameter to retrieve
         :param default_value: the value to return if the parameter is not found
         :return: the value of the parameter or the default value
@@ -872,6 +873,10 @@ class FlaskAppUtils:
             param_value = flask.request.headers.get(param_name)
         if not param_value:
             param_value = flask.request.form.get(param_name)
+        if not param_value and flask.request.is_json:
+            json_data = flask.request.get_json(silent=True)
+            if isinstance(json_data, dict):
+                param_value = json_data.get(param_name)
         if not param_value:
             param_value = default_value
         return param_value

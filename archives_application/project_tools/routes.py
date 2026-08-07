@@ -297,13 +297,15 @@ def caan_info(caan):
         )
 
 
-@project_tools.route("/api/project_location", methods=['GET'])
+@project_tools.route("/api/project_location", methods=['GET', 'POST'])
 def project_location():
     """
     API endpoint to retrieve the file server location for a given project.
     
-    Query Parameters:
-        project (str): The project number to look up.
+    Request Parameters:
+        project (str): The project number to look up. GET requests accept the
+            existing query/header parameters. POST requests also accept
+            ``project`` in either form data or a JSON object.
         
     Returns:
         Response: JSON response containing the project location path.
