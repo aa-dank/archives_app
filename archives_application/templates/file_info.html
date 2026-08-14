@@ -58,16 +58,8 @@
         <dl class="row file-info-details">
             <dt class="col-sm-4">Status</dt>
             <dd class="col-sm-8">{{ file_info.text_status_label }}</dd>
-            <dt class="col-sm-4">Extracted text length</dt>
+            <dt class="col-sm-4">Extracted Text Character Count</dt>
             <dd class="col-sm-8">{{ file_info.text_length if file_info.text_length is not none else "Not recorded" }}</dd>
-            <dt class="col-sm-4">Text extraction updated</dt>
-            <dd class="col-sm-8">
-                {% if file_info.text_updated_at %}
-                    {{ file_info.text_updated_at.strftime("%Y-%m-%d %H:%M:%S") }}
-                {% else %}
-                    Not recorded
-                {% endif %}
-            </dd>
         </dl>
     </div>
 
@@ -79,16 +71,14 @@
                 <table class="table table-dark table-striped table-bordered table-hover table-sm">
                     <thead>
                         <tr>
-                            <th>Mentioned date</th>
-                            <th>Precision</th>
-                            <th>Detected mentions</th>
+                            <th>Detected Date</th>
+                            <th>Occurences Count</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for mention in file_info.date_mentions %}
                             <tr>
                                 <td>{{ mention.mention_date }}</td>
-                                <td>{{ mention.granularity }}</td>
                                 <td>{{ mention.mentions_count }}</td>
                             </tr>
                         {% endfor %}
