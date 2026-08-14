@@ -734,7 +734,7 @@ def _status_from_metadata(metadata: dict) -> str:
 def status_label(status: str) -> str:
     """Convert an internal status code to a friendly display label."""
     return {
-        "content_searchable": "Content searchable",
+        "content_searchable": "Sufficient text for content search",
         "text_extracted_not_chunked": "Text extracted, not chunked",
         "empty_or_thin_text": "Empty or thin text",
         "extraction_failed": "Extraction failed",
