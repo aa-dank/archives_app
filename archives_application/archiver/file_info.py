@@ -7,7 +7,8 @@ from archives_application.archiver import archive_search
 
 
 DEFAULT_TEXT_WINDOW_CHARS = 10_000
-DEFAULT_DATE_MENTION_LIMIT = 100
+DEFAULT_DATE_MENTION_LIMIT = 50
+DATE_MENTION_SUMMARY_ITEM_LIMIT = 5
 
 
 def can_view_file_text(user) -> bool:
@@ -110,24 +111,65 @@ def _fetch_locations(file_hash: str, user_archives_location: str | None) -> list
     return locations
 
 
-def _fetch_date_mentions(file_hash: str, limit: int) -> tuple[list[dict], bool]:
-    """Fetch a bounded, chronological document-date list for a file."""
+def _fetch_date_mentions(file_hash: str, limit: int) -> list[dict]:
+    """Fetch a bounded, chronological list of calendar dates for a file."""
     sql = """
         SELECT
             mention_date,
-            granularity,
-            mentions_count
+            sum(mentions_count) AS mentions_count
         FROM file_date_mentions
         WHERE file_hash = :file_hash
-        ORDER BY mention_date ASC, granularity ASC
-        LIMIT :limit_plus_one
+        GROUP BY mention_date
+        ORDER BY mention_date ASC
+        LIMIT :limit
     """
     rows = db.session.execute(
         text(sql),
-        {"file_hash": file_hash, "limit_plus_one": limit + 1},
+        {"file_hash": file_hash, "limit": limit},
     ).mappings().all()
-    has_more = len(rows) > limit
-    return [dict(row) for row in rows[:limit]], has_more
+    return [dict(row) for row in rows]
+
+
+def _fetch_date_mention_summary(file_hash: str) -> dict:
+    """Return aggregate date metrics for a file's extracted-text date mentions."""
+    sql = """
+        SELECT
+            count(DISTINCT mention_date) AS distinct_date_count,
+            coalesce(sum(mentions_count), 0) AS total_occurrences,
+            min(mention_date) AS earliest_date,
+            max(mention_date) AS latest_date
+        FROM file_date_mentions
+        WHERE file_hash = :file_hash
+    """
+    row = db.session.execute(text(sql), {"file_hash": file_hash}).mappings().one()
+    return dict(row)
+
+
+def _fetch_date_mention_highlights(
+    file_hash: str,
+    order_by: str,
+) -> list[dict]:
+    """Fetch a five-date summary list using a fixed, internal sort order."""
+    order_by_clauses = {
+        "earliest": "mention_date ASC",
+        "latest": "mention_date DESC",
+        "most_frequent": "mentions_count DESC, mention_date ASC",
+    }
+    sql = f"""
+        SELECT
+            mention_date,
+            sum(mentions_count) AS mentions_count
+        FROM file_date_mentions
+        WHERE file_hash = :file_hash
+        GROUP BY mention_date
+        ORDER BY {order_by_clauses[order_by]}
+        LIMIT :limit
+    """
+    rows = db.session.execute(
+        text(sql),
+        {"file_hash": file_hash, "limit": DATE_MENTION_SUMMARY_ITEM_LIMIT},
+    ).mappings().all()
+    return [dict(row) for row in rows]
 
 
 def _fetch_text_window(file_hash: str, window_chars: int) -> str | None:
@@ -163,7 +205,17 @@ def get_file_info(
     )
     display_location = min(locations, key=_location_sort_key) if locations else None
     mention_limit = date_mention_limit(app)
-    date_mentions, date_mentions_truncated = _fetch_date_mentions(file_hash, mention_limit)
+    date_mention_summary = _fetch_date_mention_summary(file_hash)
+    if date_mention_summary["distinct_date_count"] <= mention_limit:
+        date_mentions = _fetch_date_mentions(file_hash, mention_limit)
+        date_mention_highlights = {}
+    else:
+        date_mentions = []
+        date_mention_highlights = {
+            "earliest": _fetch_date_mention_highlights(file_hash, "earliest"),
+            "latest": _fetch_date_mention_highlights(file_hash, "latest"),
+            "most_frequent": _fetch_date_mention_highlights(file_hash, "most_frequent"),
+        }
 
     text_status = archive_search._status_from_metadata(metadata)
     text_limit = text_window_chars(app)
@@ -186,8 +238,9 @@ def get_file_info(
         "text_length": stored_text_length,
         "text_updated_at": metadata.get("text_updated_at"),
         "date_mentions": date_mentions,
-        "date_mentions_truncated": date_mentions_truncated,
         "date_mention_limit": mention_limit,
+        "date_mention_summary": date_mention_summary,
+        "date_mention_highlights": date_mention_highlights,
         "extracted_text": extracted_text,
         "returned_text_length": returned_text_length,
         "text_window_chars": text_limit,

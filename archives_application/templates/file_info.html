@@ -64,9 +64,88 @@
     </div>
 
     <div class="content-section file-info-section">
-        <h4>Dates Mentioned in Document</h4>
+        <h4>Dates Detected in Extracted Text</h4>
         <p class="text-muted">These dates were detected in extracted text. They are not filesystem or authoritative document dates.</p>
-        {% if file_info.date_mentions %}
+        {% if file_info.date_mention_summary.distinct_date_count > file_info.date_mention_limit %}
+            <p class="text-muted">
+                This document has {{ file_info.date_mention_summary.distinct_date_count }} distinct detected dates, so a summary is shown instead of the full date list.
+            </p>
+            <dl class="row file-info-details">
+                <dt class="col-sm-4">Distinct detected dates</dt>
+                <dd class="col-sm-8">{{ file_info.date_mention_summary.distinct_date_count }}</dd>
+                <dt class="col-sm-4">Total detected occurrences</dt>
+                <dd class="col-sm-8">{{ file_info.date_mention_summary.total_occurrences }}</dd>
+                <dt class="col-sm-4">Earliest detected date</dt>
+                <dd class="col-sm-8">{{ file_info.date_mention_summary.earliest_date }}</dd>
+                <dt class="col-sm-4">Latest detected date</dt>
+                <dd class="col-sm-8">{{ file_info.date_mention_summary.latest_date }}</dd>
+            </dl>
+            <div class="row">
+                <div class="col-lg-4 mb-3">
+                    <h5>Five Earliest Detected Dates</h5>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-bordered table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Detected Date</th>
+                                    <th>Occurences Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for mention in file_info.date_mention_highlights.earliest %}
+                                    <tr>
+                                        <td>{{ mention.mention_date }}</td>
+                                        <td>{{ mention.mentions_count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="col-lg-4 mb-3">
+                    <h5>Five Latest Detected Dates</h5>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-bordered table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Detected Date</th>
+                                    <th>Occurences Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for mention in file_info.date_mention_highlights.latest %}
+                                    <tr>
+                                        <td>{{ mention.mention_date }}</td>
+                                        <td>{{ mention.mentions_count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="col-lg-4 mb-3">
+                    <h5>Five Most Frequently Occurring Dates</h5>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-bordered table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Detected Date</th>
+                                    <th>Occurences Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for mention in file_info.date_mention_highlights.most_frequent %}
+                                    <tr>
+                                        <td>{{ mention.mention_date }}</td>
+                                        <td>{{ mention.mentions_count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        {% elif file_info.date_mentions %}
             <div class="table-responsive">
                 <table class="table table-dark table-striped table-bordered table-hover table-sm">
                     <thead>
@@ -85,9 +164,6 @@
                     </tbody>
                 </table>
             </div>
-            {% if file_info.date_mentions_truncated %}
-                <p class="text-muted">Only the first {{ file_info.date_mention_limit }} distinct mentioned dates are displayed.</p>
-            {% endif %}
         {% else %}
             <p class="text-muted">No document-date mentions are available.</p>
         {% endif %}
@@ -101,7 +177,6 @@
                 {% if file_info.text_truncated %}
                     <p class="text-muted">
                         Showing the first {{ file_info.returned_text_length }} of {{ file_info.text_length }} extracted characters.
-                        The remaining text is not displayed in this version of the page.
                     </p>
                 {% endif %}
             {% else %}
