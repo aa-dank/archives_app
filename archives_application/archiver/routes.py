@@ -3,6 +3,7 @@
 import datetime
 import flask
 import flask_sqlalchemy
+import html
 import io
 import json
 import os
@@ -226,6 +227,7 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
     locations_query = db.session.query(
         FileLocationModel.file_server_directories,
         FileLocationModel.filename,
+        FileModel.hash,
         FileModel.size,
         FileContentModel.text_length
     ).join(FileModel, FileLocationModel.file_id == FileModel.id
@@ -253,7 +255,7 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
     total_files = 0
     total_size_bytes = 0
 
-    for dir_path, filename, size, text_length in locations_query:
+    for dir_path, filename, file_hash, size, text_length in locations_query:
         if not dir_path:
             continue
         dir_path = dir_path.replace('\\', '/')
@@ -280,7 +282,7 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
             "File Path": file_full_user_path,
             "Size": _format_bytes(file_size),
             "Size Bytes": file_size,
-            "Extracted Text Length": text_length if text_length is not None else "",
+            "Extracted Text Length (characters)": text_length if text_length is not None else "",
         })
 
         if relative_tail == '':
@@ -289,7 +291,8 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
             current_path_file_rows.append({
                 "Filename": filename,
                 "Size": _format_bytes(file_size),
-                "Extracted Text Length": text_length if text_length is not None else "",
+                "Extracted Text Length (characters)": text_length if text_length is not None else "",
+                "_file_hash": file_hash,
                 "_size_bytes": file_size,
             })
             continue
@@ -2402,11 +2405,23 @@ def dir_contents_summary():
         current_files_table_html = None
         if not current_files_df.empty:
             if not files_exceed_limit:
-                current_files_table_html = utils.html_table_from_df(df=current_files_df)
+                current_files_display_df = current_files_df.copy()
+                current_files_display_df["Filename"] = current_files_display_df.apply(
+                    lambda row: (
+                        f'<a href="{html.escape(flask.url_for("archiver.file_info", file_hash=row["_file_hash"]), quote=True)}">'
+                        f'{html.escape(str(row["Filename"]))}</a>'
+                    ),
+                    axis=1,
+                )
+                current_files_display_df.drop(columns=["_file_hash"], inplace=True)
+                current_files_table_html = utils.html_table_from_df(
+                    df=current_files_display_df,
+                    html_columns=["Filename"],
+                )
                 current_files_table_html = current_files_table_html.replace(
-                    '<th>Extracted Text Length</th>',
-                    '<th>Extracted Text Length '
-                    '<span title="Length of extracted text stored in the database for this file.\nBlank if no text has been stored." '
+                    '<th>Extracted Text Length (characters)</th>',
+                    '<th>Extracted Text Length (characters) '
+                    '<span title="Number of extracted-text characters stored in the database for this file.\nBlank if no text has been stored." '
                     'style="cursor: help; font-weight: normal;">&#9432;</span></th>'
                 )
         
@@ -2446,7 +2461,7 @@ def dir_contents_summary_download():
             child_directories_df['Name'] = child_directories_df['Name'].replace(r'<a [^>]*>', '', regex=True)
             child_directories_df['Name'] = child_directories_df['Name'].replace('</a>', '', regex=False)
 
-        current_directory_files_df = current_files_df.copy()
+        current_directory_files_df = current_files_df.drop(columns=["_file_hash"], errors="ignore").copy()
 
         recursive_files_df = all_recursive_files_df.copy()
         if not recursive_files_df.empty and 'Size Bytes' in recursive_files_df.columns:
