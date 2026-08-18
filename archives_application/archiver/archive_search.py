@@ -1085,7 +1085,6 @@ class ArchiveSearchRun:
                 "size_bytes": meta.get("size_bytes"),
                 "size_display": _format_size(meta.get("size_bytes")),
                 "primary_location": primary.get("user_path") or "",
-                "primary_location_id": primary.get("location_id"),
                 "additional_location_count": max(len(file_locations) - 1, 0),
                 "locations": file_locations,
                 "snippet": snippets.get(row.get("best_chunk_id"), ""),
