@@ -25,6 +25,10 @@ There is no formal test suite in the repository yet; `dev_files/sql_test.py` is 
 
 Recent commits use short, direct subjects such as `fixed issue related to illegal chars...` or `removed redundant...`. Keep commits focused and use concise imperative or past-tense summaries. Pull requests should describe the user-facing change, note database/filesystem side effects, list manual verification steps, and include screenshots for template or CSS changes.
 
+## Development Journal
+
+`research/development_journal.md` is a required, version-controlled running record of meaningful development work and must remain present. Before beginning a related change, review its most recent entry. When finishing a meaningful feature, operational change, or research/architecture decision, append a concise entry in the same change set: include the date, context, behavior changed, affected files or endpoints, verification performed, and any follow-on operational work. When catching up a neglected journal, review and summarize every commit since the last entry; do not infer behavior from commit subjects alone.
+
 ## Agent-Specific Instructions
 
 Do not perform large filesystem mutations directly in routes. Use `ServerEdit(...)` and enqueue reconciliation tasks through `RQTaskUtils.enqueue_new_task(...)`. Task functions must accept `queue_id`, enter `with app.app_context():`, and update `WorkerTaskModel` status. For bulk or destructive operations, check directory quantities first and preserve the existing exclusion behavior for filenames and extensions.

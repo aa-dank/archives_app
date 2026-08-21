@@ -367,3 +367,126 @@ database search as failed.
 - If a JSON search endpoint is added, implement request validation and a JSON
   result presenter around the existing `ArchiveSearchRequest` and
   `ArchiveSearchRun` service boundary.
+
+---
+
+## Entry 006 - Search API, operational hardening, and project-location API updates
+**Date:** 2026-08-21<br>
+**Activity covered:** 2026-07-20 through 2026-08-10<br>
+**Author:** OpenAI Codex (GPT-5)
+
+---
+
+### Context
+
+This entry catches up the commits made after Entry 005. It is based on the
+actual diffs for all 13 first-parent commits after the search-telemetry change,
+not solely on their commit subjects. The work completed the planned JSON-facing
+search boundary, retired the legacy search implementation, clarified task-time
+units, and addressed a few user-facing path and request-handling issues.
+
+### What changed
+
+#### Archive search API and telemetry source
+
+`POST /api/archives_search` was added as the programmatic counterpart to the
+HTML archive search workflow. It accepts only a JSON object, authenticates with
+an existing logged-in session or a `user`/`password` pair, validates a strict
+allowlist of request fields, and returns canonical file-hash-level JSON results.
+
+The endpoint uses the existing `ArchiveSearchRequest` and `ArchiveSearchRun`
+service layer rather than duplicating query logic. It supports filename,
+filename/path, content, and combined search modes; all, location, project, and
+CAAN scopes; normalized comma-separated extensions; and a configured result
+limit capped at 3,000. Responses include scope resolution, ranked results,
+coverage information, warnings, and a telemetry run ID when persistence
+succeeds. API telemetry is marked with `request_source="api"`; web searches
+retain the default `"web"` source.
+
+The endpoint documentation was expanded with the request schema, response
+shape, status codes, examples, path-display semantics, and the warning that
+unscoped content searches may require longer client/proxy timeouts.
+
+#### Search workflow consolidation
+
+The obsolete `FileSearchForm`, old `/file_search` implementation, and its two
+templates were removed. `/file_search` remains available as a compatibility
+route, but now invokes the canonical `/archives_search` workflow rather than
+the earlier filename/path-only search code. This supersedes Entry 003's
+temporary note that the old endpoint was unchanged.
+
+#### Task timeout and RQ enqueue reliability
+
+Database backup requests can supply a task timeout. The queue contract was then
+standardized to seconds throughout the app: the backup default is 5,400 seconds,
+project-location confirmation remains 18,000 seconds, and `ServerEdit.execute`
+defaults to 900 seconds. `RQTaskUtils.enqueue_new_task` no longer converts
+minutes to seconds.
+
+The enqueue helper was also corrected to avoid mutable default dictionaries,
+copy caller-provided mappings, and preserve an explicit
+`enqueue_call_kwargs["timeout"]` even when its value is falsey. This prevents
+queue-specific state, including timeout values, from leaking into later
+requests.
+
+#### UI and request-handling refinements
+
+- The CAAN project table now renders missing or `numpy.nan`
+  `file_server_location` values as `Not recorded in database`, avoiding a
+  misleading path ending in `\\nan`.
+- Archive upload and inbox success messages now display configured
+  user-facing Windows/UNC archive paths instead of application filesystem
+  paths.
+- Redundant URL decoding was removed from server-change paths because Flask has
+  already decoded request parameters.
+- `FlaskAppUtils.retrieve_request_param()` now checks query parameters, headers,
+  form data, then a JSON object body. Consequently,
+  `/api/project_location` accepts both GET and POST, including a JSON `project`
+  value for POST requests.
+- Added `research/fs_coordination_branch_summary.md`, documenting the historical
+  branch's Redis-backed advisory locking, path aliasing, collision avoidance,
+  and remaining maturity concerns.
+
+### Commit coverage
+
+| Date | Commit | Summary |
+|---|---|---|
+| 2026-07-20 | `6cdde1d` | Made the database-backup timeout request-configurable. |
+| 2026-07-20 | `42957d1` | Standardized RQ timeout units to seconds and adjusted defaults. |
+| 2026-07-21 | `f4e453b` | Added `ArchiveSearchRunModel.request_source`. |
+| 2026-07-21 | `0ea94ee` | Removed the legacy file-search code and retained `/file_search` as an archive-search alias. |
+| 2026-07-22 | `a1aafeb` | Made missing CAAN project locations explicit in the UI. |
+| 2026-07-30 | `bccb278` | Changed archive success messages to user-facing paths. |
+| 2026-07-21 | `5908e6d` | Added the initial archive-search JSON API and shared API validation/serialization helpers. |
+| 2026-08-03 | `c6f430f` | Documented the API contract comprehensively. |
+| 2026-08-03 | `e4e1fc6` | Rolled the application version to 1.16.0. |
+| 2026-08-03 | `58b5467` | Fixed mutable enqueue state and timeout precedence. |
+| 2026-08-06 | `1235d4d` | Removed double URL decoding from server changes. |
+| 2026-08-07 | `284cd63` | Added JSON-aware request parameters and POST support for project-location lookup. |
+| 2026-08-10 | `5b6a569` | Added the filesystem-coordination branch research summary. |
+
+### Files and interfaces affected
+
+| Area | Change |
+|---|---|
+| `archives_application/archiver/archive_search.py` | Added API payload validation, API response serialization, result-limit validation, and API telemetry-source handling. |
+| `archives_application/archiver/routes.py` | Added `/api/archives_search`; consolidated `/file_search` onto `/archives_search`; corrected displayed archive paths and redundant decoding. |
+| `archives_application/models.py` | Added `ArchiveSearchRunModel.request_source` with a database default of `web`. |
+| `archives_application/main/routes.py`, `project_tools/routes.py`, `archiver/server_edit.py`, `utils.py` | Defined seconds-based task timeout behavior and made request/enqueue handling safer. |
+| `research/fs_coordination_branch_summary.md` | Recorded the purpose and current assessment of the historical coordination branch. |
+
+### Operational notes and follow-on work
+
+- Deployments using `archive_search_runs` need the `request_source` column and
+  its `web` default before API traffic is enabled.
+- Configure `ARCHIVE_SEARCH_API_QUERY_MAX_LENGTH`,
+  `ARCHIVE_SEARCH_API_EXTENSIONS_MAX_LENGTH`, and
+  `ARCHIVE_SEARCH_API_RESULT_LIMIT` deliberately; the endpoint enforces a hard
+  maximum of 3,000 returned canonical files.
+- Smoke-test authenticated session and credential-based API requests, malformed
+  JSON, unauthorized requests, each scope type, and both successful and failed
+  telemetry rows in a configured environment.
+- Verify any external caller of `backup_database`, project-location
+  confirmation, or `ServerEdit.execute` now supplies timeout values in seconds.
+- Continue to treat the filesystem-coordination branch as historical research;
+  its locking behavior needs dedicated testing and review before reuse.
