@@ -1,4 +1,6 @@
-"""Read-only data access for the archive file-information page."""
+"""Read-only data access and serialization for archive file information."""
+
+from pathlib import PureWindowsPath
 
 from sqlalchemy import text
 
@@ -9,6 +11,14 @@ from archives_application.archiver import archive_search
 DEFAULT_TEXT_WINDOW_CHARS = 10_000
 DEFAULT_DATE_MENTION_LIMIT = 50
 DATE_MENTION_SUMMARY_ITEM_LIMIT = 5
+
+
+class FileInfoAPIValidationError(ValueError):
+    """Raised when an API file selector or option is invalid."""
+
+
+class AmbiguousFileLocationError(ValueError):
+    """Raised when one user path is indexed under multiple file hashes."""
 
 
 def can_view_file_text(user) -> bool:
@@ -81,14 +91,19 @@ def _fetch_file_metadata(file_hash: str) -> dict | None:
     return dict(row) if row else None
 
 
-def _fetch_locations(file_hash: str, user_archives_location: str | None) -> list[dict]:
-    """Fetch and format all indexed locations for a canonical file hash."""
+def _fetch_locations(
+    file_hash: str,
+    user_archives_location: str | None,
+    include_user_paths: bool = False,
+) -> list[dict]:
+    """Fetch all indexed locations, optionally with user-facing paths."""
     sql = """
         SELECT
             fl.id AS location_id,
             fl.file_server_directories,
             fl.filename,
-            fl.existence_confirmed
+            fl.existence_confirmed,
+            fl.hash_confirmed
         FROM files f
         JOIN file_locations fl ON fl.file_id = f.id
         WHERE f.hash = :file_hash
@@ -102,11 +117,12 @@ def _fetch_locations(file_hash: str, user_archives_location: str | None) -> list
     locations = []
     for row in rows:
         location = dict(row)
-        location["user_path"] = utils.FileServerUtils.user_path_from_db_data(
-            file_server_directories=location["file_server_directories"] or "",
-            user_archives_location=user_archives_location,
-            filename=location["filename"],
-        )
+        if include_user_paths:
+            location["user_path"] = utils.FileServerUtils.user_path_from_db_data(
+                file_server_directories=location["file_server_directories"] or "",
+                user_archives_location=user_archives_location,
+                filename=location["filename"],
+            )
         locations.append(location)
     return locations
 
@@ -127,6 +143,21 @@ def _fetch_date_mentions(file_hash: str, limit: int) -> list[dict]:
         text(sql),
         {"file_hash": file_hash, "limit": limit},
     ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def _fetch_all_date_mentions(file_hash: str) -> list[dict]:
+    """Fetch every distinct detected date for API output."""
+    sql = """
+        SELECT
+            mention_date,
+            sum(mentions_count) AS mentions_count
+        FROM file_date_mentions
+        WHERE file_hash = :file_hash
+        GROUP BY mention_date
+        ORDER BY mention_date ASC
+    """
+    rows = db.session.execute(text(sql), {"file_hash": file_hash}).mappings().all()
     return [dict(row) for row in rows]
 
 
@@ -186,6 +217,171 @@ def _fetch_text_window(file_hash: str, window_chars: int) -> str | None:
     return row["extracted_text"] if row else None
 
 
+def _fetch_source_text(file_hash: str) -> str | None:
+    """Fetch the complete source text only for an explicit API request."""
+    sql = """
+        SELECT source_text
+        FROM file_contents
+        WHERE file_hash = :file_hash
+    """
+    row = db.session.execute(text(sql), {"file_hash": file_hash}).mappings().first()
+    return row["source_text"] if row else None
+
+
+def _fetch_file_and_locations(
+    file_hash: str,
+    app,
+    include_user_paths: bool = False,
+) -> tuple[dict | None, list[dict]]:
+    """Fetch shared file metadata and its indexed locations."""
+    metadata = _fetch_file_metadata(file_hash)
+    if metadata is None:
+        return None, []
+    locations = _fetch_locations(
+        file_hash=file_hash,
+        user_archives_location=app.config.get("USER_ARCHIVES_LOCATION"),
+        include_user_paths=include_user_paths,
+    )
+    return metadata, locations
+
+
+def _relative_location_from_user_path(path_value: str, user_archives_location: str | None) -> tuple[str, str]:
+    """Convert an exact user-facing file path to normalized DB location values."""
+    if not isinstance(path_value, str) or not path_value.strip():
+        raise FileInfoAPIValidationError("A non-empty user_path is required.")
+    if not user_archives_location:
+        raise FileInfoAPIValidationError("User archive path mapping is not configured.")
+
+    try:
+        user_path = PureWindowsPath(path_value.strip())
+        user_root = PureWindowsPath(str(user_archives_location).strip())
+    except (TypeError, ValueError) as error:
+        raise FileInfoAPIValidationError("user_path is not a valid Windows path.") from error
+
+    if any(part == ".." for part in user_path.parts):
+        raise FileInfoAPIValidationError("user_path must not contain '..' path components.")
+
+    try:
+        relative_path = user_path.relative_to(user_root)
+    except ValueError as error:
+        raise FileInfoAPIValidationError(
+            "user_path must be under the configured user archive root."
+        ) from error
+
+    relative_parts = [part for part in relative_path.parts if part not in {"", ".", "\\", "/"}]
+    if not relative_parts:
+        raise FileInfoAPIValidationError("user_path must identify a file, not the archive root.")
+
+    return "/".join(relative_parts[:-1]), relative_parts[-1]
+
+
+def resolve_user_path_to_file_hash(path_value: str, app) -> str | None:
+    """Resolve a user-facing path to one canonical hash without file-server I/O."""
+    file_server_directories, filename = _relative_location_from_user_path(
+        path_value=path_value,
+        user_archives_location=app.config.get("USER_ARCHIVES_LOCATION"),
+    )
+    sql = """
+        SELECT DISTINCT f.hash AS file_hash
+        FROM file_locations fl
+        JOIN files f ON f.id = fl.file_id
+        WHERE lower(trim(both '/' FROM replace(
+            coalesce(fl.file_server_directories, ''), chr(92), '/'
+        ))) = :file_server_directories
+          AND lower(coalesce(fl.filename, '')) = :filename
+        ORDER BY f.hash ASC
+    """
+    hashes = [
+        row["file_hash"]
+        for row in db.session.execute(
+            text(sql),
+            {
+                "file_server_directories": file_server_directories.lower(),
+                "filename": filename.lower(),
+            },
+        ).mappings().all()
+    ]
+    if not hashes:
+        return None
+    if len(hashes) > 1:
+        raise AmbiguousFileLocationError("Ambiguous indexed location.")
+    return hashes[0]
+
+
+def _database_path(location: dict) -> str | None:
+    """Join stored directory and filename values into a database-relative path."""
+    directories = location.get("file_server_directories")
+    filename = location.get("filename")
+    if not directories:
+        return filename
+    if not filename:
+        return directories
+    separator = "\\" if "\\" in directories and "/" not in directories else "/"
+    return f"{directories.rstrip('/\\')}{separator}{filename.lstrip('/\\')}"
+
+
+def _iso_value(value):
+    """Convert date/datetime-like values to the API's ISO-8601 representation."""
+    return value.isoformat() if value is not None else None
+
+
+def _serialize_api_location(location: dict, include_user_paths: bool) -> dict:
+    """Serialize one indexed location in exactly one configured path form."""
+    result = {
+        "location_id": location.get("location_id"),
+        "filename": location.get("filename"),
+        "existence_confirmed": _iso_value(location.get("existence_confirmed")),
+        "hash_confirmed": _iso_value(location.get("hash_confirmed")),
+    }
+    if include_user_paths:
+        result["user_path"] = location.get("user_path")
+    else:
+        result["database_path"] = _database_path(location)
+    return result
+
+
+def get_file_info_api(
+    file_hash: str,
+    app,
+    include_text: bool = False,
+    include_user_paths: bool = False,
+) -> dict | None:
+    """Return the API representation for one canonical archive file."""
+    metadata, locations = _fetch_file_and_locations(
+        file_hash=file_hash,
+        app=app,
+        include_user_paths=include_user_paths,
+    )
+    if metadata is None:
+        return None
+
+    text_status = archive_search._status_from_metadata(metadata)
+    api_data = {
+        "file_hash": metadata["file_hash"],
+        "size_bytes": metadata.get("size_bytes"),
+        "extension": metadata.get("extension"),
+        "location_count": len(locations),
+        "locations": [
+            _serialize_api_location(location, include_user_paths)
+            for location in locations
+        ],
+        "text_status": text_status,
+        "text_status_label": archive_search.status_label(text_status),
+        "text_length": metadata.get("text_length"),
+        "text_updated_at": _iso_value(metadata.get("text_updated_at")),
+        "detected_dates": [
+            {
+                "date": _iso_value(mention.get("mention_date")),
+                "occurrences": mention.get("mentions_count"),
+            }
+            for mention in _fetch_all_date_mentions(file_hash)
+        ],
+    }
+    if include_text:
+        api_data["source_text"] = _fetch_source_text(file_hash)
+    return api_data
+
+
 def get_file_info(
     file_hash: str,
     app,
@@ -195,14 +391,14 @@ def get_file_info(
 
     The source text is deliberately queried only when ``include_text`` is true.
     """
-    metadata = _fetch_file_metadata(file_hash)
+    metadata, locations = _fetch_file_and_locations(
+        file_hash=file_hash,
+        app=app,
+        include_user_paths=True,
+    )
     if metadata is None:
         return None
 
-    locations = _fetch_locations(
-        file_hash=file_hash,
-        user_archives_location=app.config.get("USER_ARCHIVES_LOCATION"),
-    )
     display_location = min(locations, key=_location_sort_key) if locations else None
     mention_limit = date_mention_limit(app)
     date_mention_summary = _fetch_date_mention_summary(file_hash)
