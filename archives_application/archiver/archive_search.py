@@ -734,7 +734,7 @@ def _status_from_metadata(metadata: dict) -> str:
 def status_label(status: str) -> str:
     """Convert an internal status code to a friendly display label."""
     return {
-        "content_searchable": "Content searchable",
+        "content_searchable": "Sufficient text for content search",
         "text_extracted_not_chunked": "Text extracted, not chunked",
         "empty_or_thin_text": "Empty or thin text",
         "extraction_failed": "Extraction failed",
@@ -1085,7 +1085,6 @@ class ArchiveSearchRun:
                 "size_bytes": meta.get("size_bytes"),
                 "size_display": _format_size(meta.get("size_bytes")),
                 "primary_location": primary.get("user_path") or "",
-                "primary_location_id": primary.get("location_id"),
                 "additional_location_count": max(len(file_locations) - 1, 0),
                 "locations": file_locations,
                 "snippet": snippets.get(row.get("best_chunk_id"), ""),
