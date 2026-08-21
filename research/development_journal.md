@@ -671,3 +671,16 @@ remains unchanged.
   is available in test data.
 - Measure client/proxy behavior for the known 26 MB and 60 MB source-text
   records before adding any response-size restriction.
+
+---
+
+## Entry 009 - File-information API URL alignment
+**Date:** 2026-08-21<br>
+**Author:** OpenAI Codex (GPT-5)
+
+`GET /api/files` was renamed to `GET /api/file_info` so the API follows the
+same file-information naming as the user-facing `/file_info/<file_hash>` page.
+The route implementation, API introduction, and API specification were
+updated. No compatibility alias was retained; API clients must use the new
+path. Python compilation, documentation review, and `git diff --check` were
+performed. Follow-on: update any external API callers to `/api/file_info`.

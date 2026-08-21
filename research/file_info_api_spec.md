@@ -16,8 +16,8 @@ not create, update, delete, or enqueue any archive records.
 ## Endpoint
 
 ```
-GET /api/files?file_hash={file_hash}
-GET /api/files?user_path={URL-encoded-user-path}
+GET /api/file_info?file_hash={file_hash}
+GET /api/file_info?user_path={URL-encoded-user-path}
 ```
 
 The request must select a file using exactly one of `file_hash` or `user_path`.
