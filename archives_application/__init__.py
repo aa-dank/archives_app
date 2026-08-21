@@ -65,6 +65,8 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
 
     # config app from config class
     app.config.from_object(config_class)
+    app.config.setdefault('FILE_INFO_TEXT_WINDOW_CHARS', 10000)
+    app.config.setdefault('FILE_INFO_DATE_MENTION_LIMIT', 50)
 
     # Ensure SQLAlchemy pings connections to avoid "SSL connection has been closed unexpectedly"
     app.config.setdefault('SQLALCHEMY_ENGINE_OPTIONS', {})

@@ -3,6 +3,7 @@
 import datetime
 import flask
 import flask_sqlalchemy
+import html
 import io
 import json
 import os
@@ -19,6 +20,7 @@ from sqlalchemy import func
 # imports from this application
 import archives_application.archiver.forms as archiver_forms
 from archives_application.archiver import archive_search as archive_search_service
+from archives_application.archiver import file_info as file_info_service
 from archives_application.archiver.archival_file import ArchivalFile
 from archives_application import utils
 from archives_application.models import *
@@ -29,6 +31,157 @@ archiver = flask.Blueprint('archiver', __name__)
 
 EXCLUDED_FILENAMES = ['Thumbs.db', 'thumbs.db', 'desktop.ini']
 EXCLUDED_FILE_EXTENSIONS = ['DS_Store', '.ini', '.git']
+FILE_INFO_API_PARAMETERS = {
+    "file_hash",
+    "user_path",
+    "include_text",
+    "include_user_paths",
+}
+
+
+def _file_info_api_error(status_code: int, message: str):
+    """Return a consistent JSON error response for the file-information API."""
+    return flask.jsonify({"error": message}), status_code
+
+
+def _file_info_api_user():
+    """Authenticate a GET API caller with a session or HTTP Basic credentials."""
+    if current_user.is_authenticated and getattr(current_user, "active", False):
+        return current_user
+
+    authorization = flask.request.authorization
+    if not authorization or authorization.type.lower() != "basic":
+        return None
+    if not isinstance(authorization.username, str) or not isinstance(authorization.password, str):
+        return None
+
+    user = UserModel.query.filter_by(email=authorization.username).first()
+    if (
+        user
+        and user.active
+        and user.password
+        and bcrypt.check_password_hash(user.password, authorization.password)
+    ):
+        return user
+    return None
+
+
+def _file_info_api_boolean_parameter(name: str) -> bool:
+    """Parse one optional API boolean while rejecting repeated or malformed values."""
+    values = flask.request.args.getlist(name)
+    if not values:
+        return False
+    if len(values) != 1:
+        raise file_info_service.FileInfoAPIValidationError(
+            f"Query parameter '{name}' may appear only once."
+        )
+    normalized_value = values[0].lower()
+    if normalized_value == "true":
+        return True
+    if normalized_value == "false":
+        return False
+    raise file_info_service.FileInfoAPIValidationError(
+        f"Query parameter '{name}' must be true or false."
+    )
+
+
+def _file_info_api_selector() -> tuple[str, str]:
+    """Return the one required file selector from a validated request."""
+    unknown_parameters = set(flask.request.args) - FILE_INFO_API_PARAMETERS
+    if unknown_parameters:
+        raise file_info_service.FileInfoAPIValidationError(
+            f"Unsupported query parameter: {sorted(unknown_parameters)[0]}."
+        )
+
+    for name in FILE_INFO_API_PARAMETERS:
+        if len(flask.request.args.getlist(name)) > 1:
+            raise file_info_service.FileInfoAPIValidationError(
+                f"Query parameter '{name}' may appear only once."
+            )
+
+    selectors = []
+    for name in ("file_hash", "user_path"):
+        values = flask.request.args.getlist(name)
+        if values:
+            value = values[0].strip()
+            if not value:
+                raise file_info_service.FileInfoAPIValidationError(
+                    f"Query parameter '{name}' must not be empty."
+                )
+            selectors.append((name, value))
+
+    if len(selectors) != 1:
+        raise file_info_service.FileInfoAPIValidationError(
+            "Exactly one of file_hash or user_path is required."
+        )
+    return selectors[0]
+
+
+@archiver.route("/api/files", methods=["GET"])
+def file_info_api():
+    """Return authenticated JSON file information by canonical hash or user path."""
+    if _file_info_api_user() is None:
+        return _file_info_api_error(401, "Unauthorized.")
+
+    try:
+        selector_name, selector_value = _file_info_api_selector()
+        include_text = _file_info_api_boolean_parameter("include_text")
+        include_user_paths = _file_info_api_boolean_parameter("include_user_paths")
+        file_hash = (
+            selector_value
+            if selector_name == "file_hash"
+            else file_info_service.resolve_user_path_to_file_hash(
+                path_value=selector_value,
+                app=flask.current_app,
+            )
+        )
+    except file_info_service.FileInfoAPIValidationError as error:
+        return _file_info_api_error(400, str(error))
+    except file_info_service.AmbiguousFileLocationError as error:
+        return _file_info_api_error(409, str(error))
+
+    if file_hash is None:
+        return _file_info_api_error(404, "File not found.")
+
+    try:
+        api_data = file_info_service.get_file_info_api(
+            file_hash=file_hash,
+            app=flask.current_app,
+            include_text=include_text,
+            include_user_paths=include_user_paths,
+        )
+        if api_data is None:
+            return _file_info_api_error(404, "File not found.")
+        response = flask.jsonify(api_data)
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+    except Exception:
+        flask.current_app.logger.error("File information API request failed", exc_info=True)
+        return _file_info_api_error(500, "Unable to retrieve file information.")
+
+
+@archiver.route("/file_info/<file_hash>", methods=["GET"])
+def file_info(file_hash):
+    """Render public file metadata and an authenticated extracted-text window."""
+    can_view_text = file_info_service.can_view_file_text(current_user)
+    file_info_data = file_info_service.get_file_info(
+        file_hash=file_hash,
+        app=flask.current_app,
+        include_text=can_view_text,
+    )
+    if file_info_data is None:
+        flask.abort(404)
+
+    response = flask.make_response(flask.render_template(
+        "file_info.html",
+        title=f"File Information: {file_info_data['display_filename']}",
+        file_info=file_info_data,
+        can_view_text=can_view_text,
+        login_url=flask.url_for("users.login", next=flask.request.full_path),
+    ))
+    if can_view_text:
+        response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
     """
@@ -200,6 +353,7 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
     locations_query = db.session.query(
         FileLocationModel.file_server_directories,
         FileLocationModel.filename,
+        FileModel.hash,
         FileModel.size,
         FileContentModel.text_length
     ).join(FileModel, FileLocationModel.file_id == FileModel.id
@@ -227,7 +381,7 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
     total_files = 0
     total_size_bytes = 0
 
-    for dir_path, filename, size, text_length in locations_query:
+    for dir_path, filename, file_hash, size, text_length in locations_query:
         if not dir_path:
             continue
         dir_path = dir_path.replace('\\', '/')
@@ -254,7 +408,7 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
             "File Path": file_full_user_path,
             "Size": _format_bytes(file_size),
             "Size Bytes": file_size,
-            "Extracted Text Length": text_length if text_length is not None else "",
+            "Extracted Text Length (characters)": text_length if text_length is not None else "",
         })
 
         if relative_tail == '':
@@ -263,7 +417,8 @@ def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.Dat
             current_path_file_rows.append({
                 "Filename": filename,
                 "Size": _format_bytes(file_size),
-                "Extracted Text Length": text_length if text_length is not None else "",
+                "Extracted Text Length (characters)": text_length if text_length is not None else "",
+                "_file_hash": file_hash,
                 "_size_bytes": file_size,
             })
             continue
@@ -2372,11 +2527,23 @@ def dir_contents_summary():
         current_files_table_html = None
         if not current_files_df.empty:
             if not files_exceed_limit:
-                current_files_table_html = utils.html_table_from_df(df=current_files_df)
+                current_files_display_df = current_files_df.copy()
+                current_files_display_df["Filename"] = current_files_display_df.apply(
+                    lambda row: (
+                        f'<a href="{html.escape(flask.url_for("archiver.file_info", file_hash=row["_file_hash"]), quote=True)}">'
+                        f'{html.escape(str(row["Filename"]))}</a>'
+                    ),
+                    axis=1,
+                )
+                current_files_display_df.drop(columns=["_file_hash"], inplace=True)
+                current_files_table_html = utils.html_table_from_df(
+                    df=current_files_display_df,
+                    html_columns=["Filename"],
+                )
                 current_files_table_html = current_files_table_html.replace(
-                    '<th>Extracted Text Length</th>',
-                    '<th>Extracted Text Length '
-                    '<span title="Length of extracted text stored in the database for this file.\nBlank if no text has been stored." '
+                    '<th>Extracted Text Length (characters)</th>',
+                    '<th>Extracted Text Length (characters) '
+                    '<span title="Number of extracted-text characters stored in the database for this file.\nBlank if no text has been stored." '
                     'style="cursor: help; font-weight: normal;">&#9432;</span></th>'
                 )
         
@@ -2416,7 +2583,7 @@ def dir_contents_summary_download():
             child_directories_df['Name'] = child_directories_df['Name'].replace(r'<a [^>]*>', '', regex=True)
             child_directories_df['Name'] = child_directories_df['Name'].replace('</a>', '', regex=False)
 
-        current_directory_files_df = current_files_df.copy()
+        current_directory_files_df = current_files_df.drop(columns=["_file_hash"], errors="ignore").copy()
 
         recursive_files_df = all_recursive_files_df.copy()
         if not recursive_files_df.empty and 'Size Bytes' in recursive_files_df.columns:

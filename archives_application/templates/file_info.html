@@ -1,0 +1,211 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section file-info-section">
+        <h2>File Information</h2>
+        <h4>{{ file_info.display_filename }}</h4>
+        {% if file_info.multiple_filenames %}
+            <p class="text-muted">This identical file is indexed under more than one filename.</p>
+        {% endif %}
+
+        <dl class="row file-info-details">
+            <dt class="col-sm-4">Size</dt>
+            <dd class="col-sm-8">{{ file_info.size_display }} ({{ file_info.size_bytes }} bytes)</dd>
+            <dt class="col-sm-4">Extension</dt>
+            <dd class="col-sm-8">{{ file_info.extension or "Not recorded" }}</dd>
+            <dt class="col-sm-4">File hash</dt>
+            <dd class="col-sm-8"><code>{{ file_info.file_hash }}</code></dd>
+            <dt class="col-sm-4">Indexed locations</dt>
+            <dd class="col-sm-8">{{ file_info.location_count }}</dd>
+        </dl>
+    </div>
+
+    <div class="content-section file-info-section">
+        <h4>Locations</h4>
+        {% if file_info.locations %}
+            <div class="table-responsive">
+                <table class="table table-dark table-striped table-bordered table-hover table-sm">
+                    <thead>
+                        <tr>
+                            <th>Path</th>
+                            <th>Last existence confirmation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for location in file_info.locations %}
+                            <tr>
+                                <td class="file-info-path">
+                                    {{ location.user_path }}
+                                </td>
+                                <td>
+                                    {% if location.existence_confirmed %}
+                                        {{ location.existence_confirmed.strftime("%Y-%m-%d %H:%M:%S") }}
+                                    {% else %}
+                                        Not recorded
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted">No indexed locations are available for this file.</p>
+        {% endif %}
+    </div>
+
+    <div class="content-section file-info-section">
+        <h4>Text and Indexing Status</h4>
+        <dl class="row file-info-details">
+            <dt class="col-sm-4">Status</dt>
+            <dd class="col-sm-8">{{ file_info.text_status_label }}</dd>
+            <dt class="col-sm-4">Extracted Text Character Count</dt>
+            <dd class="col-sm-8">{{ file_info.text_length if file_info.text_length is not none else "Not recorded" }}</dd>
+        </dl>
+    </div>
+
+    <div class="content-section file-info-section">
+        <h4>Dates Detected in Extracted Text</h4>
+        <p class="text-muted">These dates were detected in extracted text. They are not filesystem or authoritative document dates.</p>
+        {% if file_info.date_mention_summary.distinct_date_count > file_info.date_mention_limit %}
+            <p class="text-muted">
+                This document has {{ file_info.date_mention_summary.distinct_date_count }} distinct detected dates, so a summary is shown instead of the full date list.
+            </p>
+            <dl class="row file-info-details">
+                <dt class="col-sm-4">Distinct detected dates</dt>
+                <dd class="col-sm-8">{{ file_info.date_mention_summary.distinct_date_count }}</dd>
+                <dt class="col-sm-4">Total detected occurrences</dt>
+                <dd class="col-sm-8">{{ file_info.date_mention_summary.total_occurrences }}</dd>
+                <dt class="col-sm-4">Earliest detected date</dt>
+                <dd class="col-sm-8">{{ file_info.date_mention_summary.earliest_date }}</dd>
+                <dt class="col-sm-4">Latest detected date</dt>
+                <dd class="col-sm-8">{{ file_info.date_mention_summary.latest_date }}</dd>
+            </dl>
+            <div class="row">
+                <div class="col-lg-4 mb-3">
+                    <h5>Five Earliest Detected Dates</h5>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-bordered table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Detected Date</th>
+                                    <th>Occurences Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for mention in file_info.date_mention_highlights.earliest %}
+                                    <tr>
+                                        <td>{{ mention.mention_date }}</td>
+                                        <td>{{ mention.mentions_count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="col-lg-4 mb-3">
+                    <h5>Five Latest Detected Dates</h5>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-bordered table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Detected Date</th>
+                                    <th>Occurences Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for mention in file_info.date_mention_highlights.latest %}
+                                    <tr>
+                                        <td>{{ mention.mention_date }}</td>
+                                        <td>{{ mention.mentions_count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="col-lg-4 mb-3">
+                    <h5>Five Most Frequently Occurring Dates</h5>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-bordered table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Detected Date</th>
+                                    <th>Occurences Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for mention in file_info.date_mention_highlights.most_frequent %}
+                                    <tr>
+                                        <td>{{ mention.mention_date }}</td>
+                                        <td>{{ mention.mentions_count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        {% elif file_info.date_mentions %}
+            <div class="table-responsive">
+                <table class="table table-dark table-striped table-bordered table-hover table-sm">
+                    <thead>
+                        <tr>
+                            <th>Detected Date</th>
+                            <th>Occurences Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for mention in file_info.date_mentions %}
+                            <tr>
+                                <td>{{ mention.mention_date }}</td>
+                                <td>{{ mention.mentions_count }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted">No document-date mentions are available.</p>
+        {% endif %}
+    </div>
+
+    <div class="content-section file-info-section">
+        <h4>Extracted Text</h4>
+        {% if can_view_text %}
+            {% if file_info.extracted_text %}
+                <pre id="extracted-text" class="file-info-extracted-text">{{ file_info.extracted_text }}</pre>
+                {% if file_info.text_truncated %}
+                    <p class="text-muted">
+                        Showing the first {{ file_info.returned_text_length }} of {{ file_info.text_length }} extracted characters.
+                    </p>
+                {% endif %}
+            {% else %}
+                <p class="text-muted">No usable extracted text is available for this file.</p>
+            {% endif %}
+        {% else %}
+            <p>Extracted text is available after signing in.</p>
+            <a class="btn btn-outline-primary btn-sm" href="{{ login_url }}">Sign in to view extracted text</a>
+        {% endif %}
+    </div>
+    
+    <style>
+        .file-info-details dt,
+        .file-info-details dd {
+            margin-bottom: 0.5rem;
+        }
+        .file-info-path {
+            overflow-wrap: anywhere;
+        }
+        .file-info-extracted-text {
+            max-height: 32rem;
+            overflow: auto;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            background: #f8f9fa;
+            border: 1px solid #d6d6d6;
+            border-radius: 3px;
+            color: #222;
+            padding: 1rem;
+        }
+    </style>
+{% endblock content %}

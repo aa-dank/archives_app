@@ -28,10 +28,10 @@
 
         <div class="collapse archive-results-guide" id="archiveResultsGuide">
             <p>
-                Start with the Results table when you want the most likely matching files. Each row is one file-level result grouped by file hash, so duplicate copies of the same file are combined. Use Primary Location to open or review the file, and expand the row details when the same file appears in additional indexed locations.
+                Start with the Results table when you want the most likely matching files. Each row is one file-level result grouped by file hash, so duplicate copies of the same file are combined. Select a filename for complete file information, including every indexed location.
             </p>
             <p>
-                Match shows whether the query was found in the filename, path, extracted document text, or a combination. Snippet appears when document text matched and gives a short preview of the matching text. Expanded row details include all indexed locations, searchability status, and file hash information.
+                Match shows whether the query was found in the filename, path, extracted document text, or a combination. Snippet appears when document text matched and gives a short preview of the matching text. Expanded row details show document searchability information.
             </p>
             <p>
                 Coverage explains how much of the selected scope could actually be searched by content. A content search with low coverage can miss relevant files whose text has not been extracted, failed extraction, has not been chunked, or is in a format that is not useful for text extraction.
@@ -178,10 +178,12 @@
                                 </td>
                                 <td>{{ result.match_source }}</td>
                                 <td>
-                                    <div>{{ result.filename }}</div>
+                                    <div>
+                                        <a href="{{ url_for('archiver.file_info', file_hash=result.file_hash) }}">{{ result.filename or "Unnamed indexed file" }}</a>
+                                    </div>
                                     <div class="text-muted">{{ result.extension }} {{ result.size_display }}</div>
                                 </td>
-                                <td class="archive-path">{{ result.primary_location }}</td>
+                                <td class="archive-path archive-primary-location">{{ result.primary_location }}</td>
                                 <td class="archive-snippet">
                                     {% if result.snippet %}
                                         {{ result.snippet | safe }}
@@ -191,33 +193,12 @@
                             <tr id="archiveResultDetails{{ loop.index }}" class="archive-result-detail-row archive-result-row-{{ loop.cycle('odd', 'even') }}" hidden>
                                 <td colspan="5">
                                     <div class="archive-result-detail-grid">
-                                        <section class="archive-result-detail-section archive-result-detail-section-locations">
-                                            <h5>Locations</h5>
-                                            <div class="archive-detail-note text-muted">
-                                                {{ result.additional_location_count }} additional indexed location{% if result.additional_location_count != 1 %}s{% endif %}.
+                                        <section class="archive-result-detail-section">
+                                            <h5>File Information</h5>
+                                            <div>
+                                                {{ result.additional_location_count + 1 }} indexed location{% if result.additional_location_count != 0 %}s{% endif %}.
                                             </div>
-                                            <div class="archive-location-list">
-                                                {% for location in result.locations %}
-                                                    <div class="archive-location-detail archive-path">
-                                                        <div class="archive-detail-badges">
-                                                            {% if location.location_id == result.primary_location_id %}
-                                                                <span class="badge badge-light">Primary</span>
-                                                            {% endif %}
-                                                            {% if location.in_scope %}
-                                                                <span class="badge badge-success">In scope</span>
-                                                            {% else %}
-                                                                <span class="badge badge-secondary">Out of scope</span>
-                                                            {% endif %}
-                                                            {% if location.location_id in result.matching_location_ids %}
-                                                                <span class="badge badge-info">Matched query</span>
-                                                            {% endif %}
-                                                        </div>
-                                                        <div>{{ location.user_path }}</div>
-                                                    </div>
-                                                {% else %}
-                                                    <div class="text-muted">No indexed locations available.</div>
-                                                {% endfor %}
-                                            </div>
+                                            <a class="btn btn-outline-info btn-sm archive-file-info-link" href="{{ url_for('archiver.file_info', file_hash=result.file_hash) }}">See file information</a>
                                         </section>
 
                                         <section class="archive-result-detail-section">
@@ -234,21 +215,9 @@
                                                     <dd>{{ result.failure_summary }}</dd>
                                                 {% endif %}
                                                 {% if result.text_length is not none %}
-                                                    <dt>Extracted text length</dt>
+                                                    <dt>Extracted Text Character Count</dt>
                                                     <dd>{{ result.text_length }}</dd>
                                                 {% endif %}
-                                            </dl>
-                                        </section>
-
-                                        <section class="archive-result-detail-section">
-                                            <h5>File Identity</h5>
-                                            <dl class="archive-detail-list">
-                                                <dt>Hash</dt>
-                                                <dd><code>{{ result.file_hash }}</code></dd>
-                                                <dt>Size</dt>
-                                                <dd>{{ result.size_display }}</dd>
-                                                <dt>Extension</dt>
-                                                <dd>{{ result.extension }}</dd>
                                             </dl>
                                         </section>
                                     </div>
@@ -396,25 +365,18 @@
         .archive-result-detail-grid {
             display: grid;
             gap: 1.25rem;
-            grid-template-columns: minmax(520px, 1.5fr) minmax(260px, 0.75fr) minmax(280px, 0.75fr);
+            grid-template-columns: repeat(2, minmax(260px, 0.75fr));
         }
         .archive-result-detail-section h5 {
             color: rgba(255, 255, 255, 0.94);
             font-size: 0.95rem;
             margin-bottom: 0.4rem;
         }
-        .archive-detail-note {
-            margin-bottom: 0.5rem;
+        .archive-file-info-link {
+            margin-top: 0.65rem;
         }
-        .archive-result-detail-row .text-muted,
-        .archive-detail-note.text-muted {
+        .archive-result-detail-row .text-muted {
             color: rgba(255, 255, 255, 0.82) !important;
-        }
-        .archive-detail-badges {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.25rem;
-            margin-bottom: 0.25rem;
         }
         .archive-detail-list {
             margin-bottom: 0;
@@ -435,15 +397,11 @@
             white-space: pre-wrap;
             word-break: break-word;
         }
+        .archive-results-table td.archive-primary-location {
+            text-align: left;
+        }
         .archive-snippet {
             word-break: break-word;
-        }
-        .archive-location-detail {
-            border-top: 1px solid rgba(255, 255, 255, 0.2);
-            padding: 0.55rem 0;
-        }
-        .archive-location-detail:first-child {
-            border-top: 0;
         }
         mark {
             background: #ffe58a;
