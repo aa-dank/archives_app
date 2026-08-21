@@ -117,7 +117,7 @@ def _file_info_api_selector() -> tuple[str, str]:
     return selectors[0]
 
 
-@archiver.route("/api/files", methods=["GET"])
+@archiver.route("/api/file_info", methods=["GET"])
 def file_info_api():
     """Return authenticated JSON file information by canonical hash or user path."""
     if _file_info_api_user() is None:
