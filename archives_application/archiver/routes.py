@@ -32,6 +32,133 @@ archiver = flask.Blueprint('archiver', __name__)
 
 EXCLUDED_FILENAMES = ['Thumbs.db', 'thumbs.db', 'desktop.ini']
 EXCLUDED_FILE_EXTENSIONS = ['DS_Store', '.ini', '.git']
+FILE_INFO_API_PARAMETERS = {
+    "file_hash",
+    "user_path",
+    "include_text",
+    "include_user_paths",
+}
+
+
+def _file_info_api_error(status_code: int, message: str):
+    """Return a consistent JSON error response for the file-information API."""
+    return flask.jsonify({"error": message}), status_code
+
+
+def _file_info_api_user():
+    """Authenticate a GET API caller with a session or HTTP Basic credentials."""
+    if current_user.is_authenticated and getattr(current_user, "active", False):
+        return current_user
+
+    authorization = flask.request.authorization
+    if not authorization or authorization.type.lower() != "basic":
+        return None
+    if not isinstance(authorization.username, str) or not isinstance(authorization.password, str):
+        return None
+
+    user = UserModel.query.filter_by(email=authorization.username).first()
+    if (
+        user
+        and user.active
+        and user.password
+        and bcrypt.check_password_hash(user.password, authorization.password)
+    ):
+        return user
+    return None
+
+
+def _file_info_api_boolean_parameter(name: str) -> bool:
+    """Parse one optional API boolean while rejecting repeated or malformed values."""
+    values = flask.request.args.getlist(name)
+    if not values:
+        return False
+    if len(values) != 1:
+        raise file_info_service.FileInfoAPIValidationError(
+            f"Query parameter '{name}' may appear only once."
+        )
+    normalized_value = values[0].lower()
+    if normalized_value == "true":
+        return True
+    if normalized_value == "false":
+        return False
+    raise file_info_service.FileInfoAPIValidationError(
+        f"Query parameter '{name}' must be true or false."
+    )
+
+
+def _file_info_api_selector() -> tuple[str, str]:
+    """Return the one required file selector from a validated request."""
+    unknown_parameters = set(flask.request.args) - FILE_INFO_API_PARAMETERS
+    if unknown_parameters:
+        raise file_info_service.FileInfoAPIValidationError(
+            f"Unsupported query parameter: {sorted(unknown_parameters)[0]}."
+        )
+
+    for name in FILE_INFO_API_PARAMETERS:
+        if len(flask.request.args.getlist(name)) > 1:
+            raise file_info_service.FileInfoAPIValidationError(
+                f"Query parameter '{name}' may appear only once."
+            )
+
+    selectors = []
+    for name in ("file_hash", "user_path"):
+        values = flask.request.args.getlist(name)
+        if values:
+            value = values[0].strip()
+            if not value:
+                raise file_info_service.FileInfoAPIValidationError(
+                    f"Query parameter '{name}' must not be empty."
+                )
+            selectors.append((name, value))
+
+    if len(selectors) != 1:
+        raise file_info_service.FileInfoAPIValidationError(
+            "Exactly one of file_hash or user_path is required."
+        )
+    return selectors[0]
+
+
+@archiver.route("/api/files", methods=["GET"])
+def file_info_api():
+    """Return authenticated JSON file information by canonical hash or user path."""
+    if _file_info_api_user() is None:
+        return _file_info_api_error(401, "Unauthorized.")
+
+    try:
+        selector_name, selector_value = _file_info_api_selector()
+        include_text = _file_info_api_boolean_parameter("include_text")
+        include_user_paths = _file_info_api_boolean_parameter("include_user_paths")
+        file_hash = (
+            selector_value
+            if selector_name == "file_hash"
+            else file_info_service.resolve_user_path_to_file_hash(
+                path_value=selector_value,
+                app=flask.current_app,
+            )
+        )
+    except file_info_service.FileInfoAPIValidationError as error:
+        return _file_info_api_error(400, str(error))
+    except file_info_service.AmbiguousFileLocationError as error:
+        return _file_info_api_error(409, str(error))
+
+    if file_hash is None:
+        return _file_info_api_error(404, "File not found.")
+
+    try:
+        api_data = file_info_service.get_file_info_api(
+            file_hash=file_hash,
+            app=flask.current_app,
+            include_text=include_text,
+            include_user_paths=include_user_paths,
+        )
+        if api_data is None:
+            return _file_info_api_error(404, "File not found.")
+        response = flask.jsonify(api_data)
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+    except Exception:
+        flask.current_app.logger.error("File information API request failed", exc_info=True)
+        return _file_info_api_error(500, "Unable to retrieve file information.")
 
 
 @archiver.route("/file_info/<file_hash>", methods=["GET"])
