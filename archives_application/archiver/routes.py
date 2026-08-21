@@ -177,7 +177,7 @@ def file_info(file_hash):
         title=f"File Information: {file_info_data['display_filename']}",
         file_info=file_info_data,
         can_view_text=can_view_text,
-        login_url=flask.url_for("users.login", next=flask.request.full_path),
+        login_url=flask.url_for("users.choose_login", next=flask.request.full_path),
     ))
     if can_view_text:
         response.headers["Cache-Control"] = "private, no-store"

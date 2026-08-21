@@ -490,3 +490,184 @@ requests.
   confirmation, or `ServerEdit.execute` now supplies timeout values in seconds.
 - Continue to treat the filesystem-coordination branch as historical research;
   its locking behavior needs dedicated testing and review before reuse.
+
+---
+
+## Entry 007 - File-information views, date summaries, and API
+**Date:** 2026-08-21<br>
+**Activity covered:** 2026-08-14 through 2026-08-20<br>
+**Author:** OpenAI Codex (GPT-5)
+
+---
+
+### Context
+
+This entry catches up the file-information work merged after Entry 006. It is
+based on the actual diffs for the five feature commits listed below, rather
+than commit subjects alone. The work established a canonical, read-only
+file-information view, made it the detail destination for archive search and
+directory-summary results, and added a documented authenticated API.
+
+### What changed
+
+#### HTML file-information view
+
+`GET /file_info/<file_hash>` presents one canonical file with its size,
+extension, hash, indexed-location count, all user-facing indexed locations,
+and text/indexing status. Extracted text is shown only to authenticated users;
+the HTML response is marked `Cache-Control: private, no-store` when it contains
+that text. The page now labels the stored length explicitly as an extracted-text
+character count and no longer exposes the text-extraction update timestamp.
+
+The detected-date section is titled **Dates Detected in Extracted Text** and
+explains that these are neither filesystem timestamps nor authoritative document
+dates. Date rows are aggregated by calendar date, so hidden extraction
+granularity values do not create duplicate-looking dates or distort occurrence
+counts. Files with 50 or fewer distinct dates display the full chronological
+table. Larger sets display a date summary: distinct-date and total-occurrence
+metrics, earliest/latest dates, and five-date lists for earliest, latest, and
+most frequently occurring dates. `FILE_INFO_DATE_MENTION_LIMIT` defaults to
+50; the extracted-text preview default remains 10,000 characters.
+
+#### Search and directory-summary navigation
+
+Archive-search result filenames now link to the canonical file-information
+page. The compact result-row details retain the indexed-location count and a
+**See file information** link, while removing repeated location paths, badges,
+hash, size, and extension data. Primary Location remains plain left-aligned
+text, avoiding an implication that it opens the SMB file. Searchability details
+remain in the expandable area, and the character-count label is consistent with
+the file-information view.
+
+The current-directory file table in `/dir_contents_summary` also links each
+filename to file information. Its extracted-text column was renamed to make its
+character unit explicit, and its generated spreadsheet output drops the
+internal hash used solely for HTML link generation.
+
+#### Authenticated file-information API
+
+`GET /api/files` provides a read-only JSON representation of one canonical
+file. It requires either an active application session or HTTP Basic
+credentials and accepts exactly one selector: `file_hash` or a complete
+user-facing `user_path`. User paths are normalized and resolved against indexed
+database locations only; this endpoint performs no SMB/file-server I/O and
+returns `409 Conflict` rather than arbitrarily choosing an ambiguous path.
+
+The API validates an allowlisted query-parameter set and supports
+`include_text=true` for the complete stored source text and
+`include_user_paths=true` for user-facing location paths. Default responses use
+database-relative location paths. Dates and timestamps are explicitly
+ISO-serialized, all detected dates are returned without the HTML display limit,
+and responses send `Cache-Control: private, no-store`. The contract, selection
+semantics, response fields, error statuses, and large-source-text behavior are
+documented in `research/file_info_api_spec.md`.
+
+The same change also clarified archive-search guidance: punctuation other than
+quotes and a leading minus is ignored by the supported web-style search syntax.
+
+### Commit coverage
+
+| Date | Commit | Verified change |
+|---|---|---|
+| 2026-08-14 | `fd7e50f` | Clarified searchability and character-count labels; removed extraction-update display and date precision from the HTML view. |
+| 2026-08-17 | `c3e722e` | Linked archive-search filenames to file information and reduced duplicated result-detail data. |
+| 2026-08-17 | `b269a71` | Linked current-directory summary filenames to file information and kept its internal hash out of downloads. |
+| 2026-08-18 | `f0f9318` | Added the 50-date threshold, calendar-date aggregation, and large-set date summary. |
+| 2026-08-20 | `a86c843` | Added the authenticated `/api/files` endpoint, API serializer/path resolver, contract specification, and punctuation guidance. |
+
+### Files and interfaces affected
+
+| Area | Change |
+|---|---|
+| `archives_application/archiver/file_info.py` | Added shared read-only HTML/API data retrieval, date aggregation and summaries, source-text retrieval, user-path resolution, and API serialization. |
+| `archives_application/archiver/routes.py` | Added `GET /file_info/<file_hash>`, `GET /api/files`, and directory-summary filename links. |
+| `archives_application/templates/file_info.html` | Added the file-information page and responsive date-detail/summary presentation. |
+| `archives_application/templates/archive_search_results.html` | Routed filenames to file information and simplified expanded result details. |
+| `archives_application/__init__.py` | Added default extracted-text and date-display limits. |
+| `research/file_info_api_spec.md` | Added the complete API contract and acceptance checks. |
+
+### Verification and follow-on work
+
+- The feature work was syntax-checked with Python compilation, Jinja template
+  parsing, and `git diff --check`; this journal catch-up also reviewed the
+  actual feature-commit diffs. No formal automated test suite exists yet.
+- Smoke-test the HTML view with files that have no content, short content,
+  multiple locations, 50 dates, and more than 50 dates in a configured
+  Postgres environment.
+- Exercise all API selector, boolean, authentication, path-resolution, and
+  error cases from `research/file_info_api_spec.md`; confirm Basic-auth traffic
+  is accepted only over HTTPS in deployment.
+- Measure the rare large `include_text=true` responses before introducing any
+  response-size policy, and keep any future policy explicit in the API
+  specification.
+
+---
+
+## Entry 008 - Authenticated file-information API
+**Date:** 2026-08-21<br>
+**Activity covered:** 2026-08-21<br>
+**Author:** OpenAI Codex (GPT-5)
+
+---
+
+### Context
+
+The archive search API returns canonical file hashes but did not provide a
+programmatic equivalent of the user-facing file-information page.  Consumers
+also need to start from either a known hash or a copied user-facing archive
+path, while keeping potentially large extracted text an explicit opt-in.
+
+### What changed
+
+Added authenticated `GET /api/files`.  Each request supplies exactly one of
+`file_hash` or `user_path`, plus optional case-insensitive boolean
+`include_text` and `include_user_paths` parameters.
+
+The API accepts an authenticated application session or HTTP Basic credentials
+for an active application user.  It never accepts credentials in query
+parameters.  It returns metadata, indexing status, all locations, and every
+distinct extracted-text date mention.  `include_text=true` adds the complete
+stored `file_contents.source_text` value; default requests do not select that
+column.  Responses send `Cache-Control: private, no-store`.
+
+`include_user_paths=false` returns one database-relative `database_path` plus
+`filename` per location.  `include_user_paths=true` returns a complete
+user-facing `user_path` plus `filename` instead.  This creates predictable
+path-field parity for API clients.
+
+User-path resolution is database-only: it normalizes Windows path structure,
+requires the path to be under `USER_ARCHIVES_LOCATION`, rejects `..` path
+components, and compares stored directory/filename values case-insensitively.
+An unindexed valid path returns `404`; a location that resolves to more than
+one canonical hash returns `409` rather than silently selecting one.
+
+The existing HTML `/file_info/<file_hash>` route now shares the common
+metadata/location retrieval service with the API.  Its rendered behavior,
+including the authenticated capped text preview and date-summary behavior,
+remains unchanged.
+
+### Files and interfaces affected
+
+| File | Change |
+|---|---|
+| `archives_application/archiver/routes.py` | Added `GET /api/files`, API authentication, strict parameter parsing, and JSON error handling. |
+| `archives_application/archiver/file_info.py` | Added shared file/location retrieval, user-path hash resolution, API serialization, full-text opt-in retrieval, and complete detected-date retrieval. |
+| `research/file_info_api_spec.md` | Added the endpoint contract, selector/path semantics, response formats, large-text policy, errors, and acceptance checks. |
+| `tests/test_file_info_api.py` | Added focused tests for selector and boolean validation, path normalization, serialization, and response cache policy. |
+
+### Verification
+
+- `uv run pytest tests/test_file_info_api.py` passed: 5 tests.
+- `uv run python -m compileall -q archives_application tests` passed.
+- Whitespace checks passed for the new API implementation, specification, and
+  tests.
+
+### Follow-on operational work
+
+- Smoke-test session and HTTP Basic authentication against a configured
+  Postgres-backed deployment.
+- Exercise hash and user-path selectors, including a path outside the archive
+  root, a missing indexed path, and a deliberately ambiguous location if one
+  is available in test data.
+- Measure client/proxy behavior for the known 26 MB and 60 MB source-text
+  records before adding any response-size restriction.
