@@ -869,15 +869,15 @@ class FlaskAppUtils:
         :return: the value of the parameter or the default value
         """
         param_value = flask.request.args.get(param_name)
-        if not param_value:
+        if param_value is None:
             param_value = flask.request.headers.get(param_name)
-        if not param_value:
+        if param_value is None:
             param_value = flask.request.form.get(param_name)
-        if not param_value and flask.request.is_json:
+        if param_value is None and flask.request.is_json:
             json_data = flask.request.get_json(silent=True)
             if isinstance(json_data, dict):
-                param_value = json_data.get(param_name)
-        if not param_value:
+                param_value = json_data.get(param_name, default_value)
+        if param_value is None:
             param_value = default_value
         return param_value
     

@@ -30,6 +30,63 @@ archiver = flask.Blueprint('archiver', __name__)
 EXCLUDED_FILENAMES = ['Thumbs.db', 'thumbs.db', 'desktop.ini']
 EXCLUDED_FILE_EXTENSIONS = ['DS_Store', '.ini', '.git']
 
+
+class ConsolidationRequestValidationError(ValueError):
+    """Raised when an API consolidation request has invalid option values."""
+
+
+def _parse_consolidation_boolean(value, parameter_name: str) -> bool:
+    """Return a boolean from an API request value or raise a validation error."""
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, str):
+        normalized_value = value.strip().lower()
+        if normalized_value in {"true", "1", "yes", "on"}:
+            return True
+        if normalized_value in {"false", "0", "no", "off"}:
+            return False
+
+    raise ConsolidationRequestValidationError(
+        f"{parameter_name} must be a boolean value."
+    )
+
+
+def _retrieve_consolidation_remove_source() -> bool:
+    """Retrieve the consolidation removal option, including its legacy alias."""
+    remove_source = utils.FlaskAppUtils.retrieve_request_param("remove_source", None)
+    remove_empty_dirs = utils.FlaskAppUtils.retrieve_request_param(
+        "remove_empty_dirs", None
+    )
+
+    if remove_source is None and remove_empty_dirs is None:
+        return True
+
+    parsed_remove_source = (
+        _parse_consolidation_boolean(remove_source, "remove_source")
+        if remove_source is not None
+        else None
+    )
+    parsed_remove_empty_dirs = (
+        _parse_consolidation_boolean(remove_empty_dirs, "remove_empty_dirs")
+        if remove_empty_dirs is not None
+        else None
+    )
+
+    if (
+        parsed_remove_source is not None
+        and parsed_remove_empty_dirs is not None
+        and parsed_remove_source != parsed_remove_empty_dirs
+    ):
+        raise ConsolidationRequestValidationError(
+            "remove_source and remove_empty_dirs must not conflict."
+        )
+
+    if parsed_remove_source is not None:
+        return parsed_remove_source
+
+    return parsed_remove_empty_dirs
+
 def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
     """
     Removes a file from the server and deletes the entry from the database
@@ -814,7 +871,7 @@ def consolidate_dirs():
     - **Web Interface**:
       - Users can access a form to submit consolidation requests directly via the web interface.
     - **API Requests**:
-      - Users can make API requests by sending parameters in the URL query string, request headers, or form data.
+      - Users can make API requests by sending parameters in the URL query string, request headers, form data, or a JSON request body.
 
     Supported Methods:
     - **GET**: Displays the consolidation form to the user.
@@ -825,18 +882,19 @@ def consolidate_dirs():
       - Users must be logged in and have the necessary permissions.
     - **API Requests**:
       - Users must provide valid credentials.
-      - Parameters `user` and `password` must be provided in the URL parameters, request headers, or form data.
+      - Parameters `user` and `password` may be provided in the URL query string, request headers, form data, or a JSON request body.
 
     Permissions:
     - Only users with roles `'ADMIN'` or `'ARCHIVIST'` can perform consolidation.
     - Users with `'ADMIN'` role are exempt from limits on the number of files and data size affected by operations.
 
     Parameters (for API requests and form submissions):
-    - `user` (str): The email of the user making the request. Provide in URL parameters, request headers, or form data.
-    - `password` (str): The password of the user making the request. Provide in URL parameters, request headers, or form data.
+    - `user` (str): The email of the user making the request. Provide in the URL query string, request headers, form data, or JSON request body.
+    - `password` (str): The password of the user making the request. Provide in the URL query string, request headers, form data, or JSON request body.
     - `asset_path` (str): The path to the source directory containing the contents to be moved.
     - `destination_path` (str): The path to the destination directory where the contents will be moved.
-    - `remove_empty_dirs` (bool, optional): Option to remove the source directory after consolidation. Defaults to `False`.
+    - `remove_source` (bool, optional): Whether to remove the source directory after consolidation. Defaults to `True`. JSON requests must use a JSON boolean; query, header, and form requests may use `true`/`false`, `1`/`0`, `yes`/`no`, or `on`/`off` (case-insensitive).
+    - `remove_empty_dirs` (bool, optional, deprecated): Compatibility alias for `remove_source`. Do not send both names with conflicting values.
 
     Returns:
     - **Web Interface**:
@@ -848,8 +906,9 @@ def consolidate_dirs():
       - On error: Returns a response with an appropriate status code and error message.
 
     Notes:
-    - When using the web form, users should fill in the fields `asset_path`, `destination_path`, and optionally `remove_empty_dirs`.
-    - For API requests, all parameters (`user`, `password`, `asset_path`, `destination_path`, `remove_empty_dirs`) can be supplied via URL parameters, request headers, or form data.
+    - The web form's `remove_asset` checkbox maps to the same removal behavior as the API's `remove_source` parameter.
+    - API callers may send parameters through any supported request mechanism. Invalid boolean values, or conflicting `remove_source` and `remove_empty_dirs` values, return HTTP 400.
+    - `remove_empty_dirs` is accepted only for backward compatibility. New API callers should use `remove_source`.
     - Limits on the number of files and total data size affected by operations are configurable in the application settings. Users with `'ADMIN'` role are exempt from these limits.
     - If the user has admin permissions and includes the query parameter `test=true`, the consolidation task will execute synchronously for testing purposes.
     - The endpoint uses the `consolidate_dirs_edit_task` function to perform the consolidation operation.
@@ -860,7 +919,7 @@ def consolidate_dirs():
       - Parameters:
         - `asset_path=/path/to/source_directory`
         - `destination_path=/path/to/destination_directory`
-        - `remove_empty_dirs=true`
+        - `remove_source=true`
       - Provide authentication credentials (`user` and `password`).
     - **Consolidating directories via Web Form**:
       - Fill in `Path to Target Directory` with the source directory path.
@@ -869,7 +928,7 @@ def consolidate_dirs():
 
     Raises:
     - **Unauthorized (401)**: If the user is not authenticated or lacks the necessary permissions.
-    - **Bad Request (400)**: If the form validation fails or required parameters are missing.
+    - **Bad Request (400)**: If the form validation fails, required parameters are missing, or a removal option is invalid or conflicts with its compatibility alias.
     - **Exception**: Various exceptions may be raised due to issues like invalid paths, access violations, or server errors.
     """
     # imported here to avoid circular import
@@ -931,6 +990,7 @@ def consolidate_dirs():
             else:
                 user_asset_path = utils.FlaskAppUtils.retrieve_request_param('asset_path', None)
                 user_destination_path = utils.FlaskAppUtils.retrieve_request_param('destination_path', None)
+                remove_asset = _retrieve_consolidation_remove_source()
             
             # if the user has not provided an asset path or destination path, raise an exception
             if not user_asset_path or not user_destination_path:
@@ -1001,6 +1061,16 @@ def consolidate_dirs():
                 nq_results['consolidation info'] = dirs_consolidation_info
                 nq_results = utils.serializable_dict(nq_results)
                 return flask.Response(json.dumps(nq_results), status=200)
+
+        except ConsolidationRequestValidationError as e:
+            if form_request:
+                return utils.FlaskAppUtils.web_exception_subroutine(
+                    flash_message="Invalid consolidation request",
+                    thrown_exception=e,
+                    app_obj=flask.current_app
+                )
+
+            return flask.Response(str(e), status=400)
 
         except Exception as e:
             m = "Error processing or executing batch change"
