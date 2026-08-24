@@ -75,14 +75,14 @@ def _file_info_api_boolean_parameter(name: str) -> bool:
         raise file_info_service.FileInfoAPIValidationError(
             f"Query parameter '{name}' may appear only once."
         )
-    normalized_value = values[0].lower()
-    if normalized_value == "true":
-        return True
-    if normalized_value == "false":
-        return False
-    raise file_info_service.FileInfoAPIValidationError(
-        f"Query parameter '{name}' must be true or false."
-    )
+    try:
+        return utils.FlaskAppUtils.retrieve_request_param(
+            name,
+            default_value=False,
+            param_is_bool=True,
+        )
+    except utils.RequestParameterValidationError as error:
+        raise file_info_service.FileInfoAPIValidationError(str(error)) from error
 
 
 def _file_info_api_selector() -> tuple[str, str]:
@@ -281,9 +281,12 @@ def is_test_request():
     Determines if the request is a test request.
     Usually test request are for testing tasks that would otherwise get enqueued for execution by worker process.
     """
-    return utils.FlaskAppUtils.retrieve_request_param('test', None) \
-        and utils.FlaskAppUtils.retrieve_request_param('test').lower() == 'true' \
+    return (
+        utils.FlaskAppUtils.retrieve_request_param(
+            'test', default_value=False, param_is_bool=True
+        )
         and utils.FlaskAppUtils.has_admin_role(current_user)
+    )
 
 def _normalize_user_path_for_compare(path_value: str) -> str:
     """
@@ -956,7 +959,6 @@ def batch_move_edit():
     return flask.render_template('batch_move.html', title='Batch Move', form=form, choose_contents=choose_contents)
 
 
-@archiver.route("/batch_edit", methods=['GET', 'POST'])  # TODO remove
 @archiver.route("/api/consolidate_dirs", methods=['GET', 'POST'])
 @archiver.route("/consolidate_dirs", methods=['GET', 'POST'])
 def consolidate_dirs():
@@ -991,7 +993,7 @@ def consolidate_dirs():
     - `password` (str): The password of the user making the request. Provide in URL parameters, request headers, or form data.
     - `asset_path` (str): The path to the source directory containing the contents to be moved.
     - `destination_path` (str): The path to the destination directory where the contents will be moved.
-    - `remove_empty_dirs` (bool, optional): Option to remove the source directory after consolidation. Defaults to `False`.
+    - `remove_source` (bool, optional): Whether to remove the source directory after consolidation. Defaults to `True`.
 
     Returns:
     - **Web Interface**:
@@ -1003,8 +1005,8 @@ def consolidate_dirs():
       - On error: Returns a response with an appropriate status code and error message.
 
     Notes:
-    - When using the web form, users should fill in the fields `asset_path`, `destination_path`, and optionally `remove_empty_dirs`.
-    - For API requests, all parameters (`user`, `password`, `asset_path`, `destination_path`, `remove_empty_dirs`) can be supplied via URL parameters, request headers, or form data.
+    - When using the web form, users should fill in the fields `asset_path`, `destination_path`, and optionally the removal checkbox.
+    - For API requests, all parameters (`user`, `password`, `asset_path`, `destination_path`, `remove_source`) can be supplied via URL parameters, request headers, or form data. Boolean values must be `true` or `false` (case-insensitive).
     - Limits on the number of files and total data size affected by operations are configurable in the application settings. Users with `'ADMIN'` role are exempt from these limits.
     - If the user has admin permissions and includes the query parameter `test=true`, the consolidation task will execute synchronously for testing purposes.
     - The endpoint uses the `consolidate_dirs_edit_task` function to perform the consolidation operation.
@@ -1015,7 +1017,7 @@ def consolidate_dirs():
       - Parameters:
         - `asset_path=/path/to/source_directory`
         - `destination_path=/path/to/destination_directory`
-        - `remove_empty_dirs=true`
+        - `remove_source=true`
       - Provide authentication credentials (`user` and `password`).
     - **Consolidating directories via Web Form**:
       - Fill in `Path to Target Directory` with the source directory path.
@@ -1086,6 +1088,15 @@ def consolidate_dirs():
             else:
                 user_asset_path = utils.FlaskAppUtils.retrieve_request_param('asset_path', None)
                 user_destination_path = utils.FlaskAppUtils.retrieve_request_param('destination_path', None)
+                if utils.FlaskAppUtils.retrieve_request_param(
+                    'remove_empty_dirs', None
+                ) is not None:
+                    raise utils.RequestParameterValidationError(
+                        'remove_empty_dirs has been renamed to remove_source.'
+                    )
+                remove_asset = utils.FlaskAppUtils.retrieve_request_param(
+                    'remove_source', default_value=True, param_is_bool=True
+                )
             
             # if the user has not provided an asset path or destination path, raise an exception
             if not user_asset_path or not user_destination_path:
@@ -1156,6 +1167,16 @@ def consolidate_dirs():
                 nq_results['consolidation info'] = dirs_consolidation_info
                 nq_results = utils.serializable_dict(nq_results)
                 return flask.Response(json.dumps(nq_results), status=200)
+
+        except utils.RequestParameterValidationError as e:
+            if form_request:
+                return utils.FlaskAppUtils.web_exception_subroutine(
+                    flash_message="Invalid consolidation request",
+                    thrown_exception=e,
+                    app_obj=flask.current_app
+                )
+
+            return flask.Response(str(e), status=400)
 
         except Exception as e:
             m = "Error processing or executing batch change"
@@ -3107,8 +3128,9 @@ def scrape_location():
                 recursive = form.recursive.data
             else:
                 scrape_location_path = utils.FlaskAppUtils.retrieve_request_param('scrape_location')
-                recursive_param = utils.FlaskAppUtils.retrieve_request_param('recursive', 'True')
-                recursive = recursive_param.lower() in ['true', 't', 'yes', 'y', '1', 'True', True, 'Yes', 'YES', 'TRUE']
+                recursive = utils.FlaskAppUtils.retrieve_request_param(
+                    'recursive', default_value=True, param_is_bool=True
+                )
                 
                 if not scrape_location_path:
                     return flask.Response("Missing required parameter: scrape_location", status=400)

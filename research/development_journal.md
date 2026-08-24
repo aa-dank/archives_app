@@ -684,3 +684,30 @@ The route implementation, API introduction, and API specification were
 updated. No compatibility alias was retained; API clients must use the new
 path. Python compilation, documentation review, and `git diff --check` were
 performed. Follow-on: update any external API callers to `/api/file_info`.
+
+---
+
+## Entry 010 - Consolidation source-removal parameter rename
+**Date:** 2026-08-24<br>
+**Author:** OpenAI Codex (GPT-5)
+
+The `/api/consolidate_dirs` removal option is now named `remove_source`.
+API requests use it to control whether the empty source directory is removed;
+it defaults to the existing removal behavior and accepts `true` or `false`.
+The former `remove_empty_dirs` name is no longer accepted. Updated
+the route contract and request handling in `archives_application/archiver/routes.py`.
+Verification: Python compilation, stale-name search, and `git diff --check`.
+
+---
+
+## Entry 011 - Shared boolean request-parameter parsing
+**Date:** 2026-08-24<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Added opt-in strict boolean parsing to `FlaskAppUtils.retrieve_request_param`
+via `param_is_bool=True`. It preserves the existing request-source precedence,
+accepts actual JSON booleans and case-insensitive `true`/`false`, and raises a
+validation error for any other value. Consolidation, file-information,
+scrape-location, test-mode, and endpoint-index boolean parameters now use the
+shared parsing path. Verification: focused request-context checks, Python
+compilation, and `git diff --check`.

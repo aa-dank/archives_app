@@ -24,6 +24,11 @@ from typing import Union, List, Dict
 
 from archives_application.models import WorkerTaskModel, UserModel
 
+
+class RequestParameterValidationError(ValueError):
+    """Raised when a request parameter cannot be parsed as its requested type."""
+
+
 def contains_unicode(text):
     """
     Determine whether the provided text contains any non-ASCII (i.e., outside the 0x00–0x7F range) characters.
@@ -859,27 +864,54 @@ class FlaskAppUtils:
         return any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
     
     @staticmethod
-    def retrieve_request_param(param_name: str, default_value: str = None):
+    def retrieve_request_param(
+        param_name: str,
+        default_value=None,
+        *,
+        param_is_bool: bool = False,
+    ):
         """
-        Retrieves a parameter from the request. If the parameter is not found, the default value is returned.
+        Retrieve a parameter from the request, returning the default when absent.
+
         Looks in the URL query string, headers, form data, and a JSON object
         request body, in that order.
+
+        When ``param_is_bool`` is true, accepts JSON booleans or the strings
+        ``true`` and ``false`` (case-insensitive) and returns a Python bool.
+
         :param param_name: the name of the parameter to retrieve
         :param default_value: the value to return if the parameter is not found
+        :param param_is_bool: parse the parameter as a strict boolean
         :return: the value of the parameter or the default value
         """
         param_value = flask.request.args.get(param_name)
-        if not param_value:
+        if param_value is None:
             param_value = flask.request.headers.get(param_name)
-        if not param_value:
+        if param_value is None:
             param_value = flask.request.form.get(param_name)
-        if not param_value and flask.request.is_json:
+        if param_value is None and flask.request.is_json:
             json_data = flask.request.get_json(silent=True)
             if isinstance(json_data, dict):
                 param_value = json_data.get(param_name)
-        if not param_value:
-            param_value = default_value
-        return param_value
+        if param_value is None:
+            return default_value
+
+        if not param_is_bool:
+            return param_value
+
+        if isinstance(param_value, bool):
+            return param_value
+
+        if isinstance(param_value, str):
+            normalized_value = param_value.strip().lower()
+            if normalized_value == "true":
+                return True
+            if normalized_value == "false":
+                return False
+
+        raise RequestParameterValidationError(
+            f"{param_name} must be true or false."
+        )
     
     @staticmethod
     def api_exception_subroutine(response_message, thrown_exception):
