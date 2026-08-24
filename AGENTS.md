@@ -17,10 +17,6 @@ Postgres and Redis must be available locally or through Docker. The app also exp
 
 Use idiomatic Python with 4-space indentation, descriptive snake_case functions, and PascalCase model/classes. Keep route handlers thin: validate input, authorize access, then delegate filesystem or database work to helpers/tasks. For file paths, always convert user-supplied Windows/UNC paths with `FlaskAppUtils.user_path_to_app_path(...)` before IO, and return display paths with `FileServerUtils.user_path_from_db_data(...)`.
 
-## Testing Guidelines
-
-There is no formal test suite in the repository yet; `dev_files/sql_test.py` is an ad hoc helper. When adding tests, prefer `pytest`, place tests under `tests/`, and name files `test_<feature>.py`. For endpoints that enqueue background work, use the existing `?test=true` synchronous mode where available.
-
 ## Commit & Pull Request Guidelines
 
 Recent commits use short, direct subjects such as `fixed issue related to illegal chars...` or `removed redundant...`. Keep commits focused and use concise imperative or past-tense summaries. Pull requests should describe the user-facing change, note database/filesystem side effects, list manual verification steps, and include screenshots for template or CSS changes.

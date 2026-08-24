@@ -600,8 +600,10 @@ def endpoints_index():
         df = pd.DataFrame(data)
 
         # Check if 'spreadsheet' parameter is set to 'True'
-        spreadsheet_param = flask.request.args.get('spreadsheet', 'False')
-        if spreadsheet_param.lower() == 'true':
+        spreadsheet_param = utils.FlaskAppUtils.retrieve_request_param(
+            'spreadsheet', default_value=False, param_is_bool=True
+        )
+        if spreadsheet_param:
             # Return Excel file
             output = io.BytesIO()
             try:
