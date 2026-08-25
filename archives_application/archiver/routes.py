@@ -3,19 +3,23 @@
 import datetime
 import flask
 import flask_sqlalchemy
+import html
+import io
 import json
 import os
 import random
 import shutil
 import pandas as pd
-from datetime import timedelta
+from pathlib import PureWindowsPath
+from datetime import timedelta, datetime
 from flask_login import login_required, current_user
 from sqlalchemy import func
-from urllib import parse
 
 
 # imports from this application
 import archives_application.archiver.forms as archiver_forms
+from archives_application.archiver import archive_search as archive_search_service
+from archives_application.archiver import file_info as file_info_service
 from archives_application.archiver.archival_file import ArchivalFile
 from archives_application import utils
 from archives_application.models import *
@@ -26,6 +30,157 @@ archiver = flask.Blueprint('archiver', __name__)
 
 EXCLUDED_FILENAMES = ['Thumbs.db', 'thumbs.db', 'desktop.ini']
 EXCLUDED_FILE_EXTENSIONS = ['DS_Store', '.ini', '.git']
+FILE_INFO_API_PARAMETERS = {
+    "file_hash",
+    "user_path",
+    "include_text",
+    "include_user_paths",
+}
+
+
+def _file_info_api_error(status_code: int, message: str):
+    """Return a consistent JSON error response for the file-information API."""
+    return flask.jsonify({"error": message}), status_code
+
+
+def _file_info_api_user():
+    """Authenticate a GET API caller with a session or HTTP Basic credentials."""
+    if current_user.is_authenticated and getattr(current_user, "active", False):
+        return current_user
+
+    authorization = flask.request.authorization
+    if not authorization or authorization.type.lower() != "basic":
+        return None
+    if not isinstance(authorization.username, str) or not isinstance(authorization.password, str):
+        return None
+
+    user = UserModel.query.filter_by(email=authorization.username).first()
+    if (
+        user
+        and user.active
+        and user.password
+        and bcrypt.check_password_hash(user.password, authorization.password)
+    ):
+        return user
+    return None
+
+
+def _file_info_api_boolean_parameter(name: str) -> bool:
+    """Parse one optional API boolean while rejecting repeated or malformed values."""
+    values = flask.request.args.getlist(name)
+    if not values:
+        return False
+    if len(values) != 1:
+        raise file_info_service.FileInfoAPIValidationError(
+            f"Query parameter '{name}' may appear only once."
+        )
+    try:
+        return utils.FlaskAppUtils.retrieve_request_param(
+            name,
+            default_value=False,
+            param_is_bool=True,
+        )
+    except utils.RequestParameterValidationError as error:
+        raise file_info_service.FileInfoAPIValidationError(str(error)) from error
+
+
+def _file_info_api_selector() -> tuple[str, str]:
+    """Return the one required file selector from a validated request."""
+    unknown_parameters = set(flask.request.args) - FILE_INFO_API_PARAMETERS
+    if unknown_parameters:
+        raise file_info_service.FileInfoAPIValidationError(
+            f"Unsupported query parameter: {sorted(unknown_parameters)[0]}."
+        )
+
+    for name in FILE_INFO_API_PARAMETERS:
+        if len(flask.request.args.getlist(name)) > 1:
+            raise file_info_service.FileInfoAPIValidationError(
+                f"Query parameter '{name}' may appear only once."
+            )
+
+    selectors = []
+    for name in ("file_hash", "user_path"):
+        values = flask.request.args.getlist(name)
+        if values:
+            value = values[0].strip()
+            if not value:
+                raise file_info_service.FileInfoAPIValidationError(
+                    f"Query parameter '{name}' must not be empty."
+                )
+            selectors.append((name, value))
+
+    if len(selectors) != 1:
+        raise file_info_service.FileInfoAPIValidationError(
+            "Exactly one of file_hash or user_path is required."
+        )
+    return selectors[0]
+
+
+@archiver.route("/api/file_info", methods=["GET"])
+def file_info_api():
+    """Return authenticated JSON file information by canonical hash or user path."""
+    if _file_info_api_user() is None:
+        return _file_info_api_error(401, "Unauthorized.")
+
+    try:
+        selector_name, selector_value = _file_info_api_selector()
+        include_text = _file_info_api_boolean_parameter("include_text")
+        include_user_paths = _file_info_api_boolean_parameter("include_user_paths")
+        file_hash = (
+            selector_value
+            if selector_name == "file_hash"
+            else file_info_service.resolve_user_path_to_file_hash(
+                path_value=selector_value,
+                app=flask.current_app,
+            )
+        )
+    except file_info_service.FileInfoAPIValidationError as error:
+        return _file_info_api_error(400, str(error))
+    except file_info_service.AmbiguousFileLocationError as error:
+        return _file_info_api_error(409, str(error))
+
+    if file_hash is None:
+        return _file_info_api_error(404, "File not found.")
+
+    try:
+        api_data = file_info_service.get_file_info_api(
+            file_hash=file_hash,
+            app=flask.current_app,
+            include_text=include_text,
+            include_user_paths=include_user_paths,
+        )
+        if api_data is None:
+            return _file_info_api_error(404, "File not found.")
+        response = flask.jsonify(api_data)
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+    except Exception:
+        flask.current_app.logger.error("File information API request failed", exc_info=True)
+        return _file_info_api_error(500, "Unable to retrieve file information.")
+
+
+@archiver.route("/file_info/<file_hash>", methods=["GET"])
+def file_info(file_hash):
+    """Render public file metadata and an authenticated extracted-text window."""
+    can_view_text = file_info_service.can_view_file_text(current_user)
+    file_info_data = file_info_service.get_file_info(
+        file_hash=file_hash,
+        app=flask.current_app,
+        include_text=can_view_text,
+    )
+    if file_info_data is None:
+        flask.abort(404)
+
+    response = flask.make_response(flask.render_template(
+        "file_info.html",
+        title=f"File Information: {file_info_data['display_filename']}",
+        file_info=file_info_data,
+        can_view_text=can_view_text,
+        login_url=flask.url_for("users.choose_login", next=flask.request.full_path),
+    ))
+    if can_view_text:
+        response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
     """
@@ -58,7 +213,6 @@ def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
     db.session.commit()
     return file_deleted
 
-
 def get_user_handle():
     '''
     user's email handle without the rest of the address (eg dilbert.dogbert@ucsc.edu would return dilbert.dogbert)
@@ -66,14 +220,12 @@ def get_user_handle():
     '''
     return current_user.email.split("@")[0]
 
-
 def exclude_extensions(f_path, extensions_list=EXCLUDED_FILE_EXTENSIONS):
     """
     checks filepath to see if it is using excluded extensions
     """
     filename = utils.FileServerUtils.split_path(f_path)[-1].lower()
     return any([filename.endswith(ext.lower()) for ext in extensions_list])
-
 
 def exclude_filenames(f_path, excluded_names=EXCLUDED_FILENAMES):
     """
@@ -92,7 +244,7 @@ def cleanse_locations_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df['filepath'] = df.apply(lambda row: (row['file_server_directories'] + "/" + row['filename']), axis=1)
     return df[['filepath']]
 
-def get_current_user_inbox_files():
+def get_current_user_inbox_files(include_enqueued=False):
     """
     Returns a list of files in the inbox directory to be processed.
     """
@@ -116,7 +268,7 @@ def get_current_user_inbox_files():
             continue
         
         # check if the file has already been enqueued for processing
-        if thing in user_enqueued_files:
+        if not include_enqueued and thing in user_enqueued_files:
             continue
 
         inbox_files.append(thing)
@@ -128,9 +280,244 @@ def is_test_request():
     Determines if the request is a test request.
     Usually test request are for testing tasks that would otherwise get enqueued for execution by worker process.
     """
-    return utils.FlaskAppUtils.retrieve_request_param('test', None) \
-        and utils.FlaskAppUtils.retrieve_request_param('test').lower() == 'true' \
+    return (
+        utils.FlaskAppUtils.retrieve_request_param(
+            'test', default_value=False, param_is_bool=True
+        )
         and utils.FlaskAppUtils.has_admin_role(current_user)
+    )
+
+def _normalize_user_path_for_compare(path_value: str) -> str:
+    """
+    Normalize a user-supplied path for safe comparisons (case-insensitive, no trailing separators).
+    Uses Windows path semantics to match user input conventions.
+    """
+    if not path_value:
+        return ''
+    return str(PureWindowsPath(path_value)).rstrip('\\/').lower()
+
+def _path_starts_with_user_mount(path_value: str, user_mount: str) -> bool:
+    """
+    Return True when path_value is at or under user_mount using Windows path semantics.
+    """
+    if not user_mount:
+        return True
+    if not path_value:
+        return False
+
+    path_parts = [p.rstrip('\\/').lower() for p in PureWindowsPath(path_value).parts if p not in ['\\', '/']]
+    mount_parts = [p.rstrip('\\/').lower() for p in PureWindowsPath(user_mount).parts if p not in ['\\', '/']]
+    if not mount_parts:
+        return True
+    if len(path_parts) < len(mount_parts):
+        return False
+    return path_parts[:len(mount_parts)] == mount_parts
+
+def _format_bytes(byte_count: int) -> str:
+    """
+    Format a byte count into a human-readable string.
+    """
+    if byte_count is None:
+        return "0 B"
+    value = float(byte_count)
+    for unit in ["B", "KB", "MB", "GB", "TB", "PB"]:
+        if value < 1024.0 or unit == "PB":
+            if unit == "B":
+                return f"{int(value)} {unit}"
+            return f"{value:.1f} {unit}"
+        value /= 1024.0
+    return f"{int(byte_count)} B"
+
+def _build_dir_contents_summary_df(user_path: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+    """
+    Build a summary dataframe for immediate children of the provided user path.
+    Uses the database for aggregation and filesystem only for timestamps.
+    """
+    archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
+    user_archives_location = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+
+    if not _path_starts_with_user_mount(path_value=user_path, user_mount=user_archives_location):
+        raise ValueError(f"Path must start with configured user mount point: {user_archives_location}")
+
+    resolved_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=user_path, app=flask.current_app)
+
+    # Ensure the resolved path is a valid directory within the archives root.
+    if not os.path.isdir(resolved_path):
+        raise ValueError(f"Path is not a directory: {resolved_path}")
+
+    archives_location_abs = os.path.abspath(archives_location)
+    resolved_abs = os.path.abspath(resolved_path)
+    if os.path.commonpath([archives_location_abs, resolved_abs]) != archives_location_abs:
+        raise ValueError(f"Path is outside archives location: {resolved_path}")
+
+    db_dir, db_dir_norm = utils.FileServerUtils.app_path_to_db_dir(resolved_path, archives_location_abs)
+
+    locations_query = db.session.query(
+        FileLocationModel.file_server_directories,
+        FileLocationModel.filename,
+        FileModel.hash,
+        FileModel.size,
+        FileContentModel.text_length
+    ).join(FileModel, FileLocationModel.file_id == FileModel.id
+    ).outerjoin(FileContentModel, FileModel.hash == FileContentModel.file_hash)
+
+    # Fetch all rows under the directory prefix (single query per view).
+    # Include both files directly in the target dir (exact match on db_dir) and files in subdirectories
+    # (LIKE db_dir_norm%). Without the OR, files whose file_server_directories == db_dir (no trailing slash)
+    # are silently excluded by the LIKE filter alone.
+    locations_query = locations_query.filter(FileLocationModel.file_server_directories.isnot(None))
+    if db_dir_norm:
+        from sqlalchemy import or_ as _or
+        locations_query = locations_query.filter(
+            _or(
+                FileLocationModel.file_server_directories == db_dir,
+                FileLocationModel.file_server_directories.like(f"{db_dir_norm}%")
+            )
+        )
+
+    # Note: folder counts and presence are derived solely from file rows; empty folders are not represented.
+    aggregates = {}
+    current_path_file_rows = []
+    all_recursive_file_rows = []
+    unique_descendant_dirs = set()
+    total_files = 0
+    total_size_bytes = 0
+
+    for dir_path, filename, file_hash, size, text_length in locations_query:
+        if not dir_path:
+            continue
+        dir_path = dir_path.replace('\\', '/')
+        if db_dir_norm:
+            if dir_path == db_dir:
+                # File is directly in the target directory (stored without trailing slash).
+                relative_tail = ''
+            elif dir_path.startswith(db_dir_norm):
+                relative_tail = dir_path[len(db_dir_norm):]
+            else:
+                continue
+        else:
+            relative_tail = dir_path
+
+        file_size = int(size) if size else 0
+        total_files += 1
+        total_size_bytes += file_size
+
+        file_directory_user_path = user_path if relative_tail == '' else str(PureWindowsPath(user_path) / relative_tail)
+        file_full_user_path = str(PureWindowsPath(file_directory_user_path) / filename) if filename else file_directory_user_path
+        all_recursive_file_rows.append({
+            "Directory": file_directory_user_path,
+            "Filename": filename,
+            "File Path": file_full_user_path,
+            "Size": _format_bytes(file_size),
+            "Size Bytes": file_size,
+            "Extracted Text Length (characters)": text_length if text_length is not None else "",
+        })
+
+        if relative_tail == '':
+            if not filename:
+                continue
+            current_path_file_rows.append({
+                "Filename": filename,
+                "Size": _format_bytes(file_size),
+                "Extracted Text Length (characters)": text_length if text_length is not None else "",
+                "_file_hash": file_hash,
+                "_size_bytes": file_size,
+            })
+            continue
+
+        child_dir = relative_tail.split('/')[0]
+        unique_descendant_dirs.add(relative_tail)
+        depth_segments = relative_tail.split('/')
+        internal_depth = max(len(depth_segments) - 1, 0)
+        # All descendants under the same immediate child directory are aggregated together.
+        key = child_dir
+        agg = aggregates.get(key)
+        if not agg:
+            agg = {
+                "name": child_dir,
+                "file_count": 0,
+                "total_size": 0,
+                "dir_set": {child_dir},
+                "max_depth": 0,
+            }
+            aggregates[key] = agg
+        agg["file_count"] += 1
+        agg["total_size"] += file_size
+        agg["dir_set"].add(relative_tail)
+        if internal_depth > agg["max_depth"]:
+            agg["max_depth"] = internal_depth
+
+    parent_total = total_size_bytes
+    rows = []
+    for agg in aggregates.values():
+        file_count = agg["file_count"]
+        total_size = agg["total_size"]
+        # Build drill-down URL using user-visible path conventions.
+        child_db_dir = f"{db_dir_norm}{agg['name']}" if db_dir_norm else agg['name']
+        child_user_path = utils.FileServerUtils.user_path_from_db_data(
+            file_server_directories=child_db_dir,
+            user_archives_location=user_archives_location,
+            user_location_networked=False
+        )
+        name_display = f"<a href=\"{flask.url_for('archiver.dir_contents_summary', path=child_user_path)}\">{agg['name']}</a>"
+        folder_count = max(len(agg["dir_set"]) - 1, 0)
+
+        percent_of_parent = 0.0 if parent_total == 0 else round((total_size / parent_total) * 100, 1)
+
+        rows.append({
+            "Name": name_display,
+            "# Files": file_count,
+            "# Folders": folder_count,
+            "Depth": agg.get("max_depth", 0),
+            "Size": _format_bytes(total_size),
+            "% of Current": f"{percent_of_parent:.1f}%",
+            "_size_bytes": total_size,
+        })
+
+    summary_df = pd.DataFrame(rows)
+    if not summary_df.empty:
+        summary_df.sort_values(by="_size_bytes", ascending=False, inplace=True)
+        summary_df.drop(columns=["_size_bytes"], inplace=True)
+
+    current_files_df = pd.DataFrame(current_path_file_rows)
+    if not current_files_df.empty:
+        current_files_df.sort_values(by="_size_bytes", ascending=False, inplace=True)
+        current_files_df.drop(columns=["_size_bytes"], inplace=True)
+        current_files_df.sort_values(by="Filename", inplace=True)
+
+    all_recursive_files_df = pd.DataFrame(all_recursive_file_rows)
+    if not all_recursive_files_df.empty:
+        all_recursive_files_df.sort_values(by="Size Bytes", ascending=False, inplace=True)
+        all_recursive_files_df.sort_values(by="Filename", inplace=True)
+
+    current_path_size_bytes = sum(row["_size_bytes"] for row in current_path_file_rows)
+
+    summary_stats = {
+        "Total Files (Current Path + Subfolders)": f"{total_files:,}",
+        "Total Size (Current Path + Subfolders)": _format_bytes(total_size_bytes),
+        "Total Size (GB)": f"{round(total_size_bytes / (1024 ** 3), 3):,.3f}",
+        "Child Directories": f"{len(aggregates):,}",
+        "Subfolders (All Levels)": f"{len(unique_descendant_dirs):,}",
+        "Files in Current Path": f"{len(current_path_file_rows):,}",
+        "Size in Current Directory": _format_bytes(current_path_size_bytes),
+    }
+
+    user_root_norm = _normalize_user_path_for_compare(user_archives_location)
+    user_path_norm = _normalize_user_path_for_compare(user_path)
+    parent_path = None
+    if user_path_norm and user_path_norm != user_root_norm:
+        # Parent path is computed in user-path space to preserve user expectations.
+        parent_path_candidate = str(PureWindowsPath(user_path).parent)
+        parent_path_candidate_norm = _normalize_user_path_for_compare(parent_path_candidate)
+        if parent_path_candidate_norm and parent_path_candidate_norm != user_path_norm:
+            parent_path = parent_path_candidate
+
+    context = {
+        "user_path": user_path,
+        "parent_path": parent_path,
+        "summary_stats": summary_stats,
+    }
+    return summary_df, current_files_df, all_recursive_files_df, context
 
 
 @archiver.route("/api/server_change", methods=['GET', 'POST'])
@@ -264,11 +651,7 @@ def server_change():
             user_email = user.email
             user_is_admin = utils.FlaskAppUtils.has_admin_role(user)
             new_path = utils.FlaskAppUtils.retrieve_request_param('new_path')
-            if new_path:
-                new_path = parse.unquote(new_path)
             old_path = utils.FlaskAppUtils.retrieve_request_param('old_path')
-            if old_path:
-                old_path = parse.unquote(old_path)
             edit_type = utils.FlaskAppUtils.retrieve_request_param('edit_type')
             
 
@@ -575,7 +958,6 @@ def batch_move_edit():
     return flask.render_template('batch_move.html', title='Batch Move', form=form, choose_contents=choose_contents)
 
 
-@archiver.route("/batch_edit", methods=['GET', 'POST'])  # TODO remove
 @archiver.route("/api/consolidate_dirs", methods=['GET', 'POST'])
 @archiver.route("/consolidate_dirs", methods=['GET', 'POST'])
 def consolidate_dirs():
@@ -610,7 +992,7 @@ def consolidate_dirs():
     - `password` (str): The password of the user making the request. Provide in URL parameters, request headers, or form data.
     - `asset_path` (str): The path to the source directory containing the contents to be moved.
     - `destination_path` (str): The path to the destination directory where the contents will be moved.
-    - `remove_empty_dirs` (bool, optional): Option to remove the source directory after consolidation. Defaults to `False`.
+    - `remove_source` (bool, optional): Whether to remove the source directory after consolidation. Defaults to `True`.
 
     Returns:
     - **Web Interface**:
@@ -622,8 +1004,8 @@ def consolidate_dirs():
       - On error: Returns a response with an appropriate status code and error message.
 
     Notes:
-    - When using the web form, users should fill in the fields `asset_path`, `destination_path`, and optionally `remove_empty_dirs`.
-    - For API requests, all parameters (`user`, `password`, `asset_path`, `destination_path`, `remove_empty_dirs`) can be supplied via URL parameters, request headers, or form data.
+    - When using the web form, users should fill in the fields `asset_path`, `destination_path`, and optionally the removal checkbox.
+    - For API requests, all parameters (`user`, `password`, `asset_path`, `destination_path`, `remove_source`) can be supplied via URL parameters, request headers, or form data. Boolean values must be `true` or `false` (case-insensitive).
     - Limits on the number of files and total data size affected by operations are configurable in the application settings. Users with `'ADMIN'` role are exempt from these limits.
     - If the user has admin permissions and includes the query parameter `test=true`, the consolidation task will execute synchronously for testing purposes.
     - The endpoint uses the `consolidate_dirs_edit_task` function to perform the consolidation operation.
@@ -634,7 +1016,7 @@ def consolidate_dirs():
       - Parameters:
         - `asset_path=/path/to/source_directory`
         - `destination_path=/path/to/destination_directory`
-        - `remove_empty_dirs=true`
+        - `remove_source=true`
       - Provide authentication credentials (`user` and `password`).
     - **Consolidating directories via Web Form**:
       - Fill in `Path to Target Directory` with the source directory path.
@@ -705,6 +1087,15 @@ def consolidate_dirs():
             else:
                 user_asset_path = utils.FlaskAppUtils.retrieve_request_param('asset_path', None)
                 user_destination_path = utils.FlaskAppUtils.retrieve_request_param('destination_path', None)
+                if utils.FlaskAppUtils.retrieve_request_param(
+                    'remove_empty_dirs', None
+                ) is not None:
+                    raise utils.RequestParameterValidationError(
+                        'remove_empty_dirs has been renamed to remove_source.'
+                    )
+                remove_asset = utils.FlaskAppUtils.retrieve_request_param(
+                    'remove_source', default_value=True, param_is_bool=True
+                )
             
             # if the user has not provided an asset path or destination path, raise an exception
             if not user_asset_path or not user_destination_path:
@@ -775,6 +1166,16 @@ def consolidate_dirs():
                 nq_results['consolidation info'] = dirs_consolidation_info
                 nq_results = utils.serializable_dict(nq_results)
                 return flask.Response(json.dumps(nq_results), status=200)
+
+        except utils.RequestParameterValidationError as e:
+            if form_request:
+                return utils.FlaskAppUtils.web_exception_subroutine(
+                    flash_message="Invalid consolidation request",
+                    thrown_exception=e,
+                    app_obj=flask.current_app
+                )
+
+            return flask.Response(str(e), status=400)
 
         except Exception as e:
             m = "Error processing or executing batch change"
@@ -885,9 +1286,13 @@ def upload_file():
                 
                 # if a location path was provided we do not record the filing code
                 recorded_filing_code = arch_file.file_code if not form.destination_path.data else None
+                recorded_destination_path = utils.FileServerUtils.archive_relative_path(
+                    arch_file.get_destination_path(),
+                    flask.current_app.config.get('ARCHIVES_LOCATION')
+                )
                 
                 # add the archiving event to the database
-                archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
+                archived_file = ArchivedFileModel(destination_path=recorded_destination_path,
                                                   project_number=arch_file.project_number,
                                                   date_archived=datetime.now(),
                                                   document_date=form.document_date.data,
@@ -908,7 +1313,12 @@ def upload_file():
                                                                 task_kwargs=add_file_kwargs,
                                                                 timeout=None)
                 
-                flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
+                user_destination_path = utils.FileServerUtils.app_path_to_user_path(
+                    arch_file.get_destination_path(),
+                    flask.current_app.config.get('ARCHIVES_LOCATION'),
+                    flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+                )
+                flask.flash(f'File archived here: \n{user_destination_path}', 'success')
                 return flask.redirect(flask.url_for('archiver.upload_file'))
 
             else:
@@ -1082,10 +1492,14 @@ def upload_file_api():
             
             # If a location path was provided we do not record the filing code
             recorded_filing_code = arch_file.file_code if not destination_path else None
+            recorded_destination_path = utils.FileServerUtils.archive_relative_path(
+                arch_file.get_destination_path(),
+                flask.current_app.config.get('ARCHIVES_LOCATION')
+            )
             
             # Add the archiving event to the database
             archived_file = ArchivedFileModel(
-                destination_path=arch_file.get_destination_path(),
+                destination_path=recorded_destination_path,
                 project_number=arch_file.project_number,
                 date_archived=datetime.now(),
                 document_date=document_date,
@@ -1263,7 +1677,7 @@ def inbox_item():
         if str_filepath_extension(arch_file_filename) in ['pdf']:
             try:
                 arch_file_preview_image_path = utils.FilesUtils.pdf_preview_image(pdf_path=arch_file_path,
-                                                                              image_destination=utils.FlaskAppUtils.create_temp_filepath(''))
+                                                                                  image_destination=utils.FlaskAppUtils.create_temp_filepath(''))
                 preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.FileServerUtils.split_path(arch_file_preview_image_path)[-1])
                 preview_generated = True
             
@@ -1383,9 +1797,13 @@ def inbox_item():
                 try:
                     # if a location path was provided we do not record the filing code
                     recorded_filing_code = arch_file.file_code if not form.destination_path.data else None
+                    recorded_destination_path = utils.FileServerUtils.archive_relative_path(
+                        arch_file.get_destination_path(),
+                        flask.current_app.config.get('ARCHIVES_LOCATION')
+                    )
 
                     # add the archiving event to the database
-                    archived_file = ArchivedFileModel(destination_path=arch_file.get_destination_path(),
+                    archived_file = ArchivedFileModel(destination_path=recorded_destination_path,
                                                       archivist_id=current_user.id,
                                                       project_number=arch_file.project_number,
                                                       date_archived=datetime.now(),
@@ -1407,7 +1825,12 @@ def inbox_item():
                     # make sure that the old file has been removed
                     if os.path.exists(arch_file_path):
                         os.remove(arch_file_path)
-                    flask.flash(f'File archived here: \n{arch_file.get_destination_path()}', 'success')
+                    user_destination_path = utils.FileServerUtils.app_path_to_user_path(
+                        arch_file.get_destination_path(),
+                        flask.current_app.config.get('ARCHIVES_LOCATION'),
+                        flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+                    )
+                    flask.flash(f'File archived here: \n{user_destination_path}', 'success')
 
                 except Exception as e:
                     # if the file wasn't deleted...
@@ -1436,6 +1859,7 @@ def inbox_item():
             thrown_exception=e,
             app_obj=flask.current_app
         )
+
 
 @archiver.route("/batch_process_inbox", methods=['GET', 'POST'])
 @utils.FlaskAppUtils.roles_required(['ADMIN', 'ARCHIVIST'])
@@ -1476,7 +1900,18 @@ def batch_process_inbox():
     - POST request: Submit the form with selected files, project_number, and destination parameters to enqueue the archiving task.
     """
     from archives_application.archiver.archiver_tasks import batch_process_inbox_task
-
+    
+    def update_session_enqueued_files():
+        """Updates the session to remove files that are no longer in the user's inbox from 'files_enqueued_in_batch'."""
+        if flask.session.get(current_user.email) and flask.session[current_user.email].get('files_enqueued_in_batch'):
+            user_inbox_files = get_current_user_inbox_files(include_enqueued=True)
+            enqueued_files = flask.session[current_user.email]['files_enqueued_in_batch']
+            updated_enqueued_files = [f for f in enqueued_files if f in user_inbox_files]
+            
+            # if any files were removed, update the session
+            if len(updated_enqueued_files) != len(enqueued_files):
+                flask.session[current_user.email]['files_enqueued_in_batch'] = updated_enqueued_files
+                flask.session.modified = True
     try:
         # determine if the request is for testing the associated worker task
         testing = is_test_request()
@@ -1493,12 +1928,13 @@ def batch_process_inbox():
         user_inbox_path = os.path.join(inbox_path, get_user_handle())
         if not os.path.exists(user_inbox_path):
             os.makedirs(user_inbox_path)
-        
+
         form = archiver_forms.BatchInboxItemsForm()
         # We need to determine which files ave already been enqueued in a batch archiving process and not include them in the form
         # for the user to select again. We also need to remove any files that have been archived (thus not in the inbox) in a batch 
         # process from the session.
         user_inbox_files = get_current_user_inbox_files()
+        update_session_enqueued_files()
 
         # if not user_inbox_files, return to the home page with a message
         if not user_inbox_files:
@@ -1518,7 +1954,7 @@ def batch_process_inbox():
             # get the selected files from the form and add them to the session so they can be removed from the subsequent form render
             selected_files = form.items_to_archive.data
             if selected_files:
-                if not flask.session.get(current_user.email).get('files_enqueued_in_batch', None):
+                if not flask.session.get(current_user.email, {}).get('files_enqueued_in_batch', None):
                     flask.session[current_user.email]['files_enqueued_in_batch'] = []
                 flask.session[current_user.email]['files_enqueued_in_batch'] += selected_files
 
@@ -1530,6 +1966,7 @@ def batch_process_inbox():
                                     'destination_path': form.destination_path.data,
                                     'notes': form.notes.data}
             
+            # if the request is for testing, we will run the task synchronously and return the results as json
             if testing:
                 test_task_id = f"{batch_process_inbox_task.__name__}_test_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 new_task_record = WorkerTaskModel(task_id=test_task_id,
@@ -2081,168 +2518,490 @@ def test_confirm_files():
         return flask.redirect(flask.url_for('main.home'))
 
 
-@archiver.route("/file_search", methods=['GET', 'POST'])
-def file_search():
-    """Searches for files in the database based on the provided search criteria.
+@archiver.route("/dir_contents_summary", methods=['GET', 'POST'])
+def dir_contents_summary():
+    """
+    Render a directory contents summary table for the requested path.
+    """
+    form = archiver_forms.DirContentsSummaryForm()
+    user_path = None
 
-    This endpoint allows users to search for files by filename, with options to include directory name matches
-    and filter results by specific search locations. The search can be limited to filenames only or include
-    directory names as well. Additionally, users can download the search results as a spreadsheet if the
-    number of results exceeds a predefined limit.
+    if flask.request.method == 'GET' and utils.FlaskAppUtils.retrieve_request_param('path'):
+        user_path = utils.FlaskAppUtils.retrieve_request_param('path')
+    elif form.validate_on_submit():
+        user_path = form.path.data
+    elif flask.request.method == 'POST':
+        return flask.render_template('dir_contents_summary_form.html', title='Directory Contents Summary', form=form)
+    else:
+        return flask.render_template('dir_contents_summary_form.html', title='Directory Contents Summary', form=form)
 
-    Args:
-        None
+    try:
+        summary_df, current_files_df, _, context = _build_dir_contents_summary_df(user_path=user_path)
+        summary_table_html = None if summary_df.empty else utils.html_table_from_df(
+            df=summary_df,
+            html_columns=['Name']
+        )
+        
+        # Apply 300-file safety cap for HTML rendering
+        files_exceed_limit = len(current_files_df) > 300
+        current_files_table_html = None
+        if not current_files_df.empty:
+            if not files_exceed_limit:
+                current_files_display_df = current_files_df.copy()
+                current_files_display_df["Filename"] = current_files_display_df.apply(
+                    lambda row: (
+                        f'<a href="{html.escape(flask.url_for("archiver.file_info", file_hash=row["_file_hash"]), quote=True)}">'
+                        f'{html.escape(str(row["Filename"]))}</a>'
+                    ),
+                    axis=1,
+                )
+                current_files_display_df.drop(columns=["_file_hash"], inplace=True)
+                current_files_table_html = utils.html_table_from_df(
+                    df=current_files_display_df,
+                    html_columns=["Filename"],
+                )
+                current_files_table_html = current_files_table_html.replace(
+                    '<th>Extracted Text Length (characters)</th>',
+                    '<th>Extracted Text Length (characters) '
+                    '<span title="Number of extracted-text characters stored in the database for this file.\nBlank if no text has been stored." '
+                    'style="cursor: help; font-weight: normal;">&#9432;</span></th>'
+                )
+        
+        context['files_exceed_limit'] = files_exceed_limit
+        context['current_files_count'] = len(current_files_df)
+        
+        return flask.render_template(
+            'dir_contents_summary.html',
+            title='Directory Contents Summary',
+            summary_table_html=summary_table_html,
+            current_files_table_html=current_files_table_html,
+            **context
+        )
+    except Exception as e:
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="Error building directory contents summary: ",
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
 
-    Form Data:
-        search_term (str): The keyword or phrase to search for in filenames.
-        filename_only (bool): If true, only filenames are matched. If false, directory names are also included in the search.
-        search_location (str): The specific directory path to limit the search. Must be copied from the Windows File Explorer address bar.
 
-    Query Parameters:
-        timestamp (str, optional): The timestamp associated with a previous search's CSV results. Used to retrieve and download the corresponding spreadsheet.
+@archiver.route("/dir_contents_summary/download", methods=['GET'])
+def dir_contents_summary_download():
+    """
+    Download the current directory contents summary as a multi-sheet Excel file.
+    """
+    user_path = utils.FlaskAppUtils.retrieve_request_param('path')
+    if not user_path:
+        flask.flash("Please provide a directory path to download.", 'warning')
+        return flask.redirect(flask.url_for('archiver.dir_contents_summary'))
 
-    Headers:
-        Content-Type (str): Should be 'application/x-www-form-urlencoded' or 'application/json'.
-        Cookie: Session cookie for user authentication.
-        Note: Request parameters can be sent either via form data, URL query parameters, or request headers.
+    try:
+        summary_df, current_files_df, all_recursive_files_df, _ = _build_dir_contents_summary_df(user_path=user_path)
 
-    Returns:
-        Response:
-            - On GET request:
-                - Renders 'file_search.html' template displaying the search form.
-            - On POST request without 'timestamp':
-                - Performs the file search based on the provided form data.
-                - If the number of search results exceeds the `html_table_row_limit`, generates a CSV file and provides a download link.
-                - Renders 'file_search_results.html' template displaying the search results in an HTML table and a link to download the full results as a spreadsheet.
-            - On GET or POST request with 'timestamp':
-                - Attempts to retrieve the corresponding CSV file for the provided timestamp.
-                - If the CSV file exists, sends the file as an attachment for download.
-                - If the CSV file does not exist, flashes an error message and redirects to the home page.
+        child_directories_df = summary_df.copy()
+        if not child_directories_df.empty and 'Name' in child_directories_df.columns:
+            child_directories_df['Name'] = child_directories_df['Name'].replace(r'<a [^>]*>', '', regex=True)
+            child_directories_df['Name'] = child_directories_df['Name'].replace('</a>', '', regex=False)
 
-    Usage:
-        - Users navigate to this endpoint to search for files within the archives.
-        - **Performing a Search:**
-            - Enter a search term in the 'Filename Search' field.
-            - Optionally, check the 'Filename Only' checkbox to restrict the search to filenames.
-            - Enter the exact search location path copied from the Windows File Explorer address bar.
-            - Submit the form to view the search results.
-        - **Downloading Search Results:**
-            - If the search yields a large number of results, a message will prompt the user to download the complete results as a spreadsheet.
-            - Click the provided download link to retrieve the CSV file containing all search results.
+        current_directory_files_df = current_files_df.drop(columns=["_file_hash"], errors="ignore").copy()
 
-    Raises:
-        - Redirects with a flash message if:
-            - The CSV file associated with the provided timestamp does not exist.
-            - An error occurs while processing the search or generating the CSV file.
+        recursive_files_df = all_recursive_files_df.copy()
+        if not recursive_files_df.empty and 'Size Bytes' in recursive_files_df.columns:
+            recursive_files_df.sort_values(by='Size Bytes', ascending=False, inplace=True)
+
+        timestamp = datetime.now().strftime(r'%Y%m%d%H%M%S')
+        filename = f"dir_contents_summary_{timestamp}.xlsx"
+        output = io.BytesIO()
+
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            child_directories_df.to_excel(writer, index=False, sheet_name='Child Directories')
+            current_directory_files_df.to_excel(writer, index=False, sheet_name='Files in Current Dir')
+            recursive_files_df.to_excel(writer, index=False, sheet_name='All Files Recursive')
+
+        output.seek(0)
+        return flask.send_file(
+            output,
+            download_name=filename,
+            as_attachment=True,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    except Exception as e:
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="Error downloading directory contents summary: ",
+            thrown_exception=e,
+            app_obj=flask.current_app
+        )
+
+
+def _archive_search_api_error(status_code: int, message: str):
+    """Return a consistent JSON error response for the archives search API."""
+    return flask.jsonify({"error": message}), status_code
+
+
+def _archive_search_api_user(payload: dict):
+    """Authenticate an API caller using the application's existing user/password pattern."""
+    credentials_supplied = "user" in payload or "password" in payload
+    if credentials_supplied:
+        user_email = payload.get("user")
+        password = payload.get("password")
+        if not isinstance(user_email, str) or not isinstance(password, str):
+            return None
+
+        user = UserModel.query.filter_by(email=user_email).first()
+        if user and user.password and bcrypt.check_password_hash(user.password, password):
+            return user
+        return None
+
+    if current_user.is_authenticated:
+        return current_user
+    return None
+
+
+@archiver.route("/api/archives_search", methods=["POST"])
+def archives_search_api():
+    """Search indexed archives and return canonical file-level JSON results.
+
+    ``POST /api/archives_search`` is the programmatic counterpart to the HTML
+    ``/archives_search`` workflow. It searches indexed filenames, directory
+    paths, extracted document text, or a combination of those sources. Search
+    results are grouped by file hash: a file stored at several archive locations
+    is returned once rather than once per location.
+
+    Authentication:
+        Send ``user`` and ``password`` in the JSON request body, using an
+        existing application user account. A request made with an authenticated
+        application session may omit those fields. Missing or invalid credentials
+        return ``401``. The endpoint records successful and failed executions in
+        ``archive_search_runs`` with ``request_source`` set to ``"api"``.
+
+    Request format:
+        The endpoint accepts only ``POST`` requests with
+        ``Content-Type: application/json``. The JSON body must be an object and
+        may contain only these fields:
+
+        - ``user`` (string, conditionally required): Application user email.
+          Supply it with ``password`` unless using an authenticated browser
+          session.
+        - ``password`` (string, conditionally required): Password for ``user``.
+        - ``query_text`` (string, required): Non-empty PostgreSQL web-search
+          query. The default maximum is 1,000 characters; deployments may change
+          it with ``ARCHIVE_SEARCH_API_QUERY_MAX_LENGTH``.
+        - ``search_mode`` (string, optional; default ``"combined"``):
+          ``"filename_only"`` searches filenames, ``"filepath"`` searches file
+          names and indexed directory paths, ``"content"`` searches extracted
+          document-text chunks, and ``"combined"`` searches filename/path and
+          content, labelling a result's source as ``"filename/path"``,
+          ``"content"``, or ``"both"``.
+        - ``scope_type`` (string, optional; default ``"all"``): One of
+          ``"all"``, ``"location"``, ``"project"``, or ``"caan"``.
+        - ``scope_value`` (string, conditionally required): Required for
+          ``location``, ``project``, and ``caan`` scopes; omit it for ``all``.
+          A location may be a user-facing Windows/UNC archive path or a
+          Records-relative database prefix. Project scopes resolve through
+          ``projects.file_server_location``; CAAN scopes resolve through linked
+          projects in ``project_caans``.
+        - ``extensions`` (string, optional): Comma-separated extension filters,
+          for example ``"pdf,docx,tif"``. Leading periods are normalized away.
+          Omit or use an empty string to search all extensions. The default
+          maximum string length is 500 characters, configurable through
+          ``ARCHIVE_SEARCH_API_EXTENSIONS_MAX_LENGTH``.
+        - ``limit`` (integer, optional): Maximum number of returned canonical
+          files. It defaults to the configured API limit and must be between 1
+          and that limit. The endpoint will never return more than 3,000 files;
+          deployments may set a lower limit with
+          ``ARCHIVE_SEARCH_API_RESULT_LIMIT``.
+
+    Response schema:
+        A completed search, including one with no matches, returns ``200`` and
+        this object shape::
+
+            {
+              "search_run_id": 123,              // integer or null
+              "query_text": "soil report",       // string
+              "search_mode": "combined",         // string
+              "extensions": ["pdf", "docx"],     // normalized strings
+              "scope": {
+                "type": "project",               // resolved scope type
+                "display_value": "P12345",        // string
+                "resolved_prefixes": ["Projects/P12345"]
+              },
+              "results": [/* result objects, ordered by rank */],
+              "returned_result_count": 1,          // integer
+              "result_limit": 100,                 // integer
+              "limit_hit": false,                  // boolean
+              "coverage": {/* scope-level index/extraction counts */},
+              "messages": [],                      // informational strings
+              "warnings": []                       // caution strings
+            }
+
+        ``search_run_id`` is null only if telemetry persistence failed; it does
+        not mean that the search itself failed. ``limit_hit`` is true when the
+        returned count reaches ``result_limit``; callers should narrow the query
+        or scope when they need a more complete result set.
+
+        Each object in ``results`` has this shape::
+
+            {
+              "result_rank": 1,
+              "file_hash": "canonical-file-hash",
+              "filename": "Geotechnical Report.pdf",
+              "extension": "pdf",
+              "size_bytes": 1048576,
+              "primary_location": "\\\\server\\Records\\Projects\\P12345\\Geotechnical Report.pdf",
+              "additional_location_count": 2,
+              "match_source": "both",
+              "content_rank": 0.42,
+              "filepath_rank": 0.19,
+              "matching_chunks": 3,
+              "snippet": "...plain-text document excerpt...",
+              "text_status": "content_searchable",
+              "text_length": 12540
+            }
+
+        ``primary_location`` **is a user-facing path**. It is produced with the
+        configured ``USER_ARCHIVES_LOCATION`` mapping and includes the filename,
+        so it can be shown to a user or used to locate the file in the archive.
+        It is an empty string only when the index has no location for that file.
+        The response intentionally does not return every duplicate location;
+        ``additional_location_count`` reports how many more locations exist.
+        ``scope.resolved_prefixes``, in contrast, are Records-relative database
+        prefixes used to execute the search and should not be presented as
+        user-facing paths.
+
+        ``content_rank`` and ``filepath_rank`` are numbers when that retrieval
+        source matched and null otherwise. ``snippet`` is a plain-text excerpt
+        for content matches and is empty for filename/path-only matches.
+        ``text_status`` describes extraction coverage, such as
+        ``content_searchable``, ``image_ocr_searchable``,
+        ``text_extracted_not_chunked``, ``empty_or_thin_text``,
+        ``extraction_failed``, or ``not_attempted``. ``coverage`` contains the
+        analogous scope-level counts, including files in scope, files with FTS
+        chunks, extraction failures, thin text, and content-searchable files.
+
+    Errors:
+        - ``400``: Missing, malformed, unsupported, or over-limit JSON fields.
+          Unknown request fields are rejected.
+        - ``401``: Missing or invalid credentials.
+        - ``415``: Missing or non-JSON ``Content-Type``.
+        - ``500``: Invalid endpoint configuration or an unexpected search error.
 
     Examples:
-        **Accessing the Search Form:**
+        **Full-corpus combined search**
 
-            GET /file_search
+        ::
 
-        **Performing a Search with Form Data:**
+            POST /api/archives_search
+            Content-Type: application/json
 
-            POST /file_search
-            Form Data:
-                search_term: "annual_report"
-                filename_only: True
-                search_location: "C:/Archives/2023/Reports"
+            {
+              "user": "archivist@example.edu",
+              "password": "example-password",
+              "query_text": "soil report",
+              "search_mode": "combined",
+              "scope_type": "all",
+              "extensions": "pdf,docx",
+              "limit": 100
+            }
 
-        **Downloading Search Results with Timestamp:**
+        **Project-scoped document-text search**
 
-            GET /file_search?timestamp=20230425123045
+        ::
 
-        **Submitting the Search Form to Download Results:**
+            POST /api/archives_search
+            Content-Type: application/json
 
-            POST /file_search
-            Form Data:
-                search_term: "budget"
-                filename_only: False
-                search_location: "C:/Archives/2023/Finance"
-                submit: "Search"
+            {
+              "user": "archivist@example.edu",
+              "password": "example-password",
+              "query_text": "geotechnical recommendations",
+              "search_mode": "content",
+              "scope_type": "project",
+              "scope_value": "P12345",
+              "extensions": "pdf",
+              "limit": 25
+            }
+
+    Notes:
+        Full-corpus document-content searches can be substantially slower than
+        scoped or filename-only searches. Configure API-client, development
+        server, and production proxy timeouts accordingly.
     """
+    if not flask.request.is_json:
+        return _archive_search_api_error(415, "Content-Type must be application/json.")
 
-    form = archiver_forms.FileSearchForm()
-    csv_filename_prefix = "search_results_"
+    try:
+        payload = flask.request.get_json()
+    except Exception:
+        return _archive_search_api_error(400, "Request body must contain valid JSON.")
+
+    if not isinstance(payload, dict):
+        return _archive_search_api_error(400, "The JSON request body must be an object.")
+
+    request_user = _archive_search_api_user(payload)
+    if request_user is None:
+        return _archive_search_api_error(401, "Unauthorized.")
+
+    try:
+        query_max_length = int(
+            flask.current_app.config.get("ARCHIVE_SEARCH_API_QUERY_MAX_LENGTH", 1000)
+        )
+        extensions_max_length = int(
+            flask.current_app.config.get("ARCHIVE_SEARCH_API_EXTENSIONS_MAX_LENGTH", 500)
+        )
+        configured_result_limit = int(
+            flask.current_app.config.get("ARCHIVE_SEARCH_API_RESULT_LIMIT", 3000)
+        )
+        if (
+            query_max_length < 1
+            or extensions_max_length < 0
+            or configured_result_limit < 1
+        ):
+            raise ValueError("Archive search API limits must be non-negative.")
+        result_limit_maximum = min(configured_result_limit, 3000)
+        search_request = archive_search_service.ArchiveSearchRequest.from_api_payload(
+            payload=payload,
+            query_max_length=query_max_length,
+            extensions_max_length=extensions_max_length,
+        )
+        result_limit = archive_search_service.archive_search_api_result_limit(
+            payload=payload,
+            maximum_limit=result_limit_maximum,
+        )
+    except archive_search_service.ArchiveSearchAPIValidationError as error:
+        return _archive_search_api_error(400, str(error))
+    except (TypeError, ValueError):
+        flask.current_app.logger.error("Invalid archive search API configuration", exc_info=True)
+        return _archive_search_api_error(500, "Archive search API is misconfigured.")
+
+    try:
+        search_run = archive_search_service.ArchiveSearchRun(
+            search_request=search_request,
+            app=flask.current_app,
+            file_limit=result_limit,
+            user_id=request_user.id,
+            request_source="api",
+        )
+        search_data = search_run.execute()
+        return flask.jsonify(
+            archive_search_service.build_archive_search_api_response(
+                search_data=search_data,
+                search_run_id=search_run.record_id,
+                result_limit=result_limit,
+            )
+        )
+    except Exception:
+        flask.current_app.logger.error("Archive search API request failed", exc_info=True)
+        return _archive_search_api_error(500, "Unable to complete archive search.")
+
+
+@archiver.route("/file_search", methods=['GET', 'POST'])
+@archiver.route("/archives_search", methods=['GET', 'POST'])
+def archives_search():
+    """
+    Archive search workflow.
+
+    ``/archives_search`` is the canonical endpoint. ``/file_search`` remains
+    as a compatibility route and serves this same workflow.
+    """
+    form = archiver_forms.ArchiveSearchForm()
+    spreadsheet_filename_prefix = "archive_search_results_"
     timestamp_format = r'%Y%m%d%H%M%S'
-    html_table_row_limit = 1000
-    
-    # if the request includes a timestamp for a previous search results, then we will return the spreadsheet of the search results.
-    # If there is not a corresponding file, then we will raise an error.
+    html_file_limit = int(flask.current_app.config.get("ARCHIVE_SEARCH_HTML_LIMIT", 300))
+    excel_file_limit = int(flask.current_app.config.get("ARCHIVE_SEARCH_EXCEL_LIMIT", 3000))
+
     if utils.FlaskAppUtils.retrieve_request_param('timestamp'):
         try:
             timestamp = utils.FlaskAppUtils.retrieve_request_param('timestamp')
-            csv_filepath = utils.FlaskAppUtils.create_temp_filepath(filename=f'{csv_filename_prefix}{timestamp}.csv',
-                                                                     unique_filepath=False)
-            if not os.path.exists(csv_filepath):
-                # reformat timestamp to be more human-readable
-                timestamp = datetime.strftime(datetime.strptime(timestamp, timestamp_format), r'%Y-%m-%d %H:%M:%S')
-                message = f"Search results from {timestamp} not found. Expected file at {csv_filepath}"
-                raise FileNotFoundError(message)
-            
-            return flask.send_file(csv_filepath, as_attachment=True)
-        
+            xlsx_filepath = utils.FlaskAppUtils.create_temp_filepath(
+                filename=f'{spreadsheet_filename_prefix}{timestamp}.xlsx',
+                unique_filepath=False
+            )
+
+            if os.path.exists(xlsx_filepath):
+                return flask.send_file(
+                    xlsx_filepath,
+                    as_attachment=True,
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+
+            readable_timestamp = datetime.strftime(datetime.strptime(timestamp, timestamp_format), r'%Y-%m-%d %H:%M:%S')
+            raise FileNotFoundError(
+                f"Archive search results from {readable_timestamp} not found. Expected file at {xlsx_filepath}"
+            )
         except Exception as e:
-            message = f"Error retrieving search results:\n{e}"
             return utils.FlaskAppUtils.web_exception_subroutine(
-                flash_message=message,
+                flash_message="Error retrieving archive search results",
                 thrown_exception=e,
                 app_obj=flask.current_app
             )
 
     if form.validate_on_submit():
         try:
-            archives_location = flask.current_app.config.get('ARCHIVES_LOCATION')
-            user_archives_location = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
-            search_query = None
-            search_term = str(form.search_term.data)
-            search_full_filepath = not bool(form.filename_only.data)
-            search_query = FileLocationModel.filepath_search_query(query_str=search_term, full_path=search_full_filepath)
-            if form.search_location.data:
-                search_location = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=form.search_location.data,
-                                                                            app=flask.current_app)
-                search_location_list = utils.FileServerUtils.split_path(search_location)
-                mount_path_index = len(utils.FileServerUtils.split_path(archives_location))
-                search_term_location_list = search_location_list[mount_path_index:]
-                # if the list is empty, maybe they entered the root of the archives location or something else incorrectly
-                if not search_term_location_list:
-                    raise ValueError(f"Invalid search location: {search_location}")
-                search_location_search_term = os.path.join(*search_term_location_list)
-                search_query = search_query.filter(FileLocationModel.file_server_directories.like(f"%{search_location_search_term}%"))
+            timestamp = datetime.now().strftime(timestamp_format)
+            generated_at = datetime.now()
+            search_request = archive_search_service.ArchiveSearchRequest.from_form(form)
+            search_run = archive_search_service.ArchiveSearchRun(
+                search_request=search_request,
+                app=flask.current_app,
+                file_limit=excel_file_limit,
+                user_id=current_user.id if current_user.is_authenticated else None,
+            )
+            search_data = search_run.execute()
+            results_df, locations_df, coverage_df = archive_search_service.build_archive_search_workbook(
+                search_data=search_data,
+                generated_at=generated_at
+            )
+            spreadsheet_filepath = utils.FlaskAppUtils.create_temp_filepath(
+                filename=f'{spreadsheet_filename_prefix}{timestamp}.xlsx'
+            )
+            export_available = True
+            try:
+                with pd.ExcelWriter(spreadsheet_filepath, engine='openpyxl') as writer:
+                    results_df.to_excel(writer, index=False, sheet_name='Results')
+                    locations_df.to_excel(writer, index=False, sheet_name='Locations')
+                    coverage_df.to_excel(writer, index=False, sheet_name='Coverage')
+            except Exception:
+                export_available = False
+                timestamp = None
+                search_data["warnings"].append(
+                    "Excel export was unavailable for this search run. The on-page results are still available."
+                )
+                flask.current_app.logger.error(
+                    "Archive search workbook export failed",
+                    exc_info=True,
+                )
 
-            search_df = utils.FlaskAppUtils.db_query_to_df(search_query)
-            if search_df.empty:
-                flask.flash(f"No files found matching search term: {search_term}", 'warning')
-                return flask.redirect(flask.url_for('archiver.file_search'))
-            
-            user_usable_path = lambda row: utils.FileServerUtils.user_path_from_db_data(file_server_directories=row['file_server_directories'],
-                                                                                        user_archives_location=user_archives_location)
-            search_df['Location'] = search_df.apply(user_usable_path, axis=1)
-            cols_to_remove = ['id', 'file_id', 'file_server_directories', 'existence_confirmed', 'hash_confirmed']
-            search_df.drop(columns=cols_to_remove, inplace=True)
-            search_df.rename(columns={'filename': 'Filename'}, inplace=True)
-            timestamp = datetime.now().strftime(r'%Y%m%d%H%M%S')
-            too_many_results = len(search_df) > html_table_row_limit
-            csv_filepath = utils.FlaskAppUtils.create_temp_filepath(filename=f'{csv_filename_prefix}{timestamp}.csv')
-            search_df.to_csv(csv_filepath, index=False)
-            search_df = search_df.head(html_table_row_limit)
-            search_df_html = utils.html_table_from_df(df=search_df, path_columns=['Location'])
-            
-            search_results_html = flask.render_template('file_search_results.html',
-                                                        search_results_table=search_df_html,
-                                                        timestamp=timestamp,
-                                                        search_term=form.search_term.data,
-                                                        too_many_results=too_many_results)
-            return search_results_html
-            
+            html_result_count = min(len(search_data["results"]), html_file_limit)
+            html_search_data = dict(search_data)
+            html_search_data["results"] = search_data["results"][:html_file_limit]
+            html_search_data["html_limit_hit"] = len(search_data["results"]) > html_file_limit
+            html_search_data["export_limit_hit"] = search_data["limit_hit"]
+            html_search_data["html_file_limit"] = html_file_limit
+            html_search_data["excel_file_limit"] = excel_file_limit
+            html_search_data["html_result_count"] = html_result_count
+
+            return flask.render_template(
+                "archive_search_results.html",
+                form=form,
+                search=html_search_data,
+                timestamp=timestamp,
+                export_available=export_available,
+                generated_at=generated_at,
+                hide_sidebar=True
+            )
         except Exception as e:
             return utils.FlaskAppUtils.web_exception_subroutine(
-                flash_message="Error processing query, searching database, and/or processing search results: ",
+                flash_message="Error processing archive search",
                 thrown_exception=e,
                 app_obj=flask.current_app
             )
 
-    return flask.render_template('file_search.html', form=form)
+    return flask.render_template(
+        "archive_search.html",
+        form=form,
+        html_file_limit=html_file_limit,
+        excel_file_limit=excel_file_limit
+    )
             
       
 @archiver.route("/scrape_location", methods=['GET', 'POST'])
@@ -2368,8 +3127,9 @@ def scrape_location():
                 recursive = form.recursive.data
             else:
                 scrape_location_path = utils.FlaskAppUtils.retrieve_request_param('scrape_location')
-                recursive_param = utils.FlaskAppUtils.retrieve_request_param('recursive', 'True')
-                recursive = recursive_param.lower() in ['true', 't', 'yes', 'y', '1', 'True', True, 'Yes', 'YES', 'TRUE']
+                recursive = utils.FlaskAppUtils.retrieve_request_param(
+                    'recursive', default_value=True, param_is_bool=True
+                )
                 
                 if not scrape_location_path:
                     return flask.Response("Missing required parameter: scrape_location", status=400)

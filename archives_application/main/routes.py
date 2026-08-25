@@ -9,13 +9,15 @@ import subprocess
 import traceback
 import archives_application.app_config as app_config
 import pandas as pd
+from sqlalchemy import text
 from flask_login import current_user
 from archives_application.main import forms
 from archives_application import db, bcrypt
 from archives_application.models import *
 from archives_application import utils
 
-# This dictionary is used to determine how long to keep task records in the database
+# This dictionary is used to determine how long to keep task records in the database measured in days.
+# The keys are the names of the tasks and the values are the number of days to keep the records.
 TASK_RECORD_LIFESPANS = {'add_file_to_db_task': 90,
                          'scrape_file_data_task': 365,
                          'confirm_file_locations_task': 365,
@@ -26,12 +28,14 @@ TASK_RECORD_LIFESPANS = {'add_file_to_db_task': 90,
                          'task_records_clean_up_task': 90,
                          'temp_file_clean_up_task': 90,
                          'db_backup_task': 180,
-                         'fmp_caan_project_reconciliation_task': 365,
                          'confirm_project_locations_task': 365,
                          'consolidation_target_removal_task': 365,
                          'consolidate_dirs_edit_task': 365,
                          'batch_move_edits_task': 365,
                          'batch_process_inbox_task': 365}
+
+# This is the default timeout for tasks that are enqueued via the RQ task queue. It is measured in seconds.
+TASK_DEFAULT_TIMEOUT_SECONDS = 5400
 
 main = flask.Blueprint('main', __name__)
 
@@ -65,6 +69,7 @@ def backup_database():
     Query Parameters:
         user (str): The username for authentication.
         password (str): The password for authentication.
+        timeout (int): Optional task timeout in seconds. Defaults to TASK_DEFAULT_TIMEOUT_SECONDS.
 
     Returns:
         Response: A Flask Response object with the result of the backup operation,
@@ -93,9 +98,16 @@ def backup_database():
                 authenticated_to_make_request = True
 
         if authenticated_to_make_request:
+            timeout_seconds = TASK_DEFAULT_TIMEOUT_SECONDS
+            timeout_param = utils.FlaskAppUtils.retrieve_request_param('timeout', None)
+            if timeout_param not in [None, '']:
+                timeout_seconds = int(timeout_param)
+                if timeout_seconds < 1:
+                    raise ValueError("timeout must be a positive integer measured in seconds")
+
             nk_result = utils.RQTaskUtils.enqueue_new_task(db=db,
-                                                     enqueued_function=db_backup_task,
-                                                     timeout=60)
+                                                           enqueued_function=db_backup_task,
+                                                           timeout=timeout_seconds)
             job_id = nk_result["task_id"]
             if utils.FlaskAppUtils.retrieve_request_param('user'):
                 return flask.Response(f"Database Back-up Task Enqueued. Job ID: {job_id}", status=200)
@@ -359,8 +371,8 @@ def get_db_info():
     
     # Test database connection
     try:
-        # Run a simple SELECT 1 query via SQLAlchemy's engine
-        result = db.engine.execute("SELECT 1").scalar()
+        # Run a simple SELECT 1 using SQLAlchemy 2.x API
+        result = db.session.execute(text("SELECT 1")).scalar()
         
         if result == 1:
             info["connection_test"] = {
@@ -401,13 +413,8 @@ def get_app_config():
         "server_change_data_limit": flask.current_app.config.get("SERVER_CHANGE_DATA_LIMIT"),
         "redis_url": flask.current_app.config.get("REDIS_URL"),
         "user_archives_location": flask.current_app.config.get("USER_ARCHIVES_LOCATION"),
-        "filemaker_host_location": flask.current_app.config.get("FILEMAKER_HOST_LOCATION"),
-        "filemaker_user": flask.current_app.config.get("FILEMAKER_USER"),
-        "filemaker_password": flask.current_app.config.get("FILEMAKER_PASSWORD"),
-        "filemaker_database": flask.current_app.config.get("FILEMAKER_DATABASE_NAME"),
         "app_workers_restart_command": flask.current_app.config.get("APP_WORKERS_RESTART_COMMAND"),
-        "app_restart_command": flask.current_app.config.get("APP_RESTART_COMMAND"),
-
+        "app_restart_command": flask.current_app.config.get("APP_RESTART_COMMAND")
     }
     return flask.jsonify(info)
 
@@ -567,7 +574,6 @@ def toggle_sql_logging():
         db_logger.disabled = True
     return flask.jsonify(**{"sql logging":flask.current_app.config['SQLALCHEMY_ECHO'], "log location":log_path})
 
-
 @main.route("/endpoints_index")
 def endpoints_index():
     """Displays all the endpoints of the application or returns an Excel file.
@@ -594,8 +600,10 @@ def endpoints_index():
         df = pd.DataFrame(data)
 
         # Check if 'spreadsheet' parameter is set to 'True'
-        spreadsheet_param = flask.request.args.get('spreadsheet', 'False')
-        if spreadsheet_param.lower() == 'true':
+        spreadsheet_param = utils.FlaskAppUtils.retrieve_request_param(
+            'spreadsheet', default_value=False, param_is_bool=True
+        )
+        if spreadsheet_param:
             # Return Excel file
             output = io.BytesIO()
             try:
@@ -603,7 +611,6 @@ def endpoints_index():
                     df.to_excel(writer, index=False, sheet_name='Endpoints')
 
                     # Adjust column widths
-                    workbook = writer.book
                     worksheet = writer.sheets['Endpoints']
 
                     for column_cells in worksheet.columns:
@@ -648,7 +655,7 @@ def endpoints_index():
                     'Docstring': '65%'
                 }
                 df_html = utils.html_table_from_df(
-                    df-df,
+                    df=df,
                     column_widths=column_widths,
                     html_columns=['Docstring', 'URL']
                 )

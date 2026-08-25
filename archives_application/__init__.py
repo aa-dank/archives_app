@@ -12,11 +12,11 @@ import pandas as pd
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_login import LoginManager
-from urllib3.exceptions import InsecureRequestWarning
 from oauthlib.oauth2 import WebApplicationClient
+from urllib3.exceptions import InsecureRequestWarning
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-VERSION = '1.10.0'
+VERSION = app_config.retrieve_app_version()
 
 # Suppress only the InsecureRequestWarning.
 # https://urllib3.readthedocs.io/en/latest/advanced-usage.html#ssl-warnings
@@ -31,8 +31,8 @@ google_creds_json = r'google_client_secret.json'
 
 # These lines are used to set the config file for the app. If it is not set correctly,
 # the first error will LIKELY be issues with connecting to the database.
-config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
-#config_json = r'deploy_app_config.json'
+#config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
+config_json = r'deploy_app_config.json'
 
 def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,
                                                               config_json_path=config_json)):
@@ -65,6 +65,13 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
 
     # config app from config class
     app.config.from_object(config_class)
+    app.config.setdefault('FILE_INFO_TEXT_WINDOW_CHARS', 10000)
+    app.config.setdefault('FILE_INFO_DATE_MENTION_LIMIT', 50)
+
+    # Ensure SQLAlchemy pings connections to avoid "SSL connection has been closed unexpectedly"
+    app.config.setdefault('SQLALCHEMY_ENGINE_OPTIONS', {})
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'].setdefault('pool_pre_ping', True)
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'].setdefault('pool_recycle', 1800)
 
     db.init_app(app)
     bcrypt.init_app(app)

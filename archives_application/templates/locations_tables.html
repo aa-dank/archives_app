@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 {% block content %}
     <div class="content-section">
-      <h2>File Locations</h2>
+  <h2>File Locations</h2>
         {% for file_locations_dict in file_locations_list %}
         <div>
         <h2>{{ file_locations_dict["filename"] }}</h2>
@@ -9,6 +9,6 @@
         <hr width="75%" />
         </div>
         {% endfor %}
-        <a class="ml-2" href="{{ url_for('archiver.archived_or_not') }}">Check another file.</a>
+  <a class="ml-2" href="{{ url_for('archiver.archived_or_not') }}">Check another file</a>
     </div>
 {% endblock content %}

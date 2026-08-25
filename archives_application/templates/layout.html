@@ -20,7 +20,7 @@
     <header class="site-header">
       <nav class="navbar navbar-expand-md navbar-dark bg-steel fixed-top">
         <div class="container">
-          <a class="navbar-brand mr-4" href="{{url_for('main.home')}}">Archiver v{{config['VERSION']}}</a>
+          <a class="navbar-brand mr-4" href="{{url_for('main.home')}}">Archives App <span class="app-version">v{{config['VERSION']}}</span></a>
           <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarToggle" aria-controls="navbarToggle" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
           </button>
@@ -60,34 +60,68 @@
         {% if not hide_sidebar %}
         <div class="col-md-4">
           <div class="content-section">
-            <h3>Quick Navigation</h3>
+            <h3>Navigation</h3>
             <p class='text-muted'>
               <ul class="list-group">
-                <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.file_search')}}>Files Search</a></li>
-                <li class="list-group-item list-group-item-light"><a href={{url_for('project_tools.caan_search')}}>CAANs Search</a></li>
-                <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.archived_or_not')}}>Archived already?</a></li>
+
+                <!-- File Server Tools -->
+                <li class="list-group-item nav-section-header p-0">
+                  <a class="d-block px-3 py-2 font-weight-bold" data-toggle="collapse" href="#fileServerTools" role="button" aria-expanded="false" aria-controls="fileServerTools">
+                    File Server Tools <span class="collapse-toggle-icon">&#9660;</span>
+                  </a>
+                  <div class="collapse show" id="fileServerTools">
+                    <ul class="list-group list-group-flush">
+                      <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('archiver.archives_search')}}>Archive Search</a></li>
+                      <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('archiver.dir_contents_summary')}}>Directory Contents Summary</a></li>
+                      <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('project_tools.caan_search')}}>CAAN Search</a></li>
+                      <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('archiver.archived_or_not')}}>Already Archived?</a></li>
+                      <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('archiver.scrape_location')}}>Scrape Server Location</a></li>
+                      {% if current_user.is_authenticated and ('ARCHIVIST' in current_user.roles or 'USER' in current_user.roles) %}
+                        <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('archiver.upload_file')}}>Upload File</a></li>
+                        <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('archiver.server_change')}}>Make Server Changes</a></li>
+                      {% endif %}
+                    </ul>
+                  </div>
+                </li>
+
                 {% if current_user.is_authenticated %}
-                    {% if 'ADMIN' in current_user.roles %}
-                        <li class="list-group-item list-group-item-light"><a href={{url_for('main.change_config_settings')}}>Change App Config</a></li>
-                        <li class="list-group-item list-group-item-light"><a href={{url_for('timekeeper.timekeeper_admin_interface')}}>See Timesheets</a></li>
-                        <li class="list-group-item list-group-item-light"><a href={{url_for('main.endpoints_index')}}>App Index</a></li>
-                    {% endif %}
-                    {% if 'ARCHIVIST' in current_user.roles %}
-                        <li class="list-group-item list-group-item-light"><a href={{url_for('timekeeper.timekeeper_event')}}>Timekeeper</a></li>
-                        <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.inbox_item')}}>Archiving Inbox</a></li>
-                        <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.batch_process_inbox')}}>Batch Inbox Archiving</a></li>
-                        <li class="list-group-item list-group-item-light"><a href={{url_for('timekeeper.archiving_dashboard', archiver_id=current_user.id)}}>Archiving Dashboard</a></li>
-                    {% endif %}
-                    <li class="list-group-item list-group-item-light"><a href={{url_for('users.account')}}>Account Info</a></li>
-                    {% if 'ARCHIVIST' in current_user.roles or 'USER' in current_user.roles %}
-                        <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.upload_file')}}>Upload File</a></li>
-                        <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.server_change')}}>Make Server Changes</a></li>
-                    {% endif %}
+
+                  <!-- Archivist Tools -->
+                  {% if 'ARCHIVIST' in current_user.roles %}
+                  <li class="list-group-item nav-section-header p-0">
+                    <a class="d-block px-3 py-2 font-weight-bold" data-toggle="collapse" href="#archistTools" role="button" aria-expanded="false" aria-controls="archistTools">
+                      Archivist Tools <span class="collapse-toggle-icon">&#9660;</span>
+                    </a>
+                    <div class="collapse" id="archistTools">
+                      <ul class="list-group list-group-flush">
+                        <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('timekeeper.timekeeper_event')}}>Timekeeper</a></li>
+                        <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('archiver.inbox_item')}}>Archiving Inbox</a></li>
+                        <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('archiver.batch_process_inbox')}}>Batch Inbox Archiving</a></li>
+                        <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('timekeeper.archiving_dashboard', archiver_id=current_user.id)}}>Archiving Dashboard</a></li>
+                      </ul>
+                    </div>
+                  </li>
+                  {% endif %}
+
+                  <!-- Admin Tools -->
+                  {% if 'ADMIN' in current_user.roles %}
+                  <li class="list-group-item nav-section-header p-0">
+                    <a class="d-block px-3 py-2 font-weight-bold" data-toggle="collapse" href="#adminTools" role="button" aria-expanded="false" aria-controls="adminTools">
+                      Admin Tools <span class="collapse-toggle-icon">&#9660;</span>
+                    </a>
+                    <div class="collapse" id="adminTools">
+                      <ul class="list-group list-group-flush">
+                        <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('main.change_config_settings')}}>Change App Config</a></li>
+                        <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('timekeeper.timekeeper_admin_interface')}}>Timekeeper Tools</a></li>
+                        <li class="list-group-item list-group-item-light nav-sub-item"><a href={{url_for('main.endpoints_index')}}>App Index</a></li>
+                      </ul>
+                    </div>
+                  </li>
+                  {% endif %}
                 {% else %}
-                    <li class="list-group-item list-group-item-light"><a href={{url_for('users.register')}}>Registration</a></li>
+                  <li class="list-group-item list-group-item-light"><a href={{url_for('users.register')}}>Registration</a></li>
                 {% endif %}
-                <li class="list-group-item list-group-item-light"><a href={{url_for('archiver.scrape_location')}}>Scrape Server Location</a></li>
-                <li class="list-group-item list-group-item-light"><a href="https://docs.google.com/document/d/1yy3XgJllCiNdm8FGLWMLWUPVgEc9Ph-WgH7-CufENyk/edit?usp=sharing">Documentation</a></li>
+
               </ul>
             </p>
           </div>

@@ -15,7 +15,7 @@ An application that provides services related to a UCSC PPDO file server contain
 
 - **File Management Interface**: Allows users to manage and organize files on the server and collects data about file server changes. Offers additional file server change controls based on quantities of files changed. Also maintains a complete PostgreSQL database of files which can be used for search or other SQL functions.
 - **Archival Tools**: Provides functionalities for archiving files on the records server and a file archiving inbox for iteratively archiving several files on the file server.
-- **Data Scraping**: Scrapes file metadata from the file server to keep the application database updated with the latest information. Scrapes project data from a FileMaker database to maintain updated project data.
+- **Data Scraping**: Scrapes file metadata from the file server to keep the application database updated with the latest information. Maintains project file server locations from the archives file server.
 - **User Authentication and Roles**: Supports user registration and authentication using Google authentication. Also has role-based access control for application services and file server services.
 - **Web-Based Interface**: Offers a user-friendly web interface for interacting with the file server and accessing application features.
 - **Maintenance Utilities**: Includes tools for routine maintenance tasks like database backup, file location confirmation, database management, and system logs management.
@@ -37,4 +37,3 @@ An application that provides services related to a UCSC PPDO file server contain
 
 
     
-

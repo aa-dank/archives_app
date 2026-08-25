@@ -5,10 +5,10 @@
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Settings to Change</legend>
-                <p>This form is for making changes to the configuration file. Anything entered here will overwrite the contents of the config file. Before the configuration will take effect, the application will restart.</p>
+                <p>Use this form to change application configuration values. Anything entered here will overwrite the corresponding contents of the config file. The application will restart before changes take effect.</p>
                 {% for setting, _ in settings_dict.items() %}
                     <div class="form-group">
-                        <!╌  ╌>
+                        <!-- Setting field -->
                         <h6>{{ form[setting].label (class="form-control-label") }}</h6>
                         {% if settings_dict[setting]["DESCRIPTION"] %}
                             <p>Description: {{ settings_dict[setting]["DESCRIPTION"] }}</p>

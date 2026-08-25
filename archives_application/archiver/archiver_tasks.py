@@ -559,7 +559,7 @@ def consolidation_target_removal_task(dependent_tasks: list, target_path: str, q
 
             # if the target is not empty, raise an error
             if os.listdir(target_path) != []:
-                raise Exception(f'Target directory {target_path} is not empty after attempting to move contents to {user_destination_path}.')
+                raise Exception(f'Target directory {target_path} is not empty after attempting to move its contents.')
 
             # if the target is empty, we remove it.
             os.rmdir(target_path)            
@@ -697,7 +697,11 @@ def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to
 
                     # add the archiving event to the database
                     recorded_filing_code = destination_dir if not destination_path else None
-                    archived_file = ArchivedFileModel(destination_path=item_to_archive.get_destination_path(),
+                    recorded_destination_path = utils.FileServerUtils.archive_relative_path(
+                        item_to_archive.get_destination_path(),
+                        archives_location
+                    )
+                    archived_file = ArchivedFileModel(destination_path=recorded_destination_path,
                                                       archivist_id=user_id,
                                                       project_number=project_number,
                                                       date_archived=datetime.now(),

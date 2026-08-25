@@ -5,14 +5,12 @@ import errno
 import flask
 import flask_sqlalchemy
 import os
-import random
 import shutil
 from sqlalchemy import func
 from typing import List, Callable
 from archives_application import create_app, utils
 from archives_application.archiver import archiver_tasks
-from archives_application.models import  FileLocationModel, FileModel, ArchivedFileModel
-
+from archives_application.models import ArchivedFileModel, FileLocationModel, FileModel, FileContentModel, FileContentFailureModel, FileDateMentionModel
 # Create the app context so that tasks can access app extensions even though
 # they are not running in the main thread.
 app = create_app()
@@ -74,11 +72,23 @@ class ServerEdit:
         self.change_executed = False
         self.data_effected = 0
         
-        # if the serveredit is a move, change, or edit, determine if the change is to a file or directory
+        # if the ServerEdit is a move, change, or edit, determine if the change is to a file or directory
         self.is_file = False
         if self.old_path:
             self.is_file = os.path.isfile(self.old_path)
         self.files_effected = 1 if self.is_file else 0
+
+        # if ServerEdit is a RENAME edit...
+        if self.change_type.upper() == 'RENAME':
+            # ...make sure that the old and new paths have the same parent directory
+            old_parent_dir = os.path.dirname(self.old_path)
+            new_parent_dir = os.path.dirname(self.new_path)
+            if old_parent_dir != new_parent_dir:
+                raise Exception(f"Attempt at renaming paths failed. Parent directories are not the same: \n {self.new_path}\n{self.old_path}")
+            
+            # ...determine if new path already exists
+            if os.path.exists(self.new_path):
+                raise Exception(f"Cannot rename to a path that already exists: {self.new_path}")
 
     def to_dict(self):
         """
@@ -118,9 +128,39 @@ class ServerEdit:
         if len(filename_parts) == 1:
             return filename + unique_suffix
         
-        return '.'.join(filename_parts[:-1]) + unique_suffix + '.' + filename
+        return '.'.join(filename_parts[:-1]) + unique_suffix + '.' + filename_parts[-1]
 
-    def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=15):
+    @staticmethod
+    def _safe_path_join(path_list):
+        """
+        Safely joins a list of path components into a single path string.
+        Returns an empty string if the path list is empty or None.
+        
+        :param path_list: List of path components to join
+        :type path_list: list
+        :return: Joined path string or empty string if list is empty
+        :rtype: str
+        """
+        return os.path.join(*path_list) if path_list else ""
+
+    @staticmethod
+    def _delete_file_hash_dependents(db: flask_sqlalchemy.SQLAlchemy, file_hash: str):
+        """
+        Remove child rows keyed by files.hash before deleting FileModel rows.
+        This protects delete operations in environments where ON DELETE CASCADE
+        constraints are missing or stale.
+        """
+        db.session.query(FileDateMentionModel).filter(
+            FileDateMentionModel.file_hash == file_hash
+        ).delete(synchronize_session=False)
+        db.session.query(FileContentModel).filter(
+            FileContentModel.file_hash == file_hash
+        ).delete(synchronize_session=False)
+        db.session.query(FileContentFailureModel).filter(
+            FileContentFailureModel.file_hash == file_hash
+        ).delete(synchronize_session=False)
+
+    def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=900):
         """
         This function executes the server change that was specified during the creation of the ServerEdit object. The change can be of the following types:
 
@@ -136,7 +176,7 @@ class ServerEdit:
         :type files_limit: int
         :param effected_data_limit: Maximum amount of data that can be affected by the change (default is 50,000,000).
         :type effected_data_limit: int
-        :param timeout: Maximum time in seconds that the function can run before it is terminated (default is 600).
+        :param timeout: Maximum time in seconds that the function can run before it is terminated (default is 900).
         :return: Dictionary containing the results of the enqueuing task.
         :rtype: dict
         """
@@ -335,7 +375,7 @@ class ServerEdit:
         return self.files_effected, self.data_effected
 
     @staticmethod
-    def remove_file_from_db(db, root_index, file_path):
+    def record_file_server_file_removal(db, root_index, file_path):
         """
         Removes a file location from database and if it is the last entry for that file_id, removes the file db entry too.
         :param db: SQLAlchemy database object
@@ -344,7 +384,8 @@ class ServerEdit:
         """
 
         filename = utils.FileServerUtils.split_path(file_path)[-1]
-        db_path = os.path.join(*utils.FileServerUtils.split_path(file_path)[root_index:-1])   
+        path_parts = utils.FileServerUtils.split_path(file_path)[root_index:-1]
+        db_path = ServerEdit._safe_path_join(path_parts)   
         location_entry_removed = False
         file_entry_removed = False
         location_entry = db.session.query(FileLocationModel)\
@@ -357,21 +398,33 @@ class ServerEdit:
             db.session.delete(location_entry)
             location_entry_removed = True
 
-            other_entries = db.session.query(FileModel)\
-                .filter(FileModel.id == file_id)\
+            remaining_locations = db.session.query(FileLocationModel)\
+                .filter(FileLocationModel.file_id == file_id)\
                 .all()
             
-            # If this was the last entry for this file_id, delete the file_id entry
-            if not other_entries:
-                associated_archival_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_id).all()
-                for archival_event in associated_archival_events:
-                    archival_event.file_id = None
-                
-                db.session.query(FileModel)\
+            # If this was the last entry for this file_id and, thus, the file has actually been removed from the fileserver...
+            # 1. scrub any ArchivedModel entries of their link to the File...
+            # 2. Remove the FileModel itself and any associated content (file_contents, file_content_failures)
+            if not remaining_locations:
+                file_model = db.session.query(FileModel)\
                     .filter(FileModel.id == file_id)\
-                    .delete()
+                    .first()
+                if not file_model:
+                    flask.current_app.logger.warning(
+                        "ServerEdit.remove_file_from_db: FileModel(id=%s) referenced by FileLocation(id=%s) is missing.",
+                        file_id,
+                        location_entry.id
+                    )
+                else:
+                    associated_archival_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_model.id).all()
+                    for archival_event in associated_archival_events:
+                        archival_event.file_id = None
+
+                        # Delete the FileModel and associated content rows (if any)
+                    ServerEdit._delete_file_hash_dependents(db=db, file_hash=file_model.hash)
+                    db.session.delete(file_model)
+                    file_entry_removed = True
             db.session.commit()
-            file_entry_removed = True
         return location_entry_removed, file_entry_removed
             
 
@@ -394,7 +447,7 @@ class ServerEdit:
             if self.is_file:
                 server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:-1]
                 filename = utils.FileServerUtils.split_path(self.old_path)[-1]
-                server_path = os.path.join(*server_dirs)
+                server_path = self._safe_path_join(server_dirs)
                 file_location_entry = db.session.query(FileLocationModel)\
                     .filter(FileLocationModel.file_server_directories == server_path,
                             FileLocationModel.filename == filename).first()
@@ -414,13 +467,15 @@ class ServerEdit:
                             archival_event.file_id = None
 
                         file_entry = db.session.query(FileModel).filter(FileModel.id == file_id).first()
-                        db.session.delete(file_entry)
-                        db.session.commit()
-                        deletion_log['files_entries_effected'] = 1
+                        if file_entry:
+                            self._delete_file_hash_dependents(db=db, file_hash=file_entry.hash)
+                            db.session.delete(file_entry)
+                            db.session.commit()
+                            deletion_log['files_entries_effected'] = 1
 
             else:
                 server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:]
-                server_path = os.path.join(*server_dirs)
+                server_path = self._safe_path_join(server_dirs)
                 file_location_entries = db.session.query(FileLocationModel)\
                     .filter(FileLocationModel.file_server_directories.like(func.concat(server_path, '%'))).all()
                 for file_location_entry in file_location_entries:
@@ -436,9 +491,11 @@ class ServerEdit:
                             archival_event.file_id = None
 
                         file_entry = db.session.query(FileModel).filter(FileModel.id == file_id).first()
-                        db.session.delete(file_entry)
-                        db.session.commit()
-                        deletion_log['files_entries_effected'] += 1
+                        if file_entry:
+                            self._delete_file_hash_dependents(db=db, file_hash=file_entry.hash)
+                            db.session.delete(file_entry)
+                            db.session.commit()
+                            deletion_log['files_entries_effected'] += 1
             
             utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=deletion_log)
             return deletion_log
@@ -466,11 +523,11 @@ class ServerEdit:
                 server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:-1]
                 old_filename = utils.FileServerUtils.split_path(self.old_path)[-1]
                 new_filename = utils.FileServerUtils.split_path(self.new_path)[-1]
-                server_path = os.path.join(*server_dirs)
+                server_path = self._safe_path_join(server_dirs)
                 
                 # first make sure that if there is already a file with the new name, it is deleted,
                 # because it will have been replaced by the renamed file
-                new_location_entry_removed, some_file_entry_removed = self.remove_file_from_db(db, file_server_root_index, self.new_path)
+                new_location_entry_removed, some_file_entry_removed = self.record_file_server_file_removal(db, file_server_root_index, self.new_path)
                 if new_location_entry_removed:
                     rename_log['location_entries_effected'] += 1
                 if some_file_entry_removed:
@@ -490,9 +547,9 @@ class ServerEdit:
             else:
                 rename_log['is_file'] = False
                 old_server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:]
-                old_server_path = os.path.join(*old_server_dirs)
+                old_server_path = self._safe_path_join(old_server_dirs)
                 new_server_dirs = utils.FileServerUtils.split_path(self.new_path)[file_server_root_index:]
-                new_server_path = os.path.join(*new_server_dirs)
+                new_server_path = self._safe_path_join(new_server_dirs)
                 file_location_entries = db.session.query(FileLocationModel)\
                     .filter(FileLocationModel.file_server_directories.like(func.concat(old_server_path, '%'))).all()
                 
@@ -500,7 +557,7 @@ class ServerEdit:
                 for file_location_entry in file_location_entries:
                     old_file_path = file_location_entry.file_server_directories
                     old_path_list = utils.FileServerUtils.split_path(old_file_path)
-                    new_server_path = os.path.join(*new_server_dirs, *old_path_list[len(new_server_dirs):])
+                    new_server_path = self._safe_path_join([*new_server_dirs, *old_path_list[len(new_server_dirs):]])
                     
                     #TODO what if a file with the same name already exists in the new location?
                     existing_file_location_entry = db.session.query(FileLocationModel)\
@@ -509,7 +566,7 @@ class ServerEdit:
                     
                     if existing_file_location_entry:
                         existing_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), new_server_path)
-                        remove_file_entry, remove_location_entry = self.remove_file_from_db(db, file_server_root_index, file_path=existing_path)   
+                        remove_file_entry, remove_location_entry = self.record_file_server_file_removal(db, file_server_root_index, file_path=existing_path)   
                         if remove_file_entry:
                             rename_log['files_entries_effected'] += 1
                         if remove_location_entry:
@@ -546,12 +603,12 @@ class ServerEdit:
             if self.is_file:
                 old_server_dirs_list = old_path_list[file_server_root_index:-1]
                 filename = old_path_list[-1]
-                old_server_path = os.path.join(*old_server_dirs_list)
-                new_server_path = os.path.join(*new_path_list[file_server_root_index:])
+                old_server_path = self._safe_path_join(old_server_dirs_list)
+                new_server_path = self._safe_path_join(new_path_list[file_server_root_index:])
 
                 # first make sure that if there is already a file with the new name, it is deleted,
                 # because it will have been replaced by the moved file
-                new_location_entry_removed, some_file_entry_removed = self.remove_file_from_db(db, file_server_root_index, os.path.join(self.new_path, filename))
+                new_location_entry_removed, some_file_entry_removed = self.record_file_server_file_removal(db, file_server_root_index, os.path.join(self.new_path, filename))
                 if new_location_entry_removed:
                     move_log['location_entries_effected'] += 1
                 if some_file_entry_removed:
@@ -575,6 +632,12 @@ class ServerEdit:
                     # if the file is excluded by the exclusion functions, do not add it to the database
                     full_path = os.path.join(self.new_path, filename)
                     if any([exclusion_func(full_path) for exclusion_func in self.exclusion_functions]):
+                        return move_log
+                    
+                    # Check if file exists before trying to hash it
+                    if not os.path.exists(self.new_path):
+                        move_log['error'] = f"File does not exist at new path: {self.new_path}"
+                        utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=move_log)
                         return move_log
                     
                     file_hash = utils.FilesUtils.get_hash(self.new_path)
@@ -604,18 +667,18 @@ class ServerEdit:
             # if we are moving a directory, we need to move all files within the directory
             else:
                 old_server_dirs_list = old_path_list[file_server_root_index:]
-                old_server_path = os.path.join(*old_server_dirs_list)
+                old_server_path = self._safe_path_join(old_server_dirs_list)
                 effected_location_entries = db.session.query(FileLocationModel)\
                     .filter(FileLocationModel.file_server_directories.like(func.concat(old_server_path, '%'))).all()
                 
                 for location_entry in effected_location_entries:
                     entry_dir_list = utils.FileServerUtils.split_path(location_entry.file_server_directories)
                     new_location_list = new_path_list[file_server_root_index:] + entry_dir_list[len(old_server_dirs_list)-1:]
-                    new_location_server_dirs = os.path.join(*new_location_list)
+                    new_location_server_dirs = self._safe_path_join(new_location_list)
 
                     # remove any entries that are already in the new location
                     existing_loc_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), new_location_server_dirs, location_entry.filename)
-                    remove_file_entry, remove_location_entry = self.remove_file_from_db(db, file_server_root_index, file_path=existing_loc_path)
+                    remove_file_entry, remove_location_entry = self.record_file_server_file_removal(db, file_server_root_index, file_path=existing_loc_path)
                     if remove_file_entry:
                         move_log['files_entries_effected'] += 1
                     if remove_location_entry:
@@ -638,7 +701,8 @@ class ServerEdit:
                 for root, _, files in os.walk(move_result_path):
                     for relocated_file in files:
                         located_in_db = False
-                        root_server_dirs = os.path.join(*utils.FileServerUtils.split_path(root)[file_server_root_index:])
+                        root_server_dirs_list = utils.FileServerUtils.split_path(root)[file_server_root_index:]
+                        root_server_dirs = self._safe_path_join(root_server_dirs_list)
                         for location_entry in effected_location_entries:
                             if location_entry.filename == relocated_file and location_entry.file_server_directories == root_server_dirs:
                                 located_in_db = True

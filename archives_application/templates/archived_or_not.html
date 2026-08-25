@@ -5,14 +5,14 @@
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Check for file...</legend>
-                <p>This tool checks the contents of the chosen file against the contents of all other files in the application database (which should be nearly all files on the records server) and returns a table of all the locations found for the chosen file on the records server. The time it takes depends on the size of the chosen file; larger files can take awhile and it will appear like nothing has happened after clicking the 'submit' button.</p>
+                <p>This tool checks the contents of the chosen file against the contents of all other files in the application database (which should be nearly all files on the records server) and returns a table of all the locations found for the chosen file on the records server. The time it takes depends on the size of the chosen file; larger files can take a while, and it may appear that nothing has happened after clicking the 'Submit' button.</p>
                 <div class="form-group">
                     <h6>{{ form.upload.label(class="form-control-file") }}</h6>
                     {% if form.upload.errors %}
                         {{ form.upload(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
                             {% for error in form.upload.errors %}
-                                <span class="text-danger">{{ error }}</span></br>
+                                <span class="text-danger">{{ error }}</span><br>
                             {% endfor %}
                         </div>
                     {% else %}
