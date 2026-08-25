@@ -61,6 +61,60 @@ Based on the branch history and implementation shape, this appears to be a meani
 - the branch clearly targets a real operational problem,
 - but it still looks like it needs further hardening, testing, and cleanup before it would be considered fully mature.
 
+### Implementation review — 2026-08-25
+
+A direct review of `archives_application/archiver/fs_coordination.py` found
+that the coordination layer is not ready to protect filesystem edits yet.
+The module is currently dormant: `path_lock`, `record_alias`, and
+`resolve_alias` have no callers outside the module.  In particular,
+`ServerEdit.execute()` still performs rename, move, delete, and create
+operations without a coordination lock, and its queued database
+reconciliation tasks do not resolve recorded aliases.
+
+The following issues must be addressed before integrating the layer:
+
+1. **Flask configuration is read too early.** The module reads
+   `flask.current_app.config` and constructs its Redis client at import time.
+   Importing it before an application context is active will raise Flask's
+   "working outside of application context" error. Configuration and Redis
+   client lookup should instead happen lazily from the active application or
+   be injected by the caller.
+
+2. **A cross-subtree move is not mutually exclusive with an edit in either
+   subtree.** A move between `root/A` and `root/B` produces the `root` lock
+   key, whereas an operation only in `root/A` produces `root/A`. Redis locks
+   do not have parent/child semantics, so both locks can be held at the same
+   time. The implementation should acquire every affected bucket in a stable
+   order, or intentionally use one coarse lock scope for all such edits.
+
+3. **The documented Windows/UNC path behavior fails on Linux/WSL.** The
+   module uses host `os.path` behavior for inputs such as `N:\\...`; on a
+   Linux worker, backslashes are not separators. The root-prefix check then
+   treats the path as outside the root, and `dirname()` cannot walk alias
+   ancestors. The app should either pass only normalized mounted POSIX paths
+   to this module or choose `ntpath`/POSIX path handling from the input form.
+   Case normalization also needs an explicit policy for the case-insensitive
+   SMB-backed archive mount.
+
+4. **The lock lease can expire silently during a mutation.** The default
+   900-second Redis lease matches `ServerEdit.execute()`'s default task
+   timeout. A long copy or deletion can therefore outlive the lock, and the
+   suppressed release exception hides that loss of ownership. Use lease
+   renewal or a demonstrably larger lease, and log or fail explicitly when
+   lock ownership is lost.
+
+5. **Alias records need lifecycle and scope protections.** `record_alias()`
+   does not validate that both directories are inside the managed archive
+   root. Its seven-day TTL can also redirect a delayed task to an unrelated
+   directory if a path is deleted and later recreated. Alias registration and
+   consumption should be tied to the known server root and task lifetime.
+
+Recommended next steps are to correct the module, add isolated tests for
+POSIX and Windows/UNC paths, alias chains, lease loss, and concurrent
+multi-bucket locking, then integrate the lock around each `ServerEdit`
+filesystem mutation and ensure reconciliation tasks resolve aliases before
+using queued paths.
+
 ## Branch history notes
 
 The branch contains three significant commits:
