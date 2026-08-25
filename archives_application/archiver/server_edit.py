@@ -128,7 +128,7 @@ class ServerEdit:
         if len(filename_parts) == 1:
             return filename + unique_suffix
         
-        return '.'.join(filename_parts[:-1]) + unique_suffix + '.' + filename
+        return '.'.join(filename_parts[:-1]) + unique_suffix + '.' + filename_parts[-1]
 
     @staticmethod
     def _safe_path_join(path_list):
