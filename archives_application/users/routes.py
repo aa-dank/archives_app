@@ -128,7 +128,7 @@ def callback():
         #TODO add unsanctioned accounts to config?
         unsanctioned_accounts = ["test@ucsc.edu", "archives@ucsc.edu", "constdoc@ucsc.edu"]
         if users_email.lower() in unsanctioned_accounts:
-            message = f'Account {users_email} is unsanctioned for Google Authentication.  Sign in with application password or contact application admin.'
+            message = f'Account {users_email} is not permitted for Google Authentication.  Sign in with application password or contact application admin.'
             flask.flash(message, 'danger')
             return flask.redirect(flask.url_for('main.home'))
 

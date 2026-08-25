@@ -1,0 +1,77 @@
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <h2>Directory Contents Summary</h2>
+        <p><strong>Current Path:</strong> <span style="white-space: pre-wrap; word-break: break-word;">{{ user_path }}</span></p>
+
+        {% if summary_stats %}
+            <h4>Current Path Summary</h4>
+            <table class="table-dark table-striped table-bordered table-hover table-sm" style="table-layout: auto; width: 100%;">
+                <tbody>
+                    {% for label, value in summary_stats.items() %}
+                        <tr>
+                            <th style="width: 45%;">{{ label }}</th>
+                            <td>{{ value }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+
+        <p>
+            {% if parent_path %}
+                <a href="{{ url_for('archiver.dir_contents_summary', path=parent_path) }}">Parent directory summary</a>
+            {% endif %}
+            <form method="GET"
+                  action="{{ url_for('archiver.dir_contents_summary_download') }}"
+                  id="dir-contents-download-form"
+                  style="display: inline;">
+                <input type="hidden" name="path" value="{{ user_path }}">
+                <input type="submit"
+                       id="dir-contents-download-button"
+                       class="btn btn-outline-success btn-sm"
+                       value="Download Excel">
+            </form>
+        </p>
+
+        <h4>Child Directories</h4>
+        <div>
+            {% if summary_table_html %}
+                {{ summary_table_html | safe }}
+            {% else %}
+                <p>No child directories found for this location.</p>
+            {% endif %}
+        </div>
+
+        <h4>Files in Current Directory</h4>
+        <div>
+            {% if files_exceed_limit %}
+                <p><strong>⚠️ Warning:</strong> This directory contains {{ current_files_count }} files (exceeds display limit of 300). Download the Excel spreadsheet to see the complete list.</p>
+            {% elif current_files_table_html %}
+                {{ current_files_table_html | safe }}
+            {% else %}
+                <p>No files found directly in this directory.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var downloadForm = document.getElementById('dir-contents-download-form');
+            if (!downloadForm) {
+                return;
+            }
+
+            downloadForm.addEventListener('submit', function(event) {
+                var button = document.getElementById('dir-contents-download-button');
+                if (button) {
+                    button.value = 'Generating Excel...';
+                    setTimeout(function() { button.disabled = true; }, 10);
+                }
+
+                event.preventDefault();
+                setTimeout(function() { HTMLFormElement.prototype.submit.call(downloadForm); }, 350);
+            });
+        });
+    </script>
+{% endblock content %}

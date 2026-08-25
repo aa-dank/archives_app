@@ -24,6 +24,11 @@ from typing import Union, List, Dict
 
 from archives_application.models import WorkerTaskModel, UserModel
 
+
+class RequestParameterValidationError(ValueError):
+    """Raised when a request parameter cannot be parsed as its requested type."""
+
+
 def contains_unicode(text):
     """
     Determine whether the provided text contains any non-ASCII (i.e., outside the 0x00–0x7F range) characters.
@@ -144,6 +149,8 @@ def html_table_from_df(df, path_columns: List[str] = [], html_columns: List[str]
     :param html_columns: list of column names that need to be transformed to render correctly in HTML
     :return: html table string
     """
+    df = df.copy()
+
     # The following lines of code are to resolve an issue where html collapses multiple spaces into one space but 
     # to_html() escapes the non-collapsing html space character. The solution is to replace spaces in filepaths with 
     # a uncommon char sequence before the to_html() render and then replace the char sequence with the non-collapsing
@@ -209,7 +216,9 @@ class FileServerUtils:
                 return "Unknown"
             
         def split_windows_path(filepath):
-            """"""
+            """
+            Splits a windows filepath into its components.
+            """
             parts = []
             curr_part = ""
             is_absolute = False
@@ -266,6 +275,70 @@ class FileServerUtils:
         return split_other_path(path)
 
     @staticmethod
+    def _clean_split_parts(path_parts):
+        """Remove empty/root-only markers from split path parts."""
+        return [part for part in path_parts if part not in ['/', '//', '', '///', '////']]
+
+    @staticmethod
+    def _is_absolute_path(path_value):
+        """Return True when the value looks like an absolute Windows/UNC or Linux path."""
+        path_str = str(path_value)
+        return path_str.startswith("\\\\") or path_str.startswith('/') or (len(path_str) >= 2 and path_str[1] == ':')
+
+    @staticmethod
+    def _relative_archive_path_parts(path_value, archives_location):
+        """
+        Return archive-root-relative path parts when the value can be interpreted that way.
+
+        Returns None for absolute paths that do not live under archives_location.
+        """
+        if path_value is None:
+            return None
+
+        path_str = str(path_value).strip()
+        if not path_str:
+            return []
+
+        archive_root_parts = FileServerUtils.split_path(str(archives_location))
+        path_parts = FileServerUtils.split_path(path_str)
+
+        if path_parts[:len(archive_root_parts)] == archive_root_parts:
+            return FileServerUtils._clean_split_parts(path_parts[len(archive_root_parts):])
+
+        if FileServerUtils._is_absolute_path(path_str):
+            return None
+
+        return FileServerUtils._clean_split_parts(path_parts)
+
+    @staticmethod
+    def relative_archive_path_to_user_path(relative_path, user_archives_location, user_location_networked = False, filename = None):
+        """
+        Join an archive-root-relative path to the user-facing archive mount point using
+        Windows backslash separators. Core primitive called by ``user_path_from_db_data``,
+        ``archived_file_path_to_user_path``, and ``app_path_to_user_path``.
+
+        :param relative_path: Archive-root-relative directory path, e.g. ``"ClientFiles/ProjectX"``.
+        :param user_archives_location: User-facing mount point or UNC root, e.g.
+            ``"\\\\fileserver\\Archives"`` or ``"Z:\\Archives"``.
+        :param user_location_networked: Force a ``\\\\`` UNC prefix on the result. Defaults to False.
+        :param filename: Optional filename to append (e.g. ``files.filename``). Defaults to None.
+        :return: Windows-style path, e.g. ``"\\\\fileserver\\Archives\\ClientFiles\\ProjectX\\report.pdf"``.
+        """
+        relative_parts = FileServerUtils._clean_split_parts(FileServerUtils.split_path(relative_path))
+        user_root_parts = FileServerUtils._clean_split_parts(FileServerUtils.split_path(user_archives_location))
+        user_file_path_list = user_root_parts + relative_parts
+        if filename:
+            user_file_path_list.append(filename)
+
+        user_file_path = "\\".join(user_file_path_list)
+        user_file_path = user_file_path.lstrip('\\')
+        if user_location_networked:
+            while not user_file_path.startswith("\\\\"):
+                user_file_path = "\\" + user_file_path
+
+        return user_file_path
+
+    @staticmethod
     def prefixes_from_project_number(project_number: str):
         """
         returns root directory prefix for given project number.
@@ -276,7 +349,7 @@ class FileServerUtils:
         project_no_prefix = project_number.split("-")[0]
         project_no_prefix = ''.join(i for i in project_no_prefix if i.isdigit())
         xx_level_prefix = project_no_prefix[:3]
-        if len(xx_level_prefix) <= 4:
+        if len(project_no_prefix) <= 4:
             xx_level_prefix = project_no_prefix[:2]
         return xx_level_prefix + 'xx', project_no_prefix
 
@@ -293,24 +366,6 @@ class FileServerUtils:
             dir_name_index += 1
         
         return file_code.strip().upper()
-    
-    @staticmethod
-    def clean_path(path: str):
-        """
-        Process a path string such that it can be used regardless of the os and regardless of whether its length
-        surpasses the limit in windows file systems
-        :param path:
-        :return:
-        """
-        path = path.replace('/', os.sep).replace('\\', os.sep)
-        if os.sep == '\\' and '\\\\?\\' not in path:
-            # fix for Windows 260 char limit
-            relative_levels = len([directory for directory in path.split(os.sep) if directory == '..'])
-            cwd = [directory for directory in os.getcwd().split(os.sep)] if ':' not in path else []
-            path = '\\\\?\\' + os.sep.join(cwd[:len(cwd) - relative_levels] \
-                                        + [directory for directory in path.split(os.sep) if directory != ''][
-                                            relative_levels:])
-        return path
 
     @staticmethod
     def mounted_path_to_networked_path(mounted_path, network_location):
@@ -333,23 +388,114 @@ class FileServerUtils:
     @staticmethod
     def user_path_from_db_data(file_server_directories, user_archives_location, user_location_networked = False, filename = None):
         """
-        Takes the file_server_directories and archives_location from the database and returns a path that can be used by the user.
+        Build a user-facing Windows path from ``file_locations`` DB columns.
+
+        Combines ``file_locations.file_server_directories`` (an archive-root-relative path)
+        with the user-facing archive mount point (``USER_ARCHIVES_LOCATION`` config value)
+        to produce a path the user can open directly in Windows Explorer.
+
+        :param file_server_directories: ``file_locations.file_server_directories`` value.
+        :param user_archives_location: User-facing mount point or UNC root from app config.
+        :param user_location_networked: Force a ``\\\\`` UNC prefix on the result. Defaults to False.
+        :param filename: ``files.filename`` value to append. When None, returns the directory path only.
+        :return: Windows-style path, e.g. ``"\\\\fileserver\\Archives\\ClientFiles\\ProjectX\\report.pdf"``.
         """
-        server_directories_list = FileServerUtils.split_path(file_server_directories)
-        archives_network_location_list = FileServerUtils.split_path(user_archives_location)
-        archives_network_location_list = [d for d in archives_network_location_list if d not in ['//', '', '///', '////']]
-        user_file_path_list = archives_network_location_list + server_directories_list
-        if filename:
-            user_file_path_list = user_file_path_list + [filename]
-        
-        user_file_path = "\\".join(user_file_path_list)
-        user_file_path = user_file_path.lstrip('\\')
-        if user_location_networked:
-            while not user_file_path.startswith("\\\\"):
-                user_file_path = "\\" + user_file_path
-        
-        return user_file_path
-    
+        return FileServerUtils.relative_archive_path_to_user_path(
+            relative_path=file_server_directories,
+            user_archives_location=user_archives_location,
+            user_location_networked=user_location_networked,
+            filename=filename
+        )
+
+    @staticmethod
+    def archive_relative_path(path_value, archives_location):
+        """
+        Convert a path under the archives root to a linux-style relative path.
+
+        If the value is already relative, it is normalised to use forward slashes.
+        If the value is absolute but not rooted at archives_location, the original value is returned.
+        """
+        if path_value is None:
+            return path_value
+
+        path_str = str(path_value).strip()
+        if not path_str:
+            return path_str
+
+        relative_parts = FileServerUtils._relative_archive_path_parts(path_str, archives_location)
+        if relative_parts is None:
+            return path_str
+
+        return "/".join(relative_parts)
+
+    @staticmethod
+    def archived_file_path_to_user_path(destination_path, archives_location, user_archives_location, user_location_networked = False):
+        """
+        Convert an archived_files.destination_path value to a user-facing Windows path.
+
+        Expected values are linux-style relative paths under the archive root. Legacy absolute
+        archive paths are also supported. Unexpected absolute paths are returned unchanged.
+        """
+        if destination_path is None:
+            return destination_path
+
+        path_str = str(destination_path).strip()
+        if not path_str:
+            return path_str
+
+        relative_parts = FileServerUtils._relative_archive_path_parts(path_str, archives_location)
+        if relative_parts is None:
+            return path_str
+
+        return FileServerUtils.relative_archive_path_to_user_path(
+            relative_path="/".join(relative_parts),
+            user_archives_location=user_archives_location,
+            user_location_networked=user_location_networked
+        )
+
+    @staticmethod
+    def app_path_to_user_path(app_path, archives_location, user_archives_location, user_location_networked = False):
+        """
+        Converts a full archive path stored using the app server's filesystem to a user-facing Windows path.
+
+        The portion of the path rooted at archives_location is replaced with user_archives_location,
+        and the remainder is joined using Windows path separators.
+        """
+        if not app_path:
+            return app_path
+
+        relative_parts = FileServerUtils._relative_archive_path_parts(app_path, archives_location)
+        if relative_parts is None or not FileServerUtils._is_absolute_path(app_path):
+            return str(app_path)
+
+        return FileServerUtils.relative_archive_path_to_user_path(
+            relative_path="/".join(relative_parts),
+            user_archives_location=user_archives_location,
+            user_location_networked=user_location_networked
+        )
+
+    @staticmethod
+    def app_path_to_db_dir(app_path: str, archives_location: str) -> tuple[str, str]:
+        """
+        Convert an app/server filesystem path into a database directory prefix and normalized prefix with trailing slash.
+
+        Used internally to convert between mounted filesystem paths (e.g., /mnt/n/PPDO/Records)
+        and database-stored relative paths (e.g., PPDO/Records).
+
+        :param app_path: The absolute filesystem path under the archives root.
+        :param archives_location: The archives root mount point or server path.
+        :return: A tuple of (db_dir, db_dir_norm) where:
+            - db_dir is the relative path with forward slashes (e.g., "PPDO/Records")
+            - db_dir_norm is db_dir with a trailing slash if non-empty (e.g., "PPDO/Records/")
+        """
+        rel_path = os.path.relpath(app_path, archives_location)
+        if rel_path in ['.', './']:
+            db_dir = ''
+        else:
+            db_dir = rel_path.replace(os.sep, '/').strip('/')
+        db_dir_norm = f"{db_dir}/" if db_dir else ''
+        return db_dir, db_dir_norm
+
     @staticmethod
     def path_to_project_dir(project_number: Union[int, str], archives_location: str, create_new_project_dir: bool = False):
         """
@@ -376,7 +522,7 @@ class FileServerUtils:
             
             # The regex, `^{re.escape(project_number)}(?![\w-])`, matches the project number at the beginning of the string and
             # ensures that the next character is not a word character or a hyphen.
-            pattern = re.compile(f'^{re.escape(project_number)}(?![\w-])')
+            pattern = re.compile(rf'^{re.escape(project_number)}(?![\w-])')
             return bool(pattern.search(directory_name))
             
             
@@ -518,7 +664,7 @@ class FlaskAppUtils:
         return decorator
     
 
-    @staticmethod # TODO - this function is not used anywhere in the application?
+    @staticmethod
     def user_path_to_app_path(path_from_user, app: flask.app.Flask):
         """
         Uses setting from app config to convert a user entered path to a path that can be used by the application.
@@ -584,7 +730,8 @@ class FlaskAppUtils:
             path_from_user = PureWindowsPath(path_from_user)
             user_path_list = list(path_from_user.parts)
 
-            server_mount_path_list = FileServerUtils.split_path(app.config.get('ARCHIVES_LOCATION'))
+            archives_location_for_app = app.config.get('ARCHIVES_LOCATION')
+            server_mount_path_list = FileServerUtils.split_path(archives_location_for_app)
             user_server_location_list = FileServerUtils.split_path(app.config.get('USER_ARCHIVES_LOCATION'))
             
             # combine the paths to get thepath from the app to the user location
@@ -597,7 +744,7 @@ class FlaskAppUtils:
             app_path = "\\\\" + path_from_user.lstrip("/" + "\\")
         # if the path is not a network url, we can map it to the network location
         if not matches_network_url(path_from_user):
-            app_path = FileServerUtils.mounted_path_to_networked_path(mounted_path=path_from_user, network_location=location_path_prefix)
+            app_path = FileServerUtils.mounted_path_to_networked_path(mounted_path=path_from_user, network_location=archives_location_for_app)
 
         return app_path
     
@@ -717,22 +864,54 @@ class FlaskAppUtils:
         return any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
     
     @staticmethod
-    def retrieve_request_param(param_name: str, default_value: str = None):
+    def retrieve_request_param(
+        param_name: str,
+        default_value=None,
+        *,
+        param_is_bool: bool = False,
+    ):
         """
-        Retrieves a parameter from the request. If the parameter is not found, the default value is returned.
-        Looks in the url, headers, and body of the request.
+        Retrieve a parameter from the request, returning the default when absent.
+
+        Looks in the URL query string, headers, form data, and a JSON object
+        request body, in that order.
+
+        When ``param_is_bool`` is true, accepts JSON booleans or the strings
+        ``true`` and ``false`` (case-insensitive) and returns a Python bool.
+
         :param param_name: the name of the parameter to retrieve
         :param default_value: the value to return if the parameter is not found
+        :param param_is_bool: parse the parameter as a strict boolean
         :return: the value of the parameter or the default value
         """
         param_value = flask.request.args.get(param_name)
-        if not param_value:
+        if param_value is None:
             param_value = flask.request.headers.get(param_name)
-        if not param_value:
+        if param_value is None:
             param_value = flask.request.form.get(param_name)
-        if not param_value:
-            param_value = default_value
-        return param_value
+        if param_value is None and flask.request.is_json:
+            json_data = flask.request.get_json(silent=True)
+            if isinstance(json_data, dict):
+                param_value = json_data.get(param_name)
+        if param_value is None:
+            return default_value
+
+        if not param_is_bool:
+            return param_value
+
+        if isinstance(param_value, bool):
+            return param_value
+
+        if isinstance(param_value, str):
+            normalized_value = param_value.strip().lower()
+            if normalized_value == "true":
+                return True
+            if normalized_value == "false":
+                return False
+
+        raise RequestParameterValidationError(
+            f"{param_name} must be true or false."
+        )
     
     @staticmethod
     def api_exception_subroutine(response_message, thrown_exception):
@@ -829,7 +1008,7 @@ class FilesUtils:
         :return: The cleaned filename safe for use on most file systems.
         """
         clean_filename = proposed_filename.replace('\n', '')
-        clean_filename = "".join(i for i in clean_filename if i not in "\/:*?<>|")
+        clean_filename = "".join(i for i in clean_filename if i not in "\\/:*?<>|")
         clean_filename = clean_filename.strip()
         clean_filename = sanitize_unicode(clean_filename)
         return clean_filename
@@ -856,7 +1035,10 @@ class FilesUtils:
                     raise ValueError("No pages in pdf")
                 
                 page_pix_map = fitz_doc.load_page(0).get_pixmap()
-                page_img = Image.frombytes("RGB", [page_pix_map.width, page_pix_map.height], page_pix_map.samples)
+                mode = "RGBA" if page_pix_map.alpha else "RGB"
+                page_img = Image.frombytes(mode=mode,
+                                           size=[page_pix_map.width, page_pix_map.height],
+                                           data=page_pix_map.samples)
 
                 # free C-level memory for the pixmap immediately
                 del page_pix_map
@@ -970,16 +1152,24 @@ class RQTaskUtils:
     """
 
     @staticmethod
-    def enqueue_new_task(db, enqueued_function: callable, task_kwargs: dict = {}, enqueue_call_kwargs: dict = {}, task_info={}, timeout: Union[int, None] = None):
+    def enqueue_new_task(db, enqueued_function: callable, task_kwargs: Union[dict, None] = None,
+                         enqueue_call_kwargs: Union[dict, None] = None,
+                         task_info: Union[dict, None] = None,
+                         timeout: Union[int, None] = None):
         """
         Adds a function to the rq task queue to be executed asynchronously. The function must have a paramater called 'queue_id' which will
         give the function access to the task id of the rq task. This can be used for updating the status of the task in the database.
         :param function: function to be executed
         :param function_kwargs: keyword arguments for the function
-        :param timeout: timeout for the function. Measured in minutes.
+        :param timeout: timeout for the function. Measured in seconds.
         :return: Dictionary containing information about the task, including the task id.
         """
         
+        # Copy caller-provided mappings so adding queue-specific data below does not mutate them.
+        task_kwargs = dict(task_kwargs) if task_kwargs is not None else {}
+        enqueue_call_kwargs = dict(enqueue_call_kwargs) if enqueue_call_kwargs is not None else {}
+        task_info = dict(task_info) if task_info is not None else {}
+
         def random_string(length=5):
             """
             sub-function to generate a random string of a given length.
@@ -996,10 +1186,10 @@ class RQTaskUtils:
             job_id = f"{enqueued_function.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}_{random_string()}"
             
         task_kwargs['queue_id'] = job_id
-        timeout = timeout * 60 if timeout else None
-        
-        #TODO remove the timout param and just use the enqueue_call_kwargs
-        if not enqueue_call_kwargs.get('timeout'):
+
+        # An explicitly supplied enqueue_call_kwargs timeout takes precedence,
+        # including values that are falsey.
+        if 'timeout' not in enqueue_call_kwargs:
             enqueue_call_kwargs['timeout'] = timeout
 
         enqueue_call_kwargs['job_id'] = job_id

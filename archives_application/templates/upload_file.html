@@ -6,7 +6,7 @@
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Upload File</legend>
                 <h3>Instructions:</h3>
-                <p>Enter a project number and choose destination directory (filing code). Alternatively, enter a "Destination Path" which is a complete path (likely copied from Windows file explorer) to the location for the file to be archived; useful for archiving non-project files and archiving files within additional folder structure. However the file location is entered, all non-existing directories needed to complete the path to the archiving destination will be created.</p>
+                <p>Enter a project number and choose a destination directory (filing code). Alternatively, enter a complete destination path (likely copied from Windows File Explorer) for the file to be archived. This is useful for archiving non‑project files or placing files within additional folder structure. Any missing intermediate directories in the destination path will be created automatically.</p>
                 <div class="form-group">
                     <h5>{{ form.upload.label(class="form-control-file") }}</h5>
                     {% if form.upload.errors %}
@@ -77,7 +77,7 @@
                         {{ form.destination_directory(class="form-control form-control-lg") }}
                     {% endif %}
                 </div>
-                <h6>...or, alternatively, enter path to archiving destination directory:</h6>
+                <h6>...or enter a full path to the archiving destination directory:</h6>
                 <div class="form-group">
                     <h5>{{ form.destination_path.label(class="form-control-label") }}</h5>
                     <p>Useful for archiving a file that doesn't have a corresponding project or that needs to be archived in a custom directory.</p>

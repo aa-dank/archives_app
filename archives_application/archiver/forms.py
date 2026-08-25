@@ -2,7 +2,9 @@
 
 import errno
 import os
+import re
 import flask
+from pathlib import PureWindowsPath
 from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField, SelectField, BooleanField, SelectMultipleField, widgets
 from wtforms.validators import DataRequired, ValidationError
@@ -10,17 +12,66 @@ from flask_wtf.file import FileField, FileRequired
 from .. import utils
 
 
-def path_validation_subroutine(path_form_field: StringField, path_type: str = None):
+# Valid project numbers currently supported by project-directory resolution logic.
+# Examples: 1234, 12345A, 1234-001, 12345-001A
+PROJECT_NUMBER_RE_PATTERN = r'^\d{4,5}(?:[A-Z])?(?:-\d{3})?(?:[A-Z])?$'
+FILE_EXTENSION_RE_PATTERN = r'^[A-Za-z0-9][A-Za-z0-9_-]*$'
+
+
+def project_number_pattern_validation(project_number_field: StringField):
+    """Validate project number format when provided.
+
+    The project number field is optional because users may instead archive directly
+    to an explicit Destination Path.
+    """
+    if not project_number_field.data:
+        return
+
+    project_number = utils.sanitize_unicode(project_number_field.data.strip()).upper()
+    if not re.fullmatch(PROJECT_NUMBER_RE_PATTERN, project_number):
+        raise ValidationError(
+            "Project number format is invalid. For unconventional project numbers, leave Project Number blank and use Destination Path instead."
+        )
+
+
+def _normalized_path_parts(path_value: str) -> list[str]:
+    parts = utils.FileServerUtils.split_path(str(PureWindowsPath(path_value).as_posix()))
+    return [part.strip('\\/').lower() for part in parts if part and part not in ['/', '//', '\\\\']]
+
+
+def _path_starts_with_user_mount(path_value: str, user_mount: str) -> bool:
+    if not user_mount:
+        return True
+    if not path_value:
+        return False
+
+    entered_parts = _normalized_path_parts(path_value.strip())
+    mount_parts = _normalized_path_parts(str(user_mount).strip())
+    if len(entered_parts) < len(mount_parts):
+        return False
+    return entered_parts[:len(mount_parts)] == mount_parts
+
+
+def path_validation_subroutine(path_form_field: StringField, path_type: str = None, require_user_mount: bool = False):
     """
     Ensures that the path exists and matches the type requirement
     :param path_form_field: The form field that contains the path string
     :param path_type: The type of path that is required. Either "file" or "dir"
+    :param require_user_mount: If True, path must start with USER_ARCHIVES_LOCATION
     """
     if path_type not in ["file", "dir", None]:
         raise ValueError("path_type must be either 'file' or 'dir'")
     
     if path_form_field.data:
         path_validation_error = lambda mssg: ValidationError(f"{mssg}: \n{path_form_field.data}")
+
+        if require_user_mount:
+            user_mount = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+            if user_mount and not _path_starts_with_user_mount(path_form_field.data, user_mount):
+                raise path_validation_error(
+                    f"Path must start with configured user mount point:\n{user_mount}\nEntered path"
+                )
+
         try:
             network_path = utils.FlaskAppUtils.user_path_to_app_path(
                 path_from_user=path_form_field.data,
@@ -55,7 +106,7 @@ def validate_str_path(form: FlaskForm, field: StringField):
     """
     Universal simple file and directory path validation function
     """
-    path_validation_subroutine(field)
+    path_validation_subroutine(field, require_user_mount=True)
 
 
 class MultiCheckboxField(SelectMultipleField):
@@ -80,6 +131,9 @@ class UploadFileForm(FlaskForm):
     upload = FileField('File Upload', validators=[FileRequired()])
     submit = SubmitField('Archive File')
 
+    def validate_project_number(self, project_number):
+        project_number_pattern_validation(project_number)
+
 
 class ArchivedOrNotForm(FlaskForm):
     project_number = StringField('Project Number')
@@ -97,6 +151,9 @@ class InboxItemForm(FlaskForm):
     notes = StringField('Notes')
     submit = SubmitField('Archive File')
 
+    def validate_project_number(self, project_number):
+        project_number_pattern_validation(project_number)
+
 class BatchInboxItemsForm(FlaskForm):
     items_to_archive = MultiCheckboxField('Items to archive', choices=[], validate_choice=False)
     project_number = StringField('Project Number')
@@ -105,17 +162,105 @@ class BatchInboxItemsForm(FlaskForm):
     notes = StringField('Notes')
     submit = SubmitField('Archive Items')
 
-class FileSearchForm(FlaskForm):
-    search_location = StringField('Limit Search to Location')
+    def validate_project_number(self, project_number):
+        project_number_pattern_validation(project_number)
+
+class ArchiveSearchForm(FlaskForm):
+    """Form for the archive search workflow and its scope controls."""
+
     search_term = StringField('Search Term', validators=[DataRequired()])
-    filename_only = BooleanField('Search Filenames Only', default=True)
+    search_mode = SelectField(
+        'Search Mode',
+        choices=[
+            ('combined', 'Filename/path + document text'),
+            ('filename_only', 'Filename only'),
+            ('filepath', 'Filename/path'),
+            ('content', 'Document text'),
+        ],
+        default='combined'
+    )
+    scope_type = SelectField(
+        'Search Scope',
+        choices=[
+            ('all', 'All archives'),
+            ('location', 'Location prefix'),
+            ('project', 'Project'),
+            ('caan', 'CAAN'),
+        ],
+        default='all'
+    )
+    location_scope = StringField('Location Prefix')
+    project_number = StringField('Project Number')
+    caan = StringField('CAAN')
+    file_extension = StringField('File Extensions')
     submit = SubmitField('Search')
 
-    def validate_search_location(self, search_location):
+    def validate(self, extra_validators=None):
+        """Validate that the user selected at most one search scope."""
+        if not super().validate(extra_validators=extra_validators):
+            return False
+
+        scope_values = {
+            'location': (self.location_scope.data or '').strip(),
+            'project': (self.project_number.data or '').strip(),
+            'caan': (self.caan.data or '').strip(),
+        }
+        selected_scope_value = scope_values.get(self.scope_type.data)
+        other_scope_values = [
+            value for scope, value in scope_values.items()
+            if scope != self.scope_type.data and value
+        ]
+
+        if self.scope_type.data != 'all' and not selected_scope_value:
+            field_by_scope = {
+                'location': self.location_scope,
+                'project': self.project_number,
+                'caan': self.caan,
+            }
+            field_by_scope[self.scope_type.data].errors.append(
+                "Provide a value for the selected scope."
+            )
+            return False
+
+        if self.scope_type.data == 'all' and any(scope_values.values()):
+            self.scope_type.errors.append(
+                "Select a scoped search type before entering a location, project, or CAAN."
+            )
+            return False
+
+        if other_scope_values:
+            self.scope_type.errors.append(
+                "Use one scope at a time: location, project, CAAN, or all archives."
+            )
+            return False
+
+        extension_values = [
+            extension.strip().lstrip(".")
+            for extension in (self.file_extension.data or "").split(",")
+            if extension.strip().lstrip(".")
+        ]
+        invalid_extensions = [
+            extension for extension in extension_values
+            if not re.fullmatch(FILE_EXTENSION_RE_PATTERN, extension)
+        ]
+        if invalid_extensions:
+            self.file_extension.errors.append(
+                "Separate extensions with commas, such as pdf, docx, tif."
+            )
+            return False
+
+        return True
+
+
+class DirContentsSummaryForm(FlaskForm):
+    path = StringField('Directory Path', validators=[DataRequired()])
+    submit = SubmitField('View')
+
+    def validate_path(self, path):
         """
-        Ensures that the search location exists
+        Ensures that the entered directory path starts with USER_ARCHIVES_LOCATION and exists.
         """
-        path_validation_subroutine(search_location, path_type="dir")
+        path_validation_subroutine(path, path_type="dir", require_user_mount=True)
 
 
 class ScrapeLocationForm(FlaskForm):
@@ -127,7 +272,7 @@ class ScrapeLocationForm(FlaskForm):
         """
         Ensures that the scraping location exists
         """
-        path_validation_subroutine(scrape_location, path_type="dir")
+        path_validation_subroutine(scrape_location, path_type="dir", require_user_mount=True)
 
 
 class ServerChangeForm(FlaskForm):
@@ -151,6 +296,12 @@ class ServerChangeForm(FlaskForm):
         Ensures that the new directory doesn't already exist and that the parent directory does exist
         """
         if new_directory.data:
+            user_mount = flask.current_app.config.get('USER_ARCHIVES_LOCATION')
+            if user_mount and not _path_starts_with_user_mount(new_directory.data, user_mount):
+                raise ValidationError(
+                    f"Path must start with configured user mount point: {user_mount}  |  Entered path: {new_directory.data}"
+                )
+
             network_directory = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=new_directory.data,
                                                                           app=flask.current_app)
             if os.path.exists(os.path.join(network_directory)):
@@ -170,7 +321,7 @@ class ServerChangeForm(FlaskForm):
         """
         Ensures that the destination path exists and is a directory
         """
-        path_validation_subroutine(destination_path, path_type="dir")
+        path_validation_subroutine(destination_path, path_type="dir", require_user_mount=True)
 
 
 class BatchServerEditForm(FlaskForm):
@@ -183,14 +334,13 @@ class BatchServerEditForm(FlaskForm):
         """
         Ensures that the destination path exists and is a directory
         """
-        path_validation_subroutine(destination_path, path_type="dir")
-
+        path_validation_subroutine(destination_path, path_type="dir", require_user_mount=True)
 
     def validate_asset_path(self, asset_path):
         """
         Ensures that the asset path exists
         """
-        path_validation_subroutine(asset_path, path_type="dir")
+        path_validation_subroutine(asset_path, path_type="dir", require_user_mount=True)
 
 
 class BatchMoveEditForm(FlaskForm):
@@ -205,11 +355,11 @@ class BatchMoveEditForm(FlaskForm):
         """
         # if nothing is selected, then just return
         if destination_path.data:
-            path_validation_subroutine(destination_path, path_type="dir")
+            path_validation_subroutine(destination_path, path_type="dir", require_user_mount=True)
     
     def validate_asset_path(self, asset_path):
         """
         Ensures that the asset path exists
         """
         if asset_path.data:
-            path_validation_subroutine(asset_path, path_type="dir")
+            path_validation_subroutine(asset_path, path_type="dir", require_user_mount=True)

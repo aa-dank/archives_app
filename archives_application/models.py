@@ -3,7 +3,9 @@
 from archives_application import db, login_manager
 from datetime import datetime
 from flask_login import UserMixin
-from sqlalchemy import func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import func, CheckConstraint, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import JSONB
 
 
 @login_manager.user_loader
@@ -78,6 +80,26 @@ class FileModel(db.Model):
     hash = db.Column(db.String, unique=True, index=True, nullable=False)
     size = db.Column(db.BigInteger, nullable=False)
     extension = db.Column(db.String)
+    content = db.relationship(
+        "FileContentModel",
+        back_populates="file",
+        uselist=False,
+        passive_deletes=True,   # let postgres on-delete-cascade do its job
+        cascade="all, delete-orphan",  # optional but sane
+    )
+    content_failure = db.relationship(
+        "FileContentFailureModel",
+        back_populates="file",
+        uselist=False,
+        passive_deletes=True,
+        cascade="all, delete-orphan",
+    )
+    date_mentions = db.relationship(
+        "FileDateMentionModel",
+        back_populates="file",
+        passive_deletes=True,
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self):
         return f"file: {self.id}, {self.hash}, {self.size}, {self.extension}"
@@ -97,34 +119,6 @@ class FileLocationModel(db.Model):
     def __repr__(self):
         return f"File Location: {self.id}, {self.file_id}, {self.file_server_directories}, {self.filename}, {self.existence_confirmed}, {self.hash_confirmed}"
     
-    @classmethod
-    def filepath_search_query(cls, query_str, full_path=True):
-        """
-        Search the file locations for a query string.
-        
-        Resources:
-        https://amitosh.medium.com/full-text-search-fts-with-postgresql-and-sqlalchemy-edc436330a0c
-        https://stackoverflow.com/questions/42388956/create-a-full-text-search-index-with-sqlalchemy-on-postgresql
-
-        :param query_str: str: The query string to search for.
-        :param full_path: bool: If true, search the full path and filename, otherwise just search the filename.
-        """
-        # replace periods with spaces in the filename to ensure file extensions are treated as separate words
-        adjusted_filename = func.regexp_replace(cls.filename, r'\.', ' ', 'gi')
-        
-        # create the tsvector and tsquery
-        vector = func.to_tsvector('english', adjusted_filename)
-        query_vector = func.websearch_to_tsquery(query_str)
-
-        # if full_path is true, then run the query against the combined path and filename
-        if full_path:
-            path_vector = func.to_tsvector('english', cls.file_server_directories)
-            vector = vector.op('||')(path_vector)
-        
-        query = cls.query.filter(vector.op('@@')(query_vector))
-        return query
-
-
 class WorkerTaskModel(db.Model):
     __tablename__ = 'worker_tasks'
     
@@ -141,11 +135,107 @@ class WorkerTaskModel(db.Model):
         return f"Enqueued Task: {self.id}, {self.task_id}, {self.time_enqueued}, {self.origin}, {self.function_name}, {self.time_completed}, {self.status}, {self.task_results}"
 
 
-project_caans = db.Table(
-    'project_caans',
-    db.Column('project_id', db.Integer, db.ForeignKey('projects.id'), primary_key=True),
-    db.Column('caan_id', db.Integer, db.ForeignKey('caans.id'), primary_key=True)
-)
+class ArchiveSearchRunModel(db.Model):
+    """Persisted execution metadata for a single archives search."""
+
+    __tablename__ = "archive_search_runs"
+
+    id = db.Column(db.BigInteger, primary_key=True)
+    search_timestamp = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    duration_ms = db.Column(db.BigInteger)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="SET NULL"),
+    )
+    query_text = db.Column(db.Text, nullable=False)
+    search_mode = db.Column(db.String(32), nullable=False)
+    requested_scope_type = db.Column(db.String(20), nullable=False)
+    requested_scope_value = db.Column(db.Text)
+    extension_filters = db.Column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="incomplete",
+        server_default=text("'incomplete'::character varying"),
+    )
+    request_source = db.Column(
+        db.String(32),
+        nullable=False,
+        server_default=text("'web'::character varying"),
+    )
+    returned_result_count = db.Column(db.Integer)
+    coverage_summary = db.Column(JSONB)
+    application_version = db.Column(db.String(50), nullable=False)
+
+    user = db.relationship("UserModel")
+
+    __table_args__ = (
+        CheckConstraint(
+            "duration_ms IS NULL OR duration_ms >= 0",
+            name="ck_archive_search_runs_duration_nonnegative",
+        ),
+        CheckConstraint(
+            "returned_result_count IS NULL OR returned_result_count >= 0",
+            name="ck_archive_search_runs_result_count_nonnegative",
+        ),
+        CheckConstraint(
+            "search_mode IN ('combined', 'filename_only', 'filepath', 'content')",
+            name="ck_archive_search_runs_search_mode",
+        ),
+        CheckConstraint(
+            "requested_scope_type IN ('all', 'location', 'project', 'caan')",
+            name="ck_archive_search_runs_scope_type",
+        ),
+        CheckConstraint(
+            "status IN ('successful', 'failed', 'incomplete')",
+            name="ck_archive_search_runs_status",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(extension_filters) = 'array'",
+            name="ck_archive_search_runs_extension_filters_json",
+        ),
+        CheckConstraint(
+            "coverage_summary IS NULL OR jsonb_typeof(coverage_summary) = 'object'",
+            name="ck_archive_search_runs_coverage_summary_json",
+        ),
+        db.Index(
+            "ix_archive_search_runs_timestamp",
+            search_timestamp.desc(),
+        ),
+        db.Index(
+            "ix_archive_search_runs_user_timestamp",
+            user_id,
+            search_timestamp.desc(),
+        ),
+        db.Index(
+            "ix_archive_search_runs_status_timestamp",
+            status,
+            search_timestamp.desc(),
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f"Archive Search Run: {self.id}, {self.search_timestamp}, "
+            f"{self.search_mode}, {self.status}"
+        )
+
+
+class ProjectCaanModel(db.Model):
+    __tablename__ = 'project_caans'
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), primary_key=True)
+    caan_id = db.Column(db.Integer, db.ForeignKey('caans.id'), primary_key=True)
+    project = db.relationship('ProjectModel', back_populates='project_caans', overlaps="caans,project_caans,projects")
+    caan = db.relationship('CAANModel', back_populates='project_caans', overlaps="caans,project_caans,projects")
 
 
 class ProjectModel(db.Model):
@@ -155,7 +245,13 @@ class ProjectModel(db.Model):
     name = db.Column(db.String, nullable=False)
     file_server_location = db.Column(db.String)
     drawings = db.Column(db.Boolean)
-    caans = db.relationship('CAANModel', secondary=project_caans, back_populates='projects')
+    fmp_id_primary = db.Column(db.Integer, unique=True)
+    closed = db.Column(db.Boolean)
+    campus_client = db.Column(db.String)
+    last_synced_at = db.Column(db.DateTime(timezone=True))
+    caans = db.relationship('CAANModel', secondary=ProjectCaanModel.__table__, back_populates='projects', overlaps="project_caans,project,caan")
+    contracts = db.relationship('ContractModel', backref='project', lazy=True)
+    project_caans = db.relationship('ProjectCaanModel', back_populates='project', overlaps="caans,projects")
 
     def __repr__(self):
         return f"project: {self.id}, {self.number}, {self.name}, {self.file_server_location}, {self.drawings}"
@@ -164,10 +260,172 @@ class ProjectModel(db.Model):
 class CAANModel(db.Model):
     __tablename__ = "caans"
     id = db.Column(db.Integer, primary_key=True)
-    caan = db.Column(db.String, nullable=False)
+    caan = db.Column(db.String, nullable=False, unique=True)
     name = db.Column(db.String)
     description = db.Column(db.String)
-    projects = db.relationship('ProjectModel', secondary=project_caans, back_populates='caans')
+    fmp_id_primary = db.Column(db.Integer, unique=True)
+    address_street = db.Column(db.String)
+    address_city = db.Column(db.String)
+    address_zip = db.Column(db.String)
+    area = db.Column(db.String)
+    last_synced_at = db.Column(db.DateTime(timezone=True))
+    projects = db.relationship('ProjectModel', secondary=ProjectCaanModel.__table__, back_populates='caans', overlaps="project_caans,project,caan")
+    project_caans = db.relationship('ProjectCaanModel', back_populates='caan', overlaps="caans,projects")
     
     def __repr__(self):
         return f"caan: {self.id}, {self.caan}, {self.name}, {self.description}"
+
+class FileContentModel(db.Model):
+    __tablename__ = 'file_contents'
+    __table_args__ = (
+        db.Index('ix_file_contents_minilm_emb', 'minilm_emb', postgresql_using='ivfflat',
+                 postgresql_ops={'minilm_emb': 'vector_cosine_ops'}, postgresql_with={'lists': 100}),
+        CheckConstraint(
+            "jsonb_typeof(source_metadata) = 'object'",
+            name='ck_file_contents_source_metadata_object',
+        ),
+    )
+    file_hash = db.Column(db.String,
+                          db.ForeignKey("files.hash", ondelete="CASCADE"),
+                          primary_key=True)
+    file = db.relationship("FileModel", back_populates="content", uselist=False)
+    fts_chunks = db.relationship(
+        "FileContentFtsChunkModel",
+        back_populates="file_content",
+        passive_deletes=True,
+        cascade="all, delete-orphan",
+    )
+    source_text = db.Column(db.Text)
+    minilm_model = db.Column(db.Text, default='all-minilm-l6-v2')
+    minilm_emb = db.Column(Vector(384))
+    updated_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
+    text_length = db.Column(db.Integer)
+    source_metadata = db.Column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+
+    def __repr__(self):
+        return f"FileContent: {self.file_hash}, text_length={self.text_length}, updated_at={self.updated_at}"
+
+
+class FileContentFtsChunkModel(db.Model):
+    __tablename__ = "file_content_fts_chunks"
+    __table_args__ = (
+        UniqueConstraint(
+            "file_hash",
+            "chunk_index",
+            "chunked_at",
+            name="uq_file_content_fts_chunks_file_hash_chunk_index",
+        ),
+        CheckConstraint(
+            "length(chunk_text) > 0",
+            name="ck_file_content_fts_chunks_nonempty",
+        ),
+    )
+
+    id = db.Column(db.BigInteger, primary_key=True)
+    file_hash = db.Column(
+        db.String,
+        db.ForeignKey("file_contents.file_hash", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chunk_index = db.Column(db.Integer, nullable=False)
+    chunk_text = db.Column(db.Text, nullable=False)
+    chunked_at = db.Column(db.DateTime(timezone=True), nullable=False)
+
+    file_content = db.relationship("FileContentModel", back_populates="fts_chunks")
+
+
+class FileContentFailureModel(db.Model):
+    __tablename__ = 'file_content_failures'
+    __table_args__ = (
+        CheckConstraint("stage in ('extract', 'embed')", name='file_content_failures_stage_check'),
+        CheckConstraint(
+            "jsonb_typeof(source_metadata) = 'object'",
+            name='ck_file_content_failures_source_metadata_object',
+        ),
+    )
+
+    file_hash = db.Column(
+        db.String,
+        db.ForeignKey("files.hash", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    file = db.relationship("FileModel", back_populates="content_failure", uselist=False)
+    stage = db.Column(db.String, nullable=False)
+    error = db.Column(db.Text)
+    attempts = db.Column(db.Integer, nullable=False, server_default="1")
+    last_failed_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=func.now())
+    source_metadata = db.Column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+
+
+class FileDateMentionModel(db.Model):
+    __tablename__ = 'file_date_mentions'
+
+    file_hash = db.Column(
+        db.String,
+        db.ForeignKey("files.hash", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    mention_date = db.Column(db.Date, nullable=False, primary_key=True)
+    granularity = db.Column(db.Text, nullable=False, primary_key=True, default='day')
+    mentions_count = db.Column(db.Integer, nullable=False, server_default="1")
+    extractor = db.Column(db.Text)
+    extracted_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    file = db.relationship("FileModel", back_populates="date_mentions")
+
+    __table_args__ = (
+        db.Index('ix_fdm_date', 'mention_date'),
+        db.Index('ix_fdm_date_gran', 'mention_date', 'granularity'),
+        db.Index('ix_fdm_file', 'file_hash'),
+    )
+
+    def __repr__(self):
+        return f"FileDateMention: {self.file_hash}, {self.mention_date}, granularity={self.granularity}, count={self.mentions_count}"
+
+
+class ContractModel(db.Model):
+    __tablename__ = 'contracts'
+
+    id = db.Column(db.Integer, primary_key=True)
+    fmp_id_primary = db.Column(db.Integer, unique=True)
+    contract_number = db.Column(db.Integer)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'))
+    # Dates
+    contract_date = db.Column(db.Date)
+    ntp_start_date = db.Column(db.Date)
+    beneficial_occupancy_date = db.Column(db.Date)
+    substantial_completion_date = db.Column(db.Date)
+    certificate_of_occupancy_date = db.Column(db.Date)
+    noc_completion_date = db.Column(db.Date)
+    noc_recorded_date = db.Column(db.Date)
+    termination_date = db.Column(db.Date)
+    bid_date = db.Column(db.Date)
+    change_order_revised_expected_end = db.Column(db.Date)
+    # Financial
+    cost_estimate = db.Column(db.Numeric(14, 2))
+    original_contract_cost = db.Column(db.Numeric(14, 2))
+    change_order_total = db.Column(db.Numeric(14, 2))
+    change_order_revised_cost = db.Column(db.Numeric(14, 2))
+    account_number = db.Column(db.String)
+    funding_number = db.Column(db.String)
+    # Duration (days)
+    original_project_duration = db.Column(db.Integer)
+    change_order_time_total = db.Column(db.Integer)
+    change_order_revised_duration = db.Column(db.Integer)
+    # Parties & description
+    contractor_org_name = db.Column(db.String)
+    executive_design_org_name = db.Column(db.String)
+    scope_description = db.Column(db.Text)
+    # Sync metadata
+    last_synced_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self):
+        return f"Contract: {self.id}, project_id={self.project_id}, contractor={self.contractor_org_name}"

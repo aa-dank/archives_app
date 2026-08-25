@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 {% block content %}
     <h1>Endpoints Index</h1>
-    <P>Table of application urls and the app functions (endpoints) that are called from the url.<br>
-    Multiple urls may use the same endpoint (eg if I wanted an api url for the same endpoint that the web gui uses.)</P>
+    <p>Table of application URLs and the app functions (endpoints) that are called from each URL.<br>
+    Multiple URLs may use the same endpoint (e.g., if an API URL is provided for the same function the web GUI uses).</p>
     {{ endpoints_html_table|safe }}
 {% endblock %}
