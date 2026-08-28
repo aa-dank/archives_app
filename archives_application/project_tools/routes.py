@@ -28,6 +28,13 @@ def project_directory_summary_link(location):
     )
 
 def admin_request_user():
+    """Return the authenticated admin and supplied password, if applicable.
+
+    Explicit ``user`` and ``password`` request parameters take precedence over
+    the current session.  Returns ``(user, password)`` for a verified admin,
+    otherwise ``(None, password)`` for an attempted parameter login or
+    ``(None, None)`` when no authenticated admin is available.
+    """
     user_param = utils.FlaskAppUtils.retrieve_request_param("user", None)
     if user_param:
         password_param = utils.FlaskAppUtils.retrieve_request_param("password")
@@ -43,6 +50,12 @@ def admin_request_user():
 
 
 def requested_projects_list():
+    """Return requested project identifiers from singular and plural parameters.
+
+    Combines ``project`` with comma-separated ``projects`` values, strips
+    surrounding whitespace, omits blank entries, and returns ``None`` when
+    neither parameter provides an identifier.
+    """
     project_param = utils.FlaskAppUtils.retrieve_request_param("project", None)
     projects_param = utils.FlaskAppUtils.retrieve_request_param("projects", None)
     project_values = []
