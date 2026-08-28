@@ -1,5 +1,6 @@
 # # archives_application/project_tools/routes.py
 
+import html
 import flask
 import json
 import re
@@ -15,6 +16,16 @@ from sqlalchemy import or_, and_
 DEFAULT_TASK_TIMEOUT_SECONDS = 18000 # 5 hours
 
 project_tools = flask.Blueprint('project_tools', __name__)
+
+
+def project_directory_summary_link(location):
+    """Build a safely escaped directory-summary link for a user-visible path."""
+    summary_url = flask.url_for('archiver.dir_contents_summary', path=location)
+    location_display = html.escape(location).replace(' ', '&nbsp;')
+    return (
+        f'<a href="{html.escape(summary_url, quote=True)}">'
+        f'{location_display}</a>'
+    )
 
 def admin_request_user():
     user_param = utils.FlaskAppUtils.retrieve_request_param("user", None)
@@ -201,8 +212,8 @@ def caan_info(caan):
     Endpoint for displaying details and associated projects for a given CAAN.
 
     This endpoint retrieves and displays CAAN details plus all projects associated with the CAAN.
-    It includes a "Drawings?" status column from the project record and links each row to
-    the root project folder path recorded for the archives server.
+    It includes a "Drawings?" status column from the project record and links each root
+    project folder path to its directory-contents summary.
 
     Path Parameters:
         caan (str): The CAAN identifier for which to retrieve project and metadata details.
@@ -241,6 +252,18 @@ def caan_info(caan):
             file_server_directories=project_location,
             user_archives_location=network_location
         )
+
+    def linked_project_root_location(project_location, network_location):
+        """Return a directory-summary link for a recorded project location."""
+        location = project_root_location(project_location, network_location)
+        if location is None:
+            # Preserve the existing table's fallback when the user archive mount
+            # is unavailable in configuration.
+            return "UNKNOWN"
+        if location == "Not recorded in database":
+            return location
+
+        return project_directory_summary_link(location)
     
     try:
         # check if the caan value exists in the database
@@ -256,7 +279,7 @@ def caan_info(caan):
         if caan_projects_df.empty:
             return flask.Response(f"No projects found for CAAN {caan}.", status=404)
 
-        row_root_location = lambda row: project_root_location(
+        row_root_location = lambda row: linked_project_root_location(
             project_location=row["file_server_location"],
             network_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION')
         )
@@ -270,9 +293,15 @@ def caan_info(caan):
         caan_projects_df.sort_values(by=["_drawings_rank", "_number_sort_key"], inplace=True)
         projects_table_df = caan_projects_df[["number", "name", "Drawings?", "Location"]]
         projects_table_df.columns = ["Number", "Name", "Drawings?", "Location"]
+        # ``html_columns`` disables pandas' table-wide escaping so the location
+        # links render. Escape the remaining database-backed columns explicitly.
+        for column in ["Number", "Name", "Drawings?"]:
+            projects_table_df[column] = projects_table_df[column].apply(
+                lambda value: html.escape(str(value))
+            )
         projects_html = utils.html_table_from_df(
             df=projects_table_df,
-            path_columns=["Location"],
+            html_columns=["Location"],
             column_widths=html_col_widths
         )
         
