@@ -119,7 +119,80 @@ def _file_info_api_selector() -> tuple[str, str]:
 
 @archiver.route("/api/file_info", methods=["GET"])
 def file_info_api():
-    """Return authenticated JSON file information by canonical hash or user path."""
+    """Return authenticated JSON archive file information.
+
+    ``GET /api/file_info`` is the programmatic counterpart to the HTML
+    ``/file_info/<file_hash>`` page.  It identifies one canonical file and
+    returns its metadata, all indexed locations, text-indexing status, and
+    detected dates.  It is read-only: resolving a user path uses indexed
+    database records only and never accesses the SMB/file server.
+
+    Authentication:
+        An active user is required.  A caller may use an authenticated
+        application session or HTTP Basic credentials in the ``Authorization``
+        header.  Basic credentials are an application user email and password;
+        deployments must protect those requests with HTTPS.  Credentials are
+        not accepted in query parameters.  Missing or invalid credentials
+        return ``401``.
+
+    Query parameters:
+        Exactly one selector is required:
+
+        - ``file_hash`` (string): Canonical ``files.hash`` value.
+        - ``user_path`` (string): Complete user-facing Windows/UNC file path.
+          URL-encode reserved URL characters such as ``#``, ``?``, and ``%``.
+
+        The selectors are mutually exclusive.  ``user_path`` must be below the
+        configured ``USER_ARCHIVES_LOCATION``.  It is normalized, rejects
+        ``..`` components, and resolves case-insensitively against indexed
+        ``file_locations`` directory/filename data.  A path that matches more
+        than one canonical hash returns ``409`` rather than selecting one
+        arbitrarily.
+
+        Optional booleans accept case-insensitive ``true`` or ``false`` and
+        default to ``false``:
+
+        - ``include_text``: Add the complete stored
+          ``file_contents.source_text`` as ``source_text``.  Default requests
+          do not select or serialize this potentially large value.
+        - ``include_user_paths``: Return each location's complete
+          user-facing ``user_path``.  Otherwise each location contains a
+          database-relative ``database_path``.  Both representations include
+          ``filename``.
+
+        Unknown, empty, repeated, or malformed parameters return ``400``.
+
+    Response schema:
+        A successful request returns ``200`` JSON with these top-level keys:
+
+        ``file_hash``, ``size_bytes``, ``extension``, ``location_count``,
+        ``locations``, ``text_status``, ``text_status_label``, ``text_length``,
+        ``text_updated_at``, and ``detected_dates``.  ``source_text`` appears
+        only when ``include_text=true``; it is ``null`` when the file has no
+        content row or its stored source text is null.
+
+        ``locations`` contains ``location_id``, ``filename``,
+        ``existence_confirmed``, and ``hash_confirmed``, plus exactly one of
+        ``database_path`` or ``user_path`` according to
+        ``include_user_paths``.  ``detected_dates`` is chronological and uses
+        ``{"date": "YYYY-MM-DD", "occurrences": integer}`` records.  Date
+        mentions are extracted-text detections, not authoritative document or
+        filesystem dates.  Timestamps are ISO-8601 strings and database nulls
+        are JSON ``null``.
+
+        Every successful response sends ``Cache-Control: private, no-store``
+        because archive paths and source text can be sensitive.
+
+    Errors:
+        - ``400``: Invalid selector or query parameter, including a user path
+          outside the configured archive root.
+        - ``401``: Missing or invalid authentication.
+        - ``404``: No file has the requested hash, or a valid user path is not
+          indexed.
+        - ``409``: A user path resolves to indexed locations for different
+          canonical hashes.
+        - ``500``: Unexpected lookup or serialization failure.
+    """
     if _file_info_api_user() is None:
         return _file_info_api_error(401, "Unauthorized.")
 
