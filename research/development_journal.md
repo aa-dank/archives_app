@@ -728,3 +728,21 @@ Verification: reviewed the route implementation against the endpoint
 specification and ran `git diff --check` for the changed files. Follow-on:
 keep this docstring and `research/file_info_api_spec.md` aligned whenever the
 API contract changes.
+
+---
+
+## Entry 013 - CAAN project directory-summary links
+**Date:** 2026-08-28<br>
+**Author:** OpenAI Codex (GPT-5)
+
+The Location column on each `/caan_info/<caan>` page now links recorded
+project root paths to `/dir_contents_summary?path=...`. Missing project paths
+remain non-links, and a missing configured user archive mount retains the
+existing `UNKNOWN` fallback. The generated location URL and all other
+database-backed table cells are HTML-escaped before the table is rendered.
+
+Affected: `archives_application/project_tools/routes.py` and this journal.
+Verification: Python compilation, focused URL-generation check, and `git diff
+--check`. The pre-existing file-information suite has 4 passing tests and 1
+stale failure that still requests the renamed `/api/files` endpoint. Follow-on:
+update that unrelated test to `/api/file_info` separately.
