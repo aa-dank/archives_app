@@ -711,3 +711,20 @@ validation error for any other value. Consolidation, file-information,
 scrape-location, test-mode, and endpoint-index boolean parameters now use the
 shared parsing path. Verification: focused request-context checks, Python
 compilation, and `git diff --check`.
+
+---
+
+## Entry 012 - File-information API route documentation
+**Date:** 2026-08-28<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Expanded the `file_info_api()` docstring for `GET /api/file_info` into a full
+route-level API contract. It now documents session/HTTP Basic authentication,
+required hash or user-path selectors, optional text/path flags, complete
+response semantics, cache behavior, path-resolution rules, and all HTTP error
+statuses. Updated `archives_application/archiver/routes.py` only.
+
+Verification: reviewed the route implementation against the endpoint
+specification and ran `git diff --check` for the changed files. Follow-on:
+keep this docstring and `research/file_info_api_spec.md` aligned whenever the
+API contract changes.
