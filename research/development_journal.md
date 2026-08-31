@@ -747,7 +747,6 @@ Verification: Python compilation, focused URL-generation check, and `git diff
 stale failure that still requests the renamed `/api/files` endpoint. Follow-on:
 update that unrelated test to `/api/file_info` separately.
 
-
 ---
 
 ## Entry 014 - Project model synchronization fields
@@ -758,7 +757,6 @@ Added `notes`, `inspector_fmp_id`, `inspector_name`, `project_manager_fmp_id`, a
 
 Affected: `archives_application/models.py`, `pyproject.toml`, `research/development_journal.md`, `uv.lock`. Verification: Python compilation and model import checks.
 
-
 ---
 
 ## Entry 015 - Contract model contract_number string type
@@ -768,3 +766,46 @@ Affected: `archives_application/models.py`, `pyproject.toml`, `research/developm
 Updated contract_number field on ContractModel in archives_application/models.py from Integer to String aligning with business_services_db Alembic migration f7c3a9d2e4b1_change_contract_number_to_string. Rolled version to 1.17.5 in pyproject.toml.
 
 Affected: archives_application/models.py, pyproject.toml, research/development_journal.md, uv.lock. Verification: Python compilation and model inspection.
+
+---
+
+## Entry 016 - Project-information timeline and index-count specification
+**Date:** 2026-08-28<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Extended `research/project_info_feature_spec.md` with two initial project-page
+features: a semantic single-contract milestone timeline and a single
+indexed-file-location count for the recorded project root. The timeline shows
+only non-null contract dates, distinguishes revised expected end from actual
+milestones, remains readable for same-day/single-date cases, and remains
+absent when the project has multiple linked contracts. The count applies only
+to the exact root and its directory-boundary descendants, is labelled as an
+index result rather than a live filesystem inventory, and does not run for a
+missing root.
+
+No application behavior changed. Verification: reviewed the existing archive
+search boundary predicate and current file-location indexes. Follow-on:
+measure the aggregate count with EXPLAIN ANALYZE and add the appropriate
+database migration/index if production query plans require it.
+
+---
+
+## Entry 017 - Project timeline responsive-layout scope
+**Date:** 2026-08-28<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Updated the project-information specification to keep the contract milestone
+timeline desktop-only for its first implementation. The timeline retains its
+semantic event text and same-date stacking behavior, but no mobile or
+narrow-layout adaptation is required. No application behavior changed.
+
+---
+
+## Entry 018 - Project contract-field access decision
+**Date:** 2026-08-31<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Updated `research/project_info_feature_spec.md` to make contract financial,
+account, and funding fields part of the normal single-contract display. They
+follow the existing CAAN-page access behavior and do not need a separate
+role-based authorization policy. No application behavior changed.
