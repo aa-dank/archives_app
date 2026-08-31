@@ -130,3 +130,119 @@ a[aria-expanded="false"] .collapse-toggle-icon {
 .nav-sub-item a:hover {
   color: #5f788a !important;
 }
+
+.project-info-page dl dd,
+.project-info-page td,
+.project-info-page .project-path {
+  overflow-wrap: anywhere;
+}
+
+.project-path {
+  font-family: monospace;
+  white-space: pre-wrap;
+}
+
+.contract-scope {
+  white-space: pre-line;
+}
+
+.project-caans-disclosure summary {
+  margin-bottom: 0.75rem;
+  cursor: pointer;
+  color: #35759a;
+  font-weight: 600;
+}
+
+.project-timeline-wrap {
+  overflow-x: auto;
+  padding: 1rem 0;
+}
+
+.project-timeline {
+  position: relative;
+  display: block;
+  min-width: 48rem;
+  min-height: 13rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-timeline::before {
+  position: absolute;
+  top: 1.8rem;
+  right: 2rem;
+  left: 2rem;
+  height: 2px;
+  content: "";
+  background: #5f788a;
+}
+
+.project-timeline-date {
+  position: absolute;
+  top: 0;
+  left: clamp(2rem, var(--timeline-position), calc(100% - 2rem));
+  width: 12rem;
+  transform: translateX(-50%);
+}
+
+.project-timeline-events {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-timeline-event {
+  position: relative;
+  margin: 0 0 0.85rem;
+  padding-top: 2.75rem;
+  text-align: center;
+  font-size: 0.875rem;
+}
+
+.project-timeline-marker {
+  position: absolute;
+  top: 1.35rem;
+  left: 50%;
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: #2f7d4a;
+  transform: translateX(-50%);
+  box-shadow: 0 0 0 1px #2f7d4a;
+}
+
+.project-timeline-event-expected .project-timeline-marker {
+  border: 2px dashed #fff;
+  background: #d39e00;
+  box-shadow: 0 0 0 1px #d39e00;
+}
+
+.project-timeline-event strong,
+.project-timeline-event time,
+.project-timeline-iso {
+  display: block;
+}
+
+.project-timeline-iso {
+  color: #6c757d;
+  font-family: monospace;
+  font-size: 0.75rem;
+}
+
+.project-timeline-single {
+  min-width: 0;
+  min-height: 0;
+}
+
+.project-timeline-single::before {
+  display: none;
+}
+
+.project-timeline-single .project-timeline-date {
+  position: relative;
+  left: auto;
+  width: auto;
+  transform: none;
+}
