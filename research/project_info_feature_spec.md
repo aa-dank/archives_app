@@ -1,6 +1,6 @@
 # Project Information Page Specification
 
-Last updated: 2026-08-28
+Last updated: 2026-08-31
 
 ## Purpose and first-release boundary
 
@@ -124,7 +124,7 @@ Render an **Associated CAANs** section using a compact responsive table:
 | CAAN | Name | Description | Area |
 | --- | --- | --- | --- |
 
-The CAAN value links to project_tools.caan_info. Sort by CAAN code using the existing natural-sort convention where practical. Show “No CAAN records are linked to this project.” when the relationship is empty.
+The CAAN value links to project_tools.caan_info. Sort by CAAN code using the existing natural-sort convention where practical. Show “No CAAN records are linked to this project.” when the relationship is empty. When more than 10 CAANs are linked, place the table in a collapsed native disclosure control labelled with the number of associated CAANs so the contract section remains quickly reachable; 10 or fewer remain visible without an extra interaction.
 
 ### 4. Contract
 

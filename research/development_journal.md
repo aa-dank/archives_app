@@ -809,3 +809,47 @@ Updated `research/project_info_feature_spec.md` to make contract financial,
 account, and funding fields part of the normal single-contract display. They
 follow the existing CAAN-page access behavior and do not need a separate
 role-based authorization policy. No application behavior changed.
+
+---
+
+## Entry 017 - Project-information page implementation
+**Date:** 2026-08-31<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Implemented the read-only `GET /project_info` page and its strict ID/number
+selector contract. ID lookups render the project; unique case-insensitive
+numbers redirect to the canonical ID URL; ambiguous numbers return 409 rather
+than selecting an arbitrary row. The page renders project facts, recorded
+archive-root state, one boundary-safe indexed-file-location aggregate, linked
+CAANs, and the zero/one/multiple contract states. A single contract includes
+financial fields and an HTML/CSS milestone timeline that groups same-date
+events and distinguishes the revised expected end.
+
+The CAAN detail table now links project numbers to the canonical project ID
+page while retaining the directory-summary location links. Affected:
+`archives_application/project_tools/project_info.py`,
+`archives_application/project_tools/routes.py`,
+`archives_application/templates/project_info.html`,
+and `archives_application/static/main.css`. Verification: Python compilation,
+Jinja parsing, and `git diff --check`. Unit-test coverage is deferred. Follow-on:
+measure the indexed-file aggregate with `EXPLAIN ANALYZE` against
+production-like data and add a migration-backed index only if that measured
+plan requires one.
+
+---
+
+## Entry 018 - Collapsible long associated-CAAN lists
+**Date:** 2026-08-31<br>
+**Author:** OpenAI Codex (GPT-5)
+
+The project-information page now places its associated-CAAN table in a closed
+native disclosure control when more than 10 CAANs are linked to a project. The
+summary states the associated-CAAN count; shorter lists remain visible as
+before. This keeps the contract area near the project summary without adding
+client-side behavior.
+
+Affected: `archives_application/project_tools/project_info.py`,
+`archives_application/templates/project_info.html`,
+`archives_application/static/main.css`, and
+`research/project_info_feature_spec.md`. Verification: Python compilation,
+Jinja parsing, and `git diff --check`.

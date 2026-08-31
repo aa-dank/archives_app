@@ -10,6 +10,7 @@ from archives_application import db, bcrypt
 from archives_application import utils
 from archives_application.models import UserModel, ProjectModel, CAANModel, WorkerTaskModel
 from archives_application.project_tools.forms import CAANSearchForm
+from archives_application.project_tools import project_info as project_info_service
 from sqlalchemy import or_, and_
 
 
@@ -277,6 +278,14 @@ def caan_info(caan):
             return location
 
         return project_directory_summary_link(location)
+
+    def project_info_link(project_id, project_number):
+        """Build a canonical project-detail link without trusting table content."""
+        project_url = flask.url_for('project_tools.project_info', project_id=int(project_id))
+        return (
+            f'<a href="{html.escape(project_url, quote=True)}">'
+            f'{html.escape(str(project_number))}</a>'
+        )
     
     try:
         # check if the caan value exists in the database
@@ -301,20 +310,23 @@ def caan_info(caan):
         caan_projects_df["Drawings?"] = caan_projects_df["drawings"].apply(drawings_label)
         caan_projects_df["_drawings_rank"] = caan_projects_df["Drawings?"].map({"Yes": 0, "UNKNOWN": 1, "No": 2})
         caan_projects_df["_number_sort_key"] = caan_projects_df["number"].apply(project_number_sort_key)
+        caan_projects_df["Number"] = caan_projects_df.apply(
+            lambda row: project_info_link(row["id"], row["number"]), axis=1
+        )
         caan_projects_df["Location"] = caan_projects_df.apply(row_root_location, axis=1)
 
         caan_projects_df.sort_values(by=["_drawings_rank", "_number_sort_key"], inplace=True)
-        projects_table_df = caan_projects_df[["number", "name", "Drawings?", "Location"]]
+        projects_table_df = caan_projects_df[["Number", "name", "Drawings?", "Location"]]
         projects_table_df.columns = ["Number", "Name", "Drawings?", "Location"]
         # ``html_columns`` disables pandas' table-wide escaping so the location
         # links render. Escape the remaining database-backed columns explicitly.
-        for column in ["Number", "Name", "Drawings?"]:
+        for column in ["Name", "Drawings?"]:
             projects_table_df[column] = projects_table_df[column].apply(
                 lambda value: html.escape(str(value))
             )
         projects_html = utils.html_table_from_df(
             df=projects_table_df,
-            html_columns=["Location"],
+            html_columns=["Number", "Location"],
             column_widths=html_col_widths
         )
         
@@ -336,6 +348,45 @@ def caan_info(caan):
         return utils.FlaskAppUtils.api_exception_subroutine(
             response_message="Error retrieving CAAN information:",
             thrown_exception=e
+        )
+
+
+@project_tools.route("/project_info", methods=['GET'])
+def project_info():
+    """Render one project's business, CAAN, contract, and archive-index details.
+
+    The route accepts exactly one query selector: a positive ``project_id`` or
+    an exact case-insensitive ``project_number``. Number lookups redirect to
+    the canonical ID URL and refuse ambiguous numbers rather than choosing an
+    arbitrary project. The page is read-only and makes no filesystem calls.
+    """
+    try:
+        selector = project_info_service.parse_selector(flask.request.args)
+        project = project_info_service.resolve_project(selector)
+        if selector.kind == "project_number":
+            return flask.redirect(
+                flask.url_for('project_tools.project_info', project_id=project.id),
+                code=302,
+            )
+        context = project_info_service.project_context(
+            project=project,
+            user_archives_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION'),
+        )
+        return flask.render_template(
+            'project_info.html',
+            title=f"Project {project.number}: {project.name}",
+            **context,
+        )
+    except project_info_service.ProjectInfoValidationError as error:
+        return flask.Response(str(error), status=400)
+    except project_info_service.ProjectInfoNotFoundError as error:
+        return flask.Response(str(error), status=404)
+    except project_info_service.ProjectInfoAmbiguousNumberError as error:
+        return flask.Response(str(error), status=409)
+    except Exception as error:
+        return utils.FlaskAppUtils.api_exception_subroutine(
+            response_message="Error retrieving project information:",
+            thrown_exception=error,
         )
 
 
