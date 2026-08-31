@@ -4,9 +4,9 @@ Last updated: 2026-08-28
 
 ## Purpose and first-release boundary
 
-Add a read-only HTML page that gives a user one authoritative view of a project's business data, CAAN relationships, single-contract data, and recorded archive root. It is the detail destination for a project selected from a CAAN page or supplied by an external link.
+Add a read-only HTML page that gives a user one authoritative view of a project's business data, CAAN relationships, contract data, and recorded archive root. It is the detail destination for a project selected from a CAAN page or supplied by an external link.
 
-This first release intentionally does not provide a project search page, a JSON API, an indexed-file count, a file listing, server-change history, or archive-summary aggregation. In particular, the page must not scan file_locations to count or enumerate a project's files: that table has about one million rows and its current indexes are not designed for cheap directory-prefix aggregations.
+This first release intentionally does not provide a project search page, a JSON API, a file listing, server-change history, or archive-summary aggregation. It does provide one indexed-file-location count for a recorded project root. The page must not otherwise scan or enumerate a project's file_locations: that table has about one million rows.
 
 The endpoint only reads PostgreSQL data. It must never access the SMB share, create a ServerEdit, write database rows, or enqueue an RQ job.
 
@@ -42,7 +42,7 @@ The route accepts no other query parameters. Missing selectors, both selectors, 
 
 Although duplicate numbers are expected to be rare, the schema does not make projects.number unique. The 409 result is therefore required rather than using the legacy ProjectModel.query.filter_by(number=...).first() pattern.
 
-The first release follows the access behavior of the existing CAAN detail page. If contract costs, funding numbers, or account numbers later require a role restriction, add a named authorization policy before changing this endpoint; do not make only a subset of template fields disappear through ad-hoc template checks.
+The first release follows the access behavior of the existing CAAN detail page. Contract costs, funding numbers, and account numbers are intentionally included in the normal single-contract display; they do not require a separate role restriction.
 
 ## Data retrieval and relationship rules
 
@@ -54,10 +54,28 @@ Retrieve the selected ProjectModel and eager-load its CAANs and contracts so the
 | CAANs | projects → project_caans → caans | Direct many-to-many building/funding relationships. |
 | Contract data | contracts.project_id → projects.id | Direct FileMaker-synchronized contract relationship. |
 | Archive root | projects.file_server_location | Records-relative directory, maintained by project-location confirmation. It is not a file record. |
+| Indexed file count | file_locations under the recorded archive root | Count of indexed file paths, not a live filesystem inventory. |
 
 file_server_location uses forward slashes and is relative to the Records root. Display it only after converting it with FileServerUtils.user_path_from_db_data(...) and the configured USER_ARCHIVES_LOCATION. Never concatenate a user-supplied path or perform filesystem I/O in this route.
 
 The page must not infer a folder from the project number when file_server_location is null. This is particularly important for sub-projects: a missing recorded root is a data state, not proof that files do not exist.
+
+### Indexed file-location count
+
+When a non-empty archive root is recorded, retrieve exactly one aggregate: COUNT(file_locations.id) for locations at that root or in one of its descendants. A file_locations row represents one indexed path on the file server, so this is the count users expect as files in the project directory. The same canonical file hash in two separate paths counts twice, because two files exist at two locations.
+
+Use a path-boundary predicate, not a broad contains match:
+
+~~~sql
+file_server_directories = :root
+OR file_server_directories LIKE :escaped_root || '/%' ESCAPE '\'
+~~~
+
+Normalize the stored root to Records-relative forward-slash form, remove a harmless trailing slash, and escape literal percent, underscore, and backslash characters before constructing the LIKE pattern. The predicate must share the existing archive-search root/descendant semantics so, for example, a root of 1200 never also counts 12001.
+
+The user-facing label is **Indexed files in this project directory**. Its description must make clear that it is a database-index count, not a live SMB check. A recorded root with a count of zero shows “No indexed files are currently recorded under this project location”; it must not say the directory is empty. A missing root does not execute the count query and shows “Indexed file count unavailable because no project root location is recorded.”
+
+Use a single aggregate query from the project-info helper; never load file rows into Python or issue a separate query for each subdirectory. Before release, run EXPLAIN ANALYZE against a production-like data set. If the count needs a prefix index, add one through the database migration process before relying on this page at normal traffic. A case-insensitive count should use a matching lower-case expression index; do not add an unindexed ILIKE predicate without measuring it.
 
 ## Contract rule: zero, one, or multiple
 
@@ -99,8 +117,6 @@ When no root is recorded, show:
 
 When the root is recorded but a user archive mount is unavailable, show the root as unavailable for user-path display rather than exposing an incorrect or incomplete path.
 
-Do not report a file count, folder size, indexing status, or an “empty” conclusion in this first release.
-
 ### 3. Associated CAANs
 
 Render an **Associated CAANs** section using a compact responsive table:
@@ -118,10 +134,36 @@ For exactly one contract, use a two-column definition-style layout, omitting nul
 
 1. **Identity and parties:** contract number, contractor, executive design organization, scope description.
 2. **Financials:** cost estimate, original contract cost, change-order total, change-order revised cost, account number, funding number.
-3. **Dates:** bid, contract, notice-to-proceed, beneficial occupancy, substantial completion, certificate of occupancy, notice-of-completion, notice-of-completion recorded, termination, and revised expected end.
-4. **Duration:** original project duration, change-order time total, revised duration.
+3. **Duration:** original project duration, change-order time total, revised duration.
 
 Format currency as dollars with grouping and two decimal places. Format dates as readable calendar dates while preserving null as omitted. The page is a display of synchronized data, not a calculation tool: it must not derive completion dates, revised cost, or durations.
+
+### 5. Contract milestone timeline
+
+For exactly one linked contract, render a **Contract milestones** timeline beneath the contract facts. The timeline is the primary presentation of contract dates; do not repeat the full date set in the definition list above.
+
+Build one event for each non-null source date, sorted chronologically:
+
+| Source field | Display label | Event type |
+| --- | --- | --- |
+| bid_date | Bid | actual |
+| contract_date | Contract | actual |
+| ntp_start_date | Notice to proceed | actual |
+| beneficial_occupancy_date | Beneficial occupancy | actual |
+| substantial_completion_date | Substantial completion | actual |
+| certificate_of_occupancy_date | Certificate of occupancy | actual |
+| noc_completion_date | Notice of completion | actual |
+| noc_recorded_date | Notice of completion recorded | actual |
+| termination_date | Termination | actual |
+| change_order_revised_expected_end | Revised expected end | expected |
+
+Render this as semantic ordered milestone data: every event must expose its label and ISO date in text, with a readable date label and a time element. CSS may lay events along a horizontal time axis proportionally between the earliest and latest date. This first release has no separate mobile or narrow-layout adaptation requirement. Events on the same date must stack rather than overlap or discard a label. The expected-end event must use a distinct but non-alarming style, such as a dashed marker, because it is a projection rather than a confirmed milestone.
+
+With no milestone dates, show “No contract milestone dates are recorded.” With one date, show the one event as a known milestone without drawing a misleading span or scale. Source dates are displayed as recorded, even when their sequence is unusual; the page must not infer missing dates or validate a business schedule.
+
+Implement the timeline with HTML and CSS rather than a charting dependency or client-side data fetch. Have the helper provide presentation-neutral event objects containing a source field, label, ISO date, display date, event type, and stable sort order. This establishes a reusable time-axis visual treatment without coupling it to the later document-date histogram.
+
+The future project-file date histogram is explicitly separate: it will need indexed file/date-mention aggregation and should be labelled as extracted document mentions, not contract milestones. It may replace the timeline after its coverage, aggregation cost, and user value have been evaluated. The multiple-contract state renders neither a milestone timeline nor dates, consistent with the contract rule above.
 
 ## Integration changes
 
@@ -143,26 +185,30 @@ Add a small read-only helper, for example archives_application/project_tools/pro
 2. loading the project plus CAAN and contract relationships;
 3. computing the contract display state: none, single, or multiple;
 4. turning the stored archive root into a user-facing path; and
-5. providing template-safe, presentation-neutral data to the route.
+5. retrieving the one path-boundary indexed-file-location count when a root exists;
+6. building the single-contract milestone-event data when applicable; and
+7. providing template-safe, presentation-neutral data to the route.
 
 The route should be thin: validate the request, call the helper, convert its defined lookup outcomes to responses, and render project_info.html. Template rendering must continue to HTML-escape project, CAAN, and contract values. Do not construct a raw HTML table from unescaped database content.
 
 ## Acceptance checks
 
-1. GET /project_info?project_id=<existing-id> renders the selected project, direct CAANs, root-state card, and correct contract state.
+1. GET /project_info?project_id=<existing-id> renders the selected project, direct CAANs, root-state card, indexed-file count, and correct contract state.
 2. GET /project_info?project_number=<unique-number> redirects to its canonical ID URL.
 3. A deliberately duplicated project number returns 409 and renders no project data.
 4. Missing, both, repeated, blank, malformed, and unknown selectors return 400; unknown IDs/numbers return 404.
-5. A project with zero contracts shows the zero state; one contract renders its fields; two contracts exposes no contract detail and shows the multiple state.
-6. A recorded root is converted through the configured user archive mapping; a null root never triggers inferred-path lookup or filesystem access.
-7. CAAN-page project links use a database ID and work when another project has the same number.
-8. Focused tests cover selector validation, duplicate handling, contract display-state calculation, path conversion, and HTML escaping. Run the focused tests, Python compilation, Jinja parsing, and git diff --check.
+5. A project with zero contracts shows the zero state; one contract renders its fields and sorted timeline events; two contracts exposes no contract detail or dates and shows the multiple state.
+6. A timeline with zero, one, same-day, and expected-end events remains readable without hiding labels; its event text is available without relying on visual positioning.
+7. A recorded root is converted through the configured user archive mapping and produces the exact-or-descendant indexed-file count. A null root never triggers inferred-path lookup, count query, or filesystem access.
+8. A sibling/prefix path does not inflate the count, a zero count is not described as an empty directory, and a duplicate hash in two indexed paths counts as two files.
+9. CAAN-page project links use a database ID and work when another project has the same number.
+10. Focused tests cover selector validation, duplicate handling, contract display-state and timeline calculation, path conversion, count-boundary semantics, and HTML escaping. Run the focused tests, Python compilation, Jinja parsing, and git diff --check.
 
 ## Deferred decisions
 
 - A JSON GET /api/project_info counterpart.
 - Project search and direct navigation by project number from the UI.
-- Indexed file counts, size/text coverage, file results, and directory-prefix indexes or cached summaries needed to make those measurements efficient.
+- File size/text coverage, file results, and any cached summaries beyond the single indexed-file-location count.
+- The project-file date-mention histogram, including coverage disclosure, aggregation design, and whether it supersedes the contract milestone timeline.
 - Contract-specific pages or a multiple-contract comparison interface.
 - Archive activity based on archived_files or server_changes.
-- A separate authorization policy for financial/accounting contract fields.
