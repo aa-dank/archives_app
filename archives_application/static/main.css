@@ -153,96 +153,69 @@ a[aria-expanded="false"] .collapse-toggle-icon {
   font-weight: 600;
 }
 
-.project-timeline-wrap {
-  overflow-x: auto;
-  padding: 1rem 0;
+.contract-schedule-dates {
+  display: flex;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-bottom: 0.35rem;
 }
 
-.project-timeline {
-  position: relative;
+.contract-schedule-dates div:last-child {
+  text-align: right;
+}
+
+.contract-schedule-dates strong,
+.contract-schedule-dates time {
   display: block;
-  min-width: 48rem;
-  min-height: 13rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
-.project-timeline::before {
-  position: absolute;
-  top: 1.8rem;
-  right: 2rem;
-  left: 2rem;
-  height: 2px;
-  content: "";
+.contract-schedule-bar {
+  display: flex;
+  height: 1.2rem;
+  overflow: hidden;
+  margin-bottom: 1rem;
+  border: 1px solid #49697e;
+  border-radius: 0.25rem;
+  background: #d8e1e7;
+}
+
+.contract-schedule-segment-original {
   background: #5f788a;
 }
 
-.project-timeline-date {
-  position: absolute;
-  top: 0;
-  left: clamp(2rem, var(--timeline-position), calc(100% - 2rem));
-  width: 12rem;
-  transform: translateX(-50%);
-}
-
-.project-timeline-events {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.project-timeline-event {
-  position: relative;
-  margin: 0 0 0.85rem;
-  padding-top: 2.75rem;
-  text-align: center;
-  font-size: 0.875rem;
-}
-
-.project-timeline-marker {
-  position: absolute;
-  top: 1.35rem;
-  left: 50%;
-  width: 0.9rem;
-  height: 0.9rem;
-  border: 3px solid #fff;
-  border-radius: 50%;
-  background: #2f7d4a;
-  transform: translateX(-50%);
-  box-shadow: 0 0 0 1px #2f7d4a;
-}
-
-.project-timeline-event-expected .project-timeline-marker {
-  border: 2px dashed #fff;
+.contract-schedule-segment-change-order {
   background: #d39e00;
-  box-shadow: 0 0 0 1px #d39e00;
 }
 
-.project-timeline-event strong,
-.project-timeline-event time,
-.project-timeline-iso {
-  display: block;
+.contract-schedule-segment-current {
+  background: #5f788a;
 }
 
-.project-timeline-iso {
+.contract-schedule-components dd {
+  margin-bottom: 0.35rem;
+}
+
+.contract-schedule-key {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-right: 0.35rem;
+  border-radius: 0.15rem;
+  vertical-align: -0.05rem;
+}
+
+.contract-schedule-key-original {
+  background: #5f788a;
+}
+
+.contract-schedule-key-change-order {
+  background: #d39e00;
+}
+
+.contract-schedule-variance {
   color: #6c757d;
-  font-family: monospace;
-  font-size: 0.75rem;
 }
 
-.project-timeline-single {
-  min-width: 0;
-  min-height: 0;
-}
-
-.project-timeline-single::before {
-  display: none;
-}
-
-.project-timeline-single .project-timeline-date {
-  position: relative;
-  left: auto;
-  width: auto;
-  transform: none;
+.contract-other-dates {
+  max-width: 38rem;
 }

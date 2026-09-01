@@ -1,8 +1,7 @@
 """Read-only data preparation for the project-information page."""
 
-from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 import re
 
@@ -25,17 +24,14 @@ class ProjectInfoAmbiguousNumberError(LookupError):
     """Raised when a project number identifies more than one project row."""
 
 
-TIMELINE_FIELDS = (
-    ("bid_date", "Bid", "actual"),
-    ("contract_date", "Contract", "actual"),
-    ("ntp_start_date", "Notice to proceed", "actual"),
-    ("beneficial_occupancy_date", "Beneficial occupancy", "actual"),
-    ("substantial_completion_date", "Substantial completion", "actual"),
-    ("certificate_of_occupancy_date", "Certificate of occupancy", "actual"),
-    ("noc_completion_date", "Notice of completion", "actual"),
-    ("noc_recorded_date", "Notice of completion recorded", "actual"),
-    ("termination_date", "Termination", "actual"),
-    ("change_order_revised_expected_end", "Revised expected end", "expected"),
+OTHER_CONTRACT_DATE_FIELDS = (
+    ("bid_date", "Bid"),
+    ("contract_date", "Contract"),
+    ("beneficial_occupancy_date", "Beneficial occupancy"),
+    ("substantial_completion_date", "Substantial completion"),
+    ("certificate_of_occupancy_date", "Certificate of occupancy"),
+    ("noc_recorded_date", "Notice of completion recorded"),
+    ("termination_date", "Termination"),
 )
 
 
@@ -179,14 +175,6 @@ def contract_fields(contract) -> list[dict]:
                 ("Funding number", "funding_number", str),
             ),
         ),
-        (
-            "Duration",
-            (
-                ("Original project duration", "original_project_duration", lambda value: f"{value} days"),
-                ("Change-order time total", "change_order_time_total", lambda value: f"{value} days"),
-                ("Change-order revised duration", "change_order_revised_duration", lambda value: f"{value} days"),
-            ),
-        ),
     )
     prepared_groups = []
     for group_label, fields in groups:
@@ -200,38 +188,127 @@ def contract_fields(contract) -> list[dict]:
     return prepared_groups
 
 
-def milestone_groups(contract) -> list[dict]:
-    """Build chronological milestone groups so same-date labels stack cleanly."""
-    events = []
-    for sort_order, (field, label, event_type) in enumerate(TIMELINE_FIELDS):
+def _duration_display(value: int, signed: bool = False) -> str:
+    """Format a raw calendar-day duration without deriving a new schedule value."""
+    sign = "+" if signed and value > 0 else ""
+    return f"{sign}{value} calendar day{'s' if abs(value) != 1 else ''}"
+
+
+def contract_schedule(contract) -> dict:
+    """Prepare the contractual schedule clock and transparent consistency checks."""
+    original_duration = contract.original_project_duration
+    change_order_time = contract.change_order_time_total
+    revised_duration = contract.change_order_revised_duration
+    ntp_start = contract.ntp_start_date
+    expected_end = contract.change_order_revised_expected_end
+    actual_completion = contract.noc_completion_date
+
+    duration_reconciled = None
+    if all(value is not None for value in (original_duration, change_order_time, revised_duration)):
+        duration_reconciled = original_duration + change_order_time == revised_duration
+
+    expected_end_reconciled = None
+    if ntp_start is not None and revised_duration is not None and expected_end is not None:
+        expected_end_reconciled = ntp_start + timedelta(days=revised_duration) == expected_end
+
+    actual_variance_days = None
+    if actual_completion is not None and expected_end is not None:
+        actual_variance_days = (actual_completion - expected_end).days
+
+    components = []
+    if original_duration is not None:
+        components.append({
+            "label": "Original contract duration",
+            "value": _duration_display(original_duration),
+            "style": "original",
+        })
+    if change_order_time is not None:
+        components.append({
+            "label": "Approved change-order time",
+            "value": _duration_display(change_order_time, signed=True),
+            "style": "change-order",
+        })
+    if revised_duration is not None:
+        components.append({
+            "label": "Current contractual duration",
+            "value": _duration_display(revised_duration),
+            "style": None,
+        })
+
+    can_segment_bar = (
+        original_duration is not None
+        and change_order_time is not None
+        and revised_duration is not None
+        and original_duration >= 0
+        and change_order_time >= 0
+        and revised_duration > 0
+        and duration_reconciled
+    )
+    bar_segments = []
+    if can_segment_bar:
+        bar_segments = [
+            {
+                "label": "Original contract duration",
+                "days": original_duration,
+                "percent": (original_duration / revised_duration) * 100,
+                "style": "original",
+            },
+            {
+                "label": "Approved change-order time",
+                "days": change_order_time,
+                "percent": (change_order_time / revised_duration) * 100,
+                "style": "change-order",
+            },
+        ]
+    elif revised_duration is not None and revised_duration > 0:
+        bar_segments = [{
+            "label": "Current contractual duration",
+            "days": revised_duration,
+            "percent": 100,
+            "style": "current",
+        }]
+
+    if actual_variance_days is None:
+        actual_variance_label = None
+    elif actual_variance_days == 0:
+        actual_variance_label = "on the current expected end date"
+    elif actual_variance_days < 0:
+        actual_variance_label = f"{abs(actual_variance_days)} calendar day{'s' if abs(actual_variance_days) != 1 else ''} before the current expected end"
+    else:
+        actual_variance_label = f"{actual_variance_days} calendar day{'s' if actual_variance_days != 1 else ''} after the current expected end"
+
+    return {
+        "ntp_start": ntp_start,
+        "ntp_start_display": _readable_date(ntp_start) if ntp_start else None,
+        "expected_end": expected_end,
+        "expected_end_display": _readable_date(expected_end) if expected_end else None,
+        "actual_completion": actual_completion,
+        "actual_completion_display": _readable_date(actual_completion) if actual_completion else None,
+        "actual_variance_label": actual_variance_label,
+        "duration_reconciled": duration_reconciled,
+        "expected_end_reconciled": expected_end_reconciled,
+        "components": components,
+        "show_duration_key": can_segment_bar,
+        "bar_segments": bar_segments,
+        "has_schedule_dates": ntp_start is not None and expected_end is not None,
+    }
+
+
+def other_contract_dates(contract) -> list[dict]:
+    """Return chronological non-schedule dates without treating them as a schedule."""
+    dates = []
+    for sort_order, (field, label) in enumerate(OTHER_CONTRACT_DATE_FIELDS):
         value = getattr(contract, field)
         if value is not None:
-            events.append(
-                {
-                    "source_field": field,
-                    "label": label,
-                    "iso_date": value.isoformat(),
-                    "display_date": _readable_date(value),
-                    "event_type": event_type,
-                    "sort_order": sort_order,
-                    "date_value": value,
-                }
-            )
-    events.sort(key=lambda event: (event["date_value"], event["sort_order"]))
-    if not events:
-        return []
-
-    earliest = events[0]["date_value"]
-    latest = events[-1]["date_value"]
-    span_days = (latest - earliest).days
-    groups = OrderedDict()
-    for event in events:
-        if span_days:
-            event["position"] = round(((event["date_value"] - earliest).days / span_days) * 100, 4)
-        else:
-            event["position"] = 50
-        groups.setdefault(event["iso_date"], {"position": event["position"], "events": []})["events"].append(event)
-    return list(groups.values())
+            dates.append({
+                "source_field": field,
+                "label": label,
+                "iso_date": value.isoformat(),
+                "display_date": _readable_date(value),
+                "sort_order": sort_order,
+                "date_value": value,
+            })
+    return sorted(dates, key=lambda event: (event["date_value"], event["sort_order"]))
 
 
 def _status(value: bool | None, true_label: str, false_label: str) -> str:
@@ -267,11 +344,13 @@ def project_context(project, user_archives_location: str | None) -> dict:
         "contract_state": contract_state,
         "contract_count": len(contracts),
         "contract_groups": [],
-        "milestone_groups": [],
+        "contract_schedule": None,
+        "other_contract_dates": [],
     }
     if contract_state == "single":
         context["contract_groups"] = contract_fields(contracts[0])
-        context["milestone_groups"] = milestone_groups(contracts[0])
+        context["contract_schedule"] = contract_schedule(contracts[0])
+        context["other_contract_dates"] = other_contract_dates(contracts[0])
     return context
 
 

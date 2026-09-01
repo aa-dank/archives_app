@@ -77,31 +77,59 @@
                 </dl>
             {% endfor %}
 
-            <h3 class="h4 mt-4" id="contract-milestones-heading">Contract milestones</h3>
-            {% if milestone_groups %}
-                {% if milestone_groups|length == 1 %}
-                    <ol class="project-timeline project-timeline-single" aria-labelledby="contract-milestones-heading">
+            <section class="contract-schedule mt-4" aria-labelledby="contract-schedule-heading">
+                <h3 class="h4" id="contract-schedule-heading">Contract schedule</h3>
+                {% if contract_schedule.has_schedule_dates %}
+                    <div class="contract-schedule-dates">
+                        <div><strong>Notice to proceed</strong><time datetime="{{ contract_schedule.ntp_start.isoformat() }}">{{ contract_schedule.ntp_start_display }}</time></div>
+                        <div><strong>Current expected end</strong><time datetime="{{ contract_schedule.expected_end.isoformat() }}">{{ contract_schedule.expected_end_display }}</time></div>
+                    </div>
+                    {% if contract_schedule.bar_segments %}
+                    <div class="contract-schedule-bar" aria-label="Contractual schedule duration">
+                        {% for segment in contract_schedule.bar_segments %}
+                        <span class="contract-schedule-segment contract-schedule-segment-{{ segment.style }}" style="flex-grow: {{ segment.percent }};" title="{{ segment.label }}: {{ segment.days }} calendar days"></span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                 {% else %}
-                    <div class="project-timeline-wrap"><ol class="project-timeline" aria-labelledby="contract-milestones-heading">
+                    <p>Schedule span unavailable because Notice-to-Proceed start and current expected end are not both recorded.</p>
                 {% endif %}
-                    {% for group in milestone_groups %}
-                        <li class="project-timeline-date" style="--timeline-position: {{ group.position }}%;">
-                            <ol class="project-timeline-events">
-                                {% for event in group.events %}
-                                    <li class="project-timeline-event project-timeline-event-{{ event.event_type }}">
-                                        <span class="project-timeline-marker" aria-hidden="true"></span>
-                                        <strong>{{ event.label }}</strong>
-                                        <time datetime="{{ event.iso_date }}">{{ event.display_date }}</time>
-                                        <span class="project-timeline-iso">{{ event.iso_date }}</span>
-                                    </li>
-                                {% endfor %}
-                            </ol>
-                        </li>
+
+                {% if contract_schedule.components %}
+                <dl class="contract-schedule-components row">
+                    {% for component in contract_schedule.components %}
+                    <dt class="col-sm-4">{% if contract_schedule.show_duration_key and component.style %}<span class="contract-schedule-key contract-schedule-key-{{ component.style }}" aria-hidden="true"></span>{% endif %}{{ component.label }}</dt><dd class="col-sm-8">{{ component.value }}</dd>
                     {% endfor %}
-                </ol>{% if milestone_groups|length != 1 %}</div>{% endif %}
-            {% else %}
-                <p>No contract milestone dates are recorded.</p>
-            {% endif %}
+                </dl>
+                {% endif %}
+
+                {% if contract_schedule.actual_completion_display %}
+                <p><strong>Actual recorded completion:</strong> <time datetime="{{ contract_schedule.actual_completion.isoformat() }}">{{ contract_schedule.actual_completion_display }}</time>{% if contract_schedule.actual_variance_label %} <span class="contract-schedule-variance">({{ contract_schedule.actual_variance_label }})</span>{% endif %}</p>
+                {% else %}
+                <p><strong>Actual recorded completion:</strong> Not recorded.</p>
+                {% endif %}
+
+                {% if contract_schedule.duration_reconciled is sameas false %}
+                <p class="text-warning mb-1">The recorded original duration, approved change-order time, and current duration do not reconcile.</p>
+                {% endif %}
+                {% if contract_schedule.expected_end_reconciled is sameas false %}
+                <p class="text-warning mb-0">The recorded current expected end does not match Notice-to-Proceed plus the current contractual duration.</p>
+                {% endif %}
+            </section>
+
+            <section class="mt-4" aria-labelledby="other-contract-dates-heading">
+                <h3 class="h5" id="other-contract-dates-heading">Other recorded contract dates</h3>
+                {% if other_contract_dates %}
+                <table class="table table-sm table-bordered contract-other-dates">
+                    <thead><tr><th>Date</th><th>Record</th></tr></thead>
+                    <tbody>{% for event in other_contract_dates %}<tr>
+                        <td><time datetime="{{ event.iso_date }}">{{ event.display_date }}</time></td><td>{{ event.label }}</td>
+                    </tr>{% endfor %}</tbody>
+                </table>
+                {% else %}
+                <p>No other contract dates are recorded.</p>
+                {% endif %}
+            </section>
         {% endif %}
     </section>
 </div>
