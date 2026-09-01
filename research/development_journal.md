@@ -853,3 +853,40 @@ Affected: `archives_application/project_tools/project_info.py`,
 `archives_application/static/main.css`, and
 `research/project_info_feature_spec.md`. Verification: Python compilation,
 Jinja parsing, and `git diff --check`.
+
+---
+
+## Entry 019 - Contract schedule overview replaces milestone timeline
+**Date:** 2026-09-01<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Replaced the project page's generic contract-milestone timeline with a
+contractual schedule overview. It anchors the visual to Notice-to-Proceed and
+the recorded current expected end, distinguishes original duration from
+approved change-order time when those values reconcile, and shows actual NOC
+completion variance when both completion and expected-end dates exist. The
+page surfaces inconsistent schedule source values as warnings without replacing
+them with derived dates. Other administrative and outcome dates now appear in
+a compact chronological table rather than an inferred schedule line.
+
+Affected: `archives_application/project_tools/project_info.py`,
+`archives_application/templates/project_info.html`,
+`archives_application/static/main.css`, and
+`research/project_info_feature_spec.md`. Unit-test coverage remains deferred.
+
+---
+
+## Entry 020 - Schedule-duration color key
+**Date:** 2026-09-01<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Added matching blue and amber swatches to the original-duration and approved
+change-order-time labels beneath a split contract schedule bar. The text now
+acts as the bar's visible key, while the combined current-duration total remains
+uncolored. The swatches are omitted when the source values cannot support a
+split bar.
+
+Affected: `archives_application/project_tools/project_info.py`,
+`archives_application/templates/project_info.html`,
+`archives_application/static/main.css`, and
+`research/project_info_feature_spec.md`. Unit-test coverage remains deferred.

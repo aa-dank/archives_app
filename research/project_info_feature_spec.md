@@ -134,36 +134,31 @@ For exactly one contract, use a two-column definition-style layout, omitting nul
 
 1. **Identity and parties:** contract number, contractor, executive design organization, scope description.
 2. **Financials:** cost estimate, original contract cost, change-order total, change-order revised cost, account number, funding number.
-3. **Duration:** original project duration, change-order time total, revised duration.
+3. **Schedule:** original project duration, change-order time total, and revised duration, as described below.
 
 Format currency as dollars with grouping and two decimal places. Format dates as readable calendar dates while preserving null as omitted. The page is a display of synchronized data, not a calculation tool: it must not derive completion dates, revised cost, or durations.
 
-### 5. Contract milestone timeline
+### 5. Contract schedule overview
 
-For exactly one linked contract, render a **Contract milestones** timeline beneath the contract facts. The timeline is the primary presentation of contract dates; do not repeat the full date set in the definition list above.
+For exactly one linked contract, render a **Contract schedule** section beneath the contract facts. It describes the contractual schedule clock, not a generic timeline of every contract date.
 
-Build one event for each non-null source date, sorted chronologically:
+Use `ntp_start_date` as the schedule start and the recorded `change_order_revised_expected_end` as the current expected end. When both are available, render a horizontal schedule bar with those dates as anchors. When the raw duration fields reconcile and contain non-negative values, split the bar proportionally into the original contractual duration and approved change-order time; otherwise render one current-duration segment when possible. The component values must always remain visible as text:
 
-| Source field | Display label | Event type |
-| --- | --- | --- |
-| bid_date | Bid | actual |
-| contract_date | Contract | actual |
-| ntp_start_date | Notice to proceed | actual |
-| beneficial_occupancy_date | Beneficial occupancy | actual |
-| substantial_completion_date | Substantial completion | actual |
-| certificate_of_occupancy_date | Certificate of occupancy | actual |
-| noc_completion_date | Notice of completion | actual |
-| noc_recorded_date | Notice of completion recorded | actual |
-| termination_date | Termination | actual |
-| change_order_revised_expected_end | Revised expected end | expected |
+When the bar is split, place matching blue and amber swatches beside the original-duration and approved-change-order-time labels below it. These labels act as the visible legend; leave the current-duration total uncolored because it represents both portions.
 
-Render this as semantic ordered milestone data: every event must expose its label and ISO date in text, with a readable date label and a time element. CSS may lay events along a horizontal time axis proportionally between the earliest and latest date. This first release has no separate mobile or narrow-layout adaptation requirement. Events on the same date must stack rather than overlap or discard a label. The expected-end event must use a distinct but non-alarming style, such as a dashed marker, because it is a projection rather than a confirmed milestone.
+| Display value | Source |
+| --- | --- |
+| Original contract duration | original_project_duration |
+| Approved change-order time | change_order_time_total |
+| Current contractual duration | change_order_revised_duration |
 
-With no milestone dates, show “No contract milestone dates are recorded.” With one date, show the one event as a known milestone without drawing a misleading span or scale. Source dates are displayed as recorded, even when their sequence is unusual; the page must not infer missing dates or validate a business schedule.
+Show `noc_completion_date` as **Actual recorded completion** when present. When both it and the recorded expected end are available, show the calculated before/on/after variance in calendar days. This is an explanatory comparison, not a replacement completion-date calculation.
 
-Implement the timeline with HTML and CSS rather than a charting dependency or client-side data fetch. Have the helper provide presentation-neutral event objects containing a source field, label, ISO date, display date, event type, and stable sort order. This establishes a reusable time-axis visual treatment without coupling it to the later document-date histogram.
+Perform transparent consistency checks only when all required source values exist: warn when original duration plus approved change-order time differs from current duration, or when Notice-to-Proceed plus current duration differs from the recorded expected end. Do not substitute a calculated value for a recorded source field. If either schedule anchor is absent, state that the schedule span is unavailable while still showing any recorded duration values.
 
-The future project-file date histogram is explicitly separate: it will need indexed file/date-mention aggregation and should be labelled as extracted document mentions, not contract milestones. It may replace the timeline after its coverage, aggregation cost, and user value have been evaluated. The multiple-contract state renders neither a milestone timeline nor dates, consistent with the contract rule above.
+Render `bid_date`, `contract_date`, beneficial occupancy, substantial completion, certificate of occupancy, notice-of-completion recorded, and termination dates in a compact chronological **Other recorded contract dates** table. This table is supplementary and must not present those dates as one inferred schedule. The multiple-contract state renders neither schedule data nor other contract dates.
+
+The future project-file date histogram is explicitly separate: it will need indexed file/date-mention aggregation and should be labelled as extracted document mentions, not contract schedule data. It may be added after its coverage, aggregation cost, and user value have been evaluated.
 
 ## Integration changes
 
@@ -186,7 +181,7 @@ Add a small read-only helper, for example archives_application/project_tools/pro
 3. computing the contract display state: none, single, or multiple;
 4. turning the stored archive root into a user-facing path; and
 5. retrieving the one path-boundary indexed-file-location count when a root exists;
-6. building the single-contract milestone-event data when applicable; and
+6. building the single-contract schedule overview and supplementary date data when applicable; and
 7. providing template-safe, presentation-neutral data to the route.
 
 The route should be thin: validate the request, call the helper, convert its defined lookup outcomes to responses, and render project_info.html. Template rendering must continue to HTML-escape project, CAAN, and contract values. Do not construct a raw HTML table from unescaped database content.
@@ -197,12 +192,12 @@ The route should be thin: validate the request, call the helper, convert its def
 2. GET /project_info?project_number=<unique-number> redirects to its canonical ID URL.
 3. A deliberately duplicated project number returns 409 and renders no project data.
 4. Missing, both, repeated, blank, malformed, and unknown selectors return 400; unknown IDs/numbers return 404.
-5. A project with zero contracts shows the zero state; one contract renders its fields and sorted timeline events; two contracts exposes no contract detail or dates and shows the multiple state.
-6. A timeline with zero, one, same-day, and expected-end events remains readable without hiding labels; its event text is available without relying on visual positioning.
+5. A project with zero contracts shows the zero state; one contract renders its fields, schedule overview, and supplementary dates; two contracts exposes no contract detail or dates and shows the multiple state.
+6. A complete schedule shows its NTP and recorded expected-end anchors, duration components, and actual-completion variance when available. Missing or inconsistent source values remain visible without inventing replacement dates.
 7. A recorded root is converted through the configured user archive mapping and produces the exact-or-descendant indexed-file count. A null root never triggers inferred-path lookup, count query, or filesystem access.
 8. A sibling/prefix path does not inflate the count, a zero count is not described as an empty directory, and a duplicate hash in two indexed paths counts as two files.
 9. CAAN-page project links use a database ID and work when another project has the same number.
-10. Focused tests cover selector validation, duplicate handling, contract display-state and timeline calculation, path conversion, count-boundary semantics, and HTML escaping. Run the focused tests, Python compilation, Jinja parsing, and git diff --check.
+10. Unit-test coverage is deferred. Run Python compilation, Jinja parsing, and `git diff --check`.
 
 ## Deferred decisions
 
