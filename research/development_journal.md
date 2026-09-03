@@ -746,3 +746,14 @@ Verification: Python compilation, focused URL-generation check, and `git diff
 --check`. The pre-existing file-information suite has 4 passing tests and 1
 stale failure that still requests the renamed `/api/files` endpoint. Follow-on:
 update that unrelated test to `/api/file_info` separately.
+
+
+---
+
+## Entry 014 - Project model synchronization fields
+**Date:** 2026-09-03<br>
+**Author:** aa-dank
+
+Added `notes`, `inspector_fmp_id`, `inspector_name`, `project_manager_fmp_id`, and `project_manager_name` fields to `ProjectModel` in `archives_application/models.py` aligning with the `business_services_db` Alembic migration `d2c4e6f8a1b3_add_project_sync_fields`. Rolled version to 1.17.4 in `pyproject.toml`.
+
+Affected: `archives_application/models.py`, `pyproject.toml`, `research/development_journal.md`, `uv.lock`. Verification: Python compilation and model import checks.
