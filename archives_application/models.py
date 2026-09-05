@@ -401,7 +401,7 @@ class ContractModel(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     fmp_id_primary = db.Column(db.Integer, unique=True)
-    contract_number = db.Column(db.Integer)
+    contract_number = db.Column(db.String)
     project_id = db.Column(db.Integer, db.ForeignKey('projects.id'))
     # Dates
     contract_date = db.Column(db.Date)

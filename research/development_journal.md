@@ -757,3 +757,14 @@ update that unrelated test to `/api/file_info` separately.
 Added `notes`, `inspector_fmp_id`, `inspector_name`, `project_manager_fmp_id`, and `project_manager_name` fields to `ProjectModel` in `archives_application/models.py` aligning with the `business_services_db` Alembic migration `d2c4e6f8a1b3_add_project_sync_fields`. Rolled version to 1.17.4 in `pyproject.toml`.
 
 Affected: `archives_application/models.py`, `pyproject.toml`, `research/development_journal.md`, `uv.lock`. Verification: Python compilation and model import checks.
+
+
+---
+
+## Entry 015 - Contract model contract_number string type
+**Date:** 2026-09-05<br>
+**Author:** aa-dank
+
+Updated contract_number field on ContractModel in archives_application/models.py from Integer to String aligning with business_services_db Alembic migration f7c3a9d2e4b1_change_contract_number_to_string. Rolled version to 1.17.5 in pyproject.toml.
+
+Affected: archives_application/models.py, pyproject.toml, research/development_journal.md, uv.lock. Verification: Python compilation and model inspection.
