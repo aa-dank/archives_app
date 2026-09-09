@@ -206,6 +206,16 @@ class ArchiveSearchForm(FlaskForm):
             'caan': (self.caan.data or '').strip(),
         }
         selected_scope_value = scope_values.get(self.scope_type.data)
+        scope_labels = {
+            'location': 'Location Prefix',
+            'project': 'Project Number',
+            'caan': 'CAAN',
+        }
+        entered_scope_labels = [
+            scope_labels[scope]
+            for scope, value in scope_values.items()
+            if value
+        ]
         other_scope_values = [
             value for scope, value in scope_values.items()
             if scope != self.scope_type.data and value
@@ -224,13 +234,17 @@ class ArchiveSearchForm(FlaskForm):
 
         if self.scope_type.data == 'all' and any(scope_values.values()):
             self.scope_type.errors.append(
-                "Select a scoped search type before entering a location, project, or CAAN."
+                "Scope values were entered for "
+                f"{', '.join(entered_scope_labels)}, but All archives is selected. "
+                "Clear those values or select the matching search scope."
             )
             return False
 
         if other_scope_values:
             self.scope_type.errors.append(
-                "Use one scope at a time: location, project, CAAN, or all archives."
+                "Multiple scope values were entered: "
+                f"{', '.join(entered_scope_labels)}. Keep only one scope value; "
+                "values in hidden fields are still submitted with the form."
             )
             return False
 
