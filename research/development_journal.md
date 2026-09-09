@@ -812,7 +812,7 @@ role-based authorization policy. No application behavior changed.
 
 ---
 
-## Entry 017 - Project-information page implementation
+## Entry 019 - Project-information page implementation
 **Date:** 2026-08-31<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -838,7 +838,7 @@ plan requires one.
 
 ---
 
-## Entry 018 - Collapsible long associated-CAAN lists
+## Entry 020 - Collapsible long associated-CAAN lists
 **Date:** 2026-08-31<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -856,7 +856,7 @@ Jinja parsing, and `git diff --check`.
 
 ---
 
-## Entry 019 - Contract schedule overview replaces milestone timeline
+## Entry 021 - Contract schedule overview replaces milestone timeline
 **Date:** 2026-09-01<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -876,7 +876,7 @@ Affected: `archives_application/project_tools/project_info.py`,
 
 ---
 
-## Entry 020 - Schedule-duration color key
+## Entry 022 - Schedule-duration color key
 **Date:** 2026-09-01<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -890,3 +890,19 @@ Affected: `archives_application/project_tools/project_info.py`,
 `archives_application/templates/project_info.html`,
 `archives_application/static/main.css`, and
 `research/project_info_feature_spec.md`. Unit-test coverage remains deferred.
+
+---
+
+## Entry 023 - Project-information branch aligned with master data models
+**Date:** 2026-09-08<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Rebased `feature/project_info` onto master commits `e7724eb` and `97a4231`.
+The branch now inherits the project synchronization fields and the string
+contract-number model type that correspond to the database migrations already
+applied on master. Renumbered the feature branch's journal entries after the
+master entries so the combined record remains sequential.
+
+Affected: branch ancestry and `research/development_journal.md`. Verification:
+reviewed the inherited model fields, package version 1.17.5, feature-only diff,
+and `git diff --check`. Unit-test coverage remains deferred.
