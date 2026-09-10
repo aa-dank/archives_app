@@ -768,3 +768,21 @@ Affected: `archives_application/models.py`, `pyproject.toml`, `research/developm
 Updated contract_number field on ContractModel in archives_application/models.py from Integer to String aligning with business_services_db Alembic migration f7c3a9d2e4b1_change_contract_number_to_string. Rolled version to 1.17.5 in pyproject.toml.
 
 Affected: archives_application/models.py, pyproject.toml, research/development_journal.md, uv.lock. Verification: Python compilation and model inspection.
+
+---
+
+## Entry 016 - Archived-or-not temporary upload cleanup
+**Date:** 2026-09-10<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Moved `/archived_or_not` temporary-upload cleanup into a single guarded
+`finally` block. This prevents the no-locations error path from deleting the
+same temporary file twice and masking the intended exception before the web
+exception handler can flash, log, and redirect. It also cleans up uploads when
+their hash has no matching `FileModel`, and avoids referencing an unassigned
+temporary path if setup fails.
+
+Affected: `archives_application/archiver/routes.py`,
+`research/development_journal.md`. Verification: Python compilation and
+focused source-flow review. Follow-on: reconcile `FileModel` records that have
+no related `FileLocationModel` rows.
