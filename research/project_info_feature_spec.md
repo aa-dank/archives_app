@@ -85,9 +85,9 @@ Contract presentation deliberately optimizes for the normal one-contract case. I
 | --- | --- |
 | 0 | Show “No linked contract record.” |
 | 1 | Show the single contract section and its fields. |
-| 2+ | Do not display any contract field or contract row. Show: “Multiple linked contract records are present. Contract details are not displayed on this page.” |
+| 2+ | Show one horizontally scrollable, grouped table with one row per direct contract record. |
 
-The multiple-contract message may include the count, but must not expose a partial contract, pick an arbitrary first row, or introduce tabs, accordions, or a contract-comparison UI. A future contract-specific view can address that exceptional workflow without complicating the project page.
+For multiple contracts, sort rows by contract number where practical and expose the synchronized identity/party, financial, schedule-date, and duration fields in the table. Use an em dash for a null value; never pick an arbitrary contract as the single detailed record. Do not render individual schedule bars, consistency warnings, or supplementary-date tables in this state, because those views are specific to one contract. The table may use a desktop horizontal scroll wrapper rather than squeezing its columns.
 
 ## Page layout
 
@@ -128,7 +128,7 @@ The CAAN value links to project_tools.caan_info. Sort by CAAN code using the exi
 
 ### 4. Contract
 
-Render an **Associated contract** section after CAANs. Apply the zero/one/multiple rule above before rendering the template context.
+Render an **Associated contract** section after CAANs. Apply the zero/one/multiple rule above before rendering the template context. Use the plural heading when multiple direct contract records exist.
 
 For exactly one contract, use a two-column definition-style layout, omitting null fields. Keep the fields grouped in this order:
 
@@ -156,7 +156,7 @@ Show `noc_completion_date` as **Actual recorded completion** when present. When 
 
 Perform transparent consistency checks only when all required source values exist: warn when original duration plus approved change-order time differs from current duration, or when Notice-to-Proceed plus current duration differs from the recorded expected end. Do not substitute a calculated value for a recorded source field. If either schedule anchor is absent, state that the schedule span is unavailable while still showing any recorded duration values.
 
-Render `bid_date`, `contract_date`, beneficial occupancy, substantial completion, certificate of occupancy, notice-of-completion recorded, and termination dates in a compact chronological **Other recorded contract dates** table. This table is supplementary and must not present those dates as one inferred schedule. The multiple-contract state renders neither schedule data nor other contract dates.
+Render `bid_date`, `contract_date`, beneficial occupancy, substantial completion, certificate of occupancy, notice-of-completion recorded, and termination dates in a compact chronological **Other recorded contract dates** table. This table is supplementary and must not present those dates as one inferred schedule. The multiple-contract state uses its grouped all-contract table instead of single-contract schedule data or other-date sections.
 
 The future project-file date histogram is explicitly separate: it will need indexed file/date-mention aggregation and should be labelled as extracted document mentions, not contract schedule data. It may be added after its coverage, aggregation cost, and user value have been evaluated.
 
@@ -192,7 +192,7 @@ The route should be thin: validate the request, call the helper, convert its def
 2. GET /project_info?project_number=<unique-number> redirects to its canonical ID URL.
 3. A deliberately duplicated project number returns 409 and renders no project data.
 4. Missing, both, repeated, blank, malformed, and unknown selectors return 400; unknown IDs/numbers return 404.
-5. A project with zero contracts shows the zero state; one contract renders its fields, schedule overview, and supplementary dates; two contracts exposes no contract detail or dates and shows the multiple state.
+5. A project with zero contracts shows the zero state; one contract renders its fields, schedule overview, and supplementary dates; two or more contracts render one stable-order grouped table with one row per direct contract record and no single-contract schedule detail.
 6. A complete schedule shows its NTP and recorded expected-end anchors, duration components, and actual-completion variance when available. Missing or inconsistent source values remain visible without inventing replacement dates.
 7. A recorded root is converted through the configured user archive mapping and produces the exact-or-descendant indexed-file count. A null root never triggers inferred-path lookup, count query, or filesystem access.
 8. A sibling/prefix path does not inflate the count, a zero count is not described as an empty directory, and a duplicate hash in two indexed paths counts as two files.
