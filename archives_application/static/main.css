@@ -219,3 +219,38 @@ a[aria-expanded="false"] .collapse-toggle-icon {
 .contract-other-dates {
   max-width: 38rem;
 }
+
+.contract-table-wrap {
+  margin-bottom: 1rem;
+}
+
+.contract-table {
+  width: max-content;
+  min-width: 142rem;
+}
+
+.contract-table th,
+.contract-table td {
+  min-width: 7.5rem;
+  vertical-align: top;
+}
+
+.contract-table-group-head {
+  background: #5f788a;
+  color: #ffffff;
+  text-align: center;
+}
+
+.contract-table-contract-number {
+  min-width: 7rem;
+}
+
+.contract-table-contractor,
+.contract-table-design-org {
+  min-width: 13rem;
+}
+
+.contract-table-scope {
+  min-width: 24rem;
+  white-space: pre-line;
+}

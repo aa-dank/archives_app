@@ -34,6 +34,52 @@ OTHER_CONTRACT_DATE_FIELDS = (
     ("termination_date", "Termination"),
 )
 
+MULTIPLE_CONTRACT_COLUMN_GROUPS = (
+    {
+        "label": "Contract and parties",
+        "columns": (
+            ("contract_number", "Contract number", "text", "contract-table-contract-number"),
+            ("contractor_org_name", "Contractor", "text", "contract-table-contractor"),
+            ("executive_design_org_name", "Executive design organization", "text", "contract-table-design-org"),
+            ("scope_description", "Scope description", "text", "contract-table-scope"),
+        ),
+    },
+    {
+        "label": "Financials",
+        "columns": (
+            ("cost_estimate", "Cost estimate", "currency", ""),
+            ("original_contract_cost", "Original cost", "currency", ""),
+            ("change_order_total", "Change-order total", "currency", ""),
+            ("change_order_revised_cost", "Revised cost", "currency", ""),
+            ("account_number", "Account number", "text", ""),
+            ("funding_number", "Funding number", "text", ""),
+        ),
+    },
+    {
+        "label": "Schedule dates",
+        "columns": (
+            ("bid_date", "Bid", "date", ""),
+            ("contract_date", "Contract", "date", ""),
+            ("ntp_start_date", "Notice to proceed", "date", ""),
+            ("beneficial_occupancy_date", "Beneficial occupancy", "date", ""),
+            ("substantial_completion_date", "Substantial completion", "date", ""),
+            ("certificate_of_occupancy_date", "Certificate of occupancy", "date", ""),
+            ("noc_completion_date", "Notice of completion", "date", ""),
+            ("noc_recorded_date", "Notice of completion recorded", "date", ""),
+            ("termination_date", "Termination", "date", ""),
+            ("change_order_revised_expected_end", "Current expected end", "date", ""),
+        ),
+    },
+    {
+        "label": "Duration",
+        "columns": (
+            ("original_project_duration", "Original duration", "duration", ""),
+            ("change_order_time_total", "Change-order time", "signed_duration", ""),
+            ("change_order_revised_duration", "Current duration", "duration", ""),
+        ),
+    },
+)
+
 
 @dataclass(frozen=True)
 class ProjectInfoSelector:
@@ -194,6 +240,34 @@ def _duration_display(value: int, signed: bool = False) -> str:
     return f"{sign}{value} calendar day{'s' if abs(value) != 1 else ''}"
 
 
+def multiple_contract_table(contracts) -> list[dict]:
+    """Prepare a complete, stable-order row for every direct contract link."""
+    rows = []
+    for contract in sorted(
+        contracts,
+        key=lambda row: (_natural_sort_key(str(row.contract_number or "")), row.id),
+    ):
+        cells = []
+        for group in MULTIPLE_CONTRACT_COLUMN_GROUPS:
+            for field, _label, value_type, css_class in group["columns"]:
+                value = getattr(contract, field)
+                if not _has_value(value):
+                    display_value = "—"
+                elif value_type == "currency":
+                    display_value = _currency(value)
+                elif value_type == "date":
+                    display_value = _readable_date(value)
+                elif value_type == "duration":
+                    display_value = _duration_display(value)
+                elif value_type == "signed_duration":
+                    display_value = _duration_display(value, signed=True)
+                else:
+                    display_value = str(value)
+                cells.append({"value": display_value, "css_class": css_class})
+        rows.append({"cells": cells})
+    return rows
+
+
 def contract_schedule(contract) -> dict:
     """Prepare the contractual schedule clock and transparent consistency checks."""
     original_duration = contract.original_project_duration
@@ -346,11 +420,15 @@ def project_context(project, user_archives_location: str | None) -> dict:
         "contract_groups": [],
         "contract_schedule": None,
         "other_contract_dates": [],
+        "multiple_contract_column_groups": MULTIPLE_CONTRACT_COLUMN_GROUPS,
+        "multiple_contract_rows": [],
     }
     if contract_state == "single":
         context["contract_groups"] = contract_fields(contracts[0])
         context["contract_schedule"] = contract_schedule(contracts[0])
         context["other_contract_dates"] = other_contract_dates(contracts[0])
+    elif contract_state == "multiple":
+        context["multiple_contract_rows"] = multiple_contract_table(contracts)
     return context
 
 

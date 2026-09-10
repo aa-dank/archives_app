@@ -906,3 +906,20 @@ master entries so the combined record remains sequential.
 Affected: branch ancestry and `research/development_journal.md`. Verification:
 reviewed the inherited model fields, package version 1.17.5, feature-only diff,
 and `git diff --check`. Unit-test coverage remains deferred.
+
+---
+
+## Entry 024 - Multiple-contract data table
+**Date:** 2026-09-08<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Projects with two or more direct contract records now show a horizontally
+scrollable, grouped table rather than hiding contract data. It includes one
+stable-order row per record across identity/party, financial, schedule-date,
+and duration fields; null values use an em dash. The detailed single-contract
+schedule overview remains exclusive to projects with exactly one contract.
+
+Affected: `archives_application/project_tools/project_info.py`,
+`archives_application/templates/project_info.html`,
+`archives_application/static/main.css`, and
+`research/project_info_feature_spec.md`. Unit-test coverage remains deferred.

@@ -61,11 +61,20 @@
     </section>
 
     <section aria-labelledby="associated-contract-heading">
-        <h3 class="h4" id="associated-contract-heading">Associated contract</h3>
+        <h3 class="h4" id="associated-contract-heading">Associated contract{% if contract_state == 'multiple' %}s{% endif %}</h3>
         {% if contract_state == 'none' %}
             <p>No linked contract record.</p>
         {% elif contract_state == 'multiple' %}
-            <p>Multiple linked contract records are present. Contract details are not displayed on this page.</p>
+            <p>{{ contract_count }} linked contract records are present. Each row contains the synchronized contract data; scroll horizontally to view all fields.</p>
+            <div class="table-responsive contract-table-wrap">
+                <table class="table table-sm table-striped table-bordered contract-table">
+                    <thead>
+                        <tr>{% for group in multiple_contract_column_groups %}<th class="contract-table-group-head" colspan="{{ group.columns|length }}">{{ group.label }}</th>{% endfor %}</tr>
+                        <tr>{% for group in multiple_contract_column_groups %}{% for column in group.columns %}<th class="{{ column[3] }}">{{ column[1] }}</th>{% endfor %}{% endfor %}</tr>
+                    </thead>
+                    <tbody>{% for row in multiple_contract_rows %}<tr>{% for cell in row.cells %}<td class="{{ cell.css_class }}">{{ cell.value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+                </table>
+            </div>
         {% else %}
             {% for group in contract_groups %}
                 <h4 class="h6 mt-3">{{ group.label }}</h4>
