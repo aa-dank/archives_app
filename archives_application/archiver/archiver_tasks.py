@@ -44,7 +44,10 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
                     file_size = os.path.getsize(filepath)
                     new_file = FileModel(hash=file_hash, size=file_size, extension=file_ext)
                     db.session.add(new_file)
-                    db.session.commit()
+                    # Keep the file row in the same transaction as its first
+                    # location. A failed location write must not leave a
+                    # canonical file row without a physical location.
+                    db.session.flush()
                     file_id = new_file.id
                 
                 else:
@@ -63,8 +66,29 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
             # if there is already already a file location that is the same as this loction,
             # but the files are different, we remove the old file location and add the new one.
             if db_file_location_entry and (db_file_location_entry.file_id != file_id):
+                displaced_file_id = db_file_location_entry.file_id
                 db.session.delete(db_file_location_entry)
-                db.session.commit()
+                db.session.flush()
+
+                # A replaced path may have been the displaced file's only
+                # known location. Remove that obsolete FileModel only when it
+                # no longer has any locations, and keep the replacement work
+                # in one transaction.
+                remaining_location = db.session.query(FileLocationModel.id)\
+                    .filter(FileLocationModel.file_id == displaced_file_id)\
+                    .first()
+                if not remaining_location:
+                    archival_events = db.session.query(ArchivedFileModel)\
+                        .filter(ArchivedFileModel.file_id == displaced_file_id)\
+                        .all()
+                    for archival_event in archival_events:
+                        archival_event.file_id = None
+
+                    displaced_file = db.session.query(FileModel)\
+                        .filter(FileModel.id == displaced_file_id)\
+                        .first()
+                    if displaced_file:
+                        db.session.delete(displaced_file)
                 db_file_location_entry = None
             
             if not db_file_location_entry:
@@ -102,6 +126,7 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
             return file_id
         
         except Exception as e:
+            utils.FlaskAppUtils.attempt_db_rollback(db)
             error_msg = f"Error adding file {filepath} to database:\n{str(e)}\nTraceback:\n{traceback.format_exc()}"
             task_results['error'] = error_msg
             utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_results)
@@ -732,10 +757,9 @@ def batch_process_inbox_task(user_id: str, inbox_path: str, notes: str, items_to
             log["errors"].append(e_dict)
             utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
             return log
-                    
-                                                      
-                                                      
 
-                                        
 
-                    
+
+
+
+

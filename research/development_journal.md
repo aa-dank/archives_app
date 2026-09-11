@@ -786,3 +786,19 @@ Affected: `archives_application/archiver/routes.py`,
 `research/development_journal.md`. Verification: Python compilation and
 focused source-flow review. Follow-on: reconcile `FileModel` records that have
 no related `FileLocationModel` rows.
+
+---
+
+## Entry 017 - Replacement-file location reconciliation
+**Date:** 2026-09-11<br>
+**Author:** OpenAI Codex (GPT-5)
+
+`add_file_to_db_task` now handles a changed file at an already-indexed path as
+one transaction. It flushes a newly created `FileModel` rather than committing
+it before its first location, and when replacing a location it deletes the
+displaced `FileModel` only when that model has no remaining locations. Linked
+`archived_files` rows are detached first. A rollback now occurs before the task
+is marked failed, preserving a usable session for task-status persistence.
+
+Affected: `archives_application/archiver/archiver_tasks.py` and this journal.
+Verification: Python compilation and focused replacement-path source review.
