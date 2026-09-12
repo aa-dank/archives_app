@@ -87,7 +87,7 @@ Contract presentation deliberately optimizes for the normal one-contract case. I
 | 1 | Show the single contract section and its fields. |
 | 2+ | Show one horizontally scrollable, grouped table with one row per direct contract record. |
 
-For multiple contracts, sort rows by contract number where practical and expose the synchronized identity/party, financial, schedule-date, and duration fields in the table. Use an em dash for a null value; never pick an arbitrary contract as the single detailed record. Do not render individual schedule bars, consistency warnings, or supplementary-date tables in this state, because those views are specific to one contract. The table may use a desktop horizontal scroll wrapper rather than squeezing its columns.
+For multiple contracts, sort rows by contract number where practical and expose the synchronized identity/party, financial, schedule-date, and duration fields in the table. Use an em dash for a null value; never pick an arbitrary contract as the single detailed record. Render a non-null scope description as a closed native “View scope” disclosure within its cell so long text does not expand table rows until requested. Do not render individual schedule bars, consistency warnings, or supplementary-date tables in this state, because those views are specific to one contract. The table may use a desktop horizontal scroll wrapper rather than squeezing its columns.
 
 ## Page layout
 

@@ -923,3 +923,18 @@ Affected: `archives_application/project_tools/project_info.py`,
 `archives_application/templates/project_info.html`,
 `archives_application/static/main.css`, and
 `research/project_info_feature_spec.md`. Unit-test coverage remains deferred.
+
+---
+
+## Entry 025 - Collapsible multiple-contract scope descriptions
+**Date:** 2026-09-11<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Replaced full scope-description text in the multiple-contract table with a
+closed native “View scope” disclosure. Opening one disclosure expands only
+that contract row; null values continue to display as an em dash.
+
+Affected: `archives_application/project_tools/project_info.py`,
+`archives_application/templates/project_info.html`,
+`archives_application/static/main.css`, and
+`research/project_info_feature_spec.md`. Unit-test coverage remains deferred.
