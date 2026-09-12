@@ -72,7 +72,7 @@
                         <tr>{% for group in multiple_contract_column_groups %}<th class="contract-table-group-head" colspan="{{ group.columns|length }}">{{ group.label }}</th>{% endfor %}</tr>
                         <tr>{% for group in multiple_contract_column_groups %}{% for column in group.columns %}<th class="{{ column[3] }}">{{ column[1] }}</th>{% endfor %}{% endfor %}</tr>
                     </thead>
-                    <tbody>{% for row in multiple_contract_rows %}<tr>{% for cell in row.cells %}<td class="{{ cell.css_class }}">{{ cell.value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+                    <tbody>{% for row in multiple_contract_rows %}<tr>{% for cell in row.cells %}<td class="{{ cell.css_class }}">{% if cell.is_scope and cell.has_value %}<details class="contract-table-scope-details"><summary>View scope</summary><div class="contract-table-scope-text">{{ cell.value }}</div></details>{% else %}{{ cell.value }}{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
                 </table>
             </div>
         {% else %}

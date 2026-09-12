@@ -251,6 +251,25 @@ a[aria-expanded="false"] .collapse-toggle-icon {
 }
 
 .contract-table-scope {
-  min-width: 24rem;
+  min-width: 9rem;
+}
+
+.contract-table-scope-details {
+  min-width: 8rem;
+}
+
+.contract-table-scope-details summary {
+  cursor: pointer;
+  color: #35759a;
+  font-weight: 600;
+}
+
+.contract-table-scope-details[open] {
+  width: 24rem;
+}
+
+.contract-table-scope-text {
+  margin-top: 0.5rem;
   white-space: pre-line;
+  overflow-wrap: anywhere;
 }

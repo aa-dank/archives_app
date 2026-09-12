@@ -261,7 +261,12 @@ def multiple_contract_table(contracts) -> list[dict]:
                     display_value = _duration_display(value, signed=True)
                 else:
                     display_value = str(value)
-                cells.append({"value": display_value, "css_class": css_class})
+                cells.append({
+                    "value": display_value,
+                    "css_class": css_class,
+                    "is_scope": field == "scope_description",
+                    "has_value": _has_value(value),
+                })
         rows.append({"cells": cells})
     return rows
 
