@@ -121,8 +121,8 @@ When the root is recorded but a user archive mount is unavailable, show the root
 
 Render an **Associated CAANs** section using a compact responsive table:
 
-| CAAN | Name | Description | Area |
-| --- | --- | --- | --- |
+| CAAN | Name | Description |
+| --- | --- | --- |
 
 The CAAN value links to project_tools.caan_info. Sort by CAAN code using the existing natural-sort convention where practical. Show “No CAAN records are linked to this project.” when the relationship is empty. When more than 10 CAANs are linked, place the table in a collapsed native disclosure control labelled with the number of associated CAANs so the contract section remains quickly reachable; 10 or fewer remain visible without an extra interaction.
 
@@ -133,10 +133,10 @@ Render an **Associated contract** section after CAANs. Apply the zero/one/multip
 For exactly one contract, use a two-column definition-style layout, omitting null fields. Keep the fields grouped in this order:
 
 1. **Identity and parties:** contract number, contractor, executive design organization, scope description.
-2. **Financials:** cost estimate, original contract cost, change-order total, change-order revised cost, account number, funding number.
+2. **Financials:** cost estimate, original contract cost, change-order total, revised total (including change orders), and funding number.
 3. **Schedule:** original project duration, change-order time total, and revised duration, as described below.
 
-Format currency as dollars with grouping and two decimal places. Format dates as readable calendar dates while preserving null as omitted. The page is a display of synchronized data, not a calculation tool: it must not derive completion dates, revised cost, or durations.
+Format currency as dollars with grouping and two decimal places. Format dates as readable calendar dates while preserving null as omitted. The page is a display of synchronized data, not a calculation tool: it must not derive completion dates, revised totals, or durations.
 
 ### 5. Contract schedule overview
 
