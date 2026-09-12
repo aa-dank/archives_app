@@ -45,10 +45,10 @@
             {% endif %}
             <div class="table-responsive">
                 <table class="table table-sm table-striped table-bordered">
-                    <thead><tr><th>CAAN</th><th>Name</th><th>Description</th><th>Area</th></tr></thead>
+                    <thead><tr><th>CAAN</th><th>Name</th><th>Description</th></tr></thead>
                     <tbody>{% for caan in caans %}<tr>
                         <td><a href="{{ url_for('project_tools.caan_info', caan=caan.caan) }}">{{ caan.caan }}</a></td>
-                        <td>{{ caan.name or '' }}</td><td>{{ caan.description or '' }}</td><td>{{ caan.area or '' }}</td>
+                        <td>{{ caan.name or '' }}</td><td>{{ caan.description or '' }}</td>
                     </tr>{% endfor %}</tbody>
                 </table>
             </div>
@@ -113,9 +113,9 @@
                 {% endif %}
 
                 {% if contract_schedule.actual_completion_display %}
-                <p><strong>Actual recorded completion:</strong> <time datetime="{{ contract_schedule.actual_completion.isoformat() }}">{{ contract_schedule.actual_completion_display }}</time>{% if contract_schedule.actual_variance_label %} <span class="contract-schedule-variance">({{ contract_schedule.actual_variance_label }})</span>{% endif %}</p>
+                <p><strong>Actual Completion Date:</strong> <time datetime="{{ contract_schedule.actual_completion.isoformat() }}">{{ contract_schedule.actual_completion_display }}</time>{% if contract_schedule.actual_variance_label %} <span class="contract-schedule-variance">({{ contract_schedule.actual_variance_label }})</span>{% endif %}</p>
                 {% else %}
-                <p><strong>Actual recorded completion:</strong> Not recorded.</p>
+                <p><strong>Actual Completion Date:</strong> Not recorded.</p>
                 {% endif %}
 
                 {% if contract_schedule.duration_reconciled is sameas false %}
