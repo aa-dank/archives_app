@@ -445,7 +445,8 @@ def project_info_api():
         A successful request returns ``200 OK`` JSON with top-level
         ``project``, ``archives``, ``caan_count``, ``caans``,
         ``contract_count``, and ``contracts`` keys. ``project`` contains the
-        canonical ID, synchronized project fields, and ISO-8601
+        canonical ID, synchronized project fields including ``notes``,
+        ``inspector_name``, and ``project_manager_name``, plus ISO-8601
         ``last_synced_at``. FileMaker primary IDs are implementation details
         and are intentionally not exposed.
 

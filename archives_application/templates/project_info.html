@@ -8,8 +8,19 @@
         <dt class="col-sm-4">Project status</dt><dd class="col-sm-8">{{ project_status }}</dd>
         <dt class="col-sm-4">Drawings</dt><dd class="col-sm-8">{{ drawings_status }}</dd>
         {% if project.campus_client %}<dt class="col-sm-4">Campus client</dt><dd class="col-sm-8">{{ project.campus_client }}</dd>{% endif %}
+        {% if project.project_manager_name %}<dt class="col-sm-4">Project manager</dt><dd class="col-sm-8">{{ project.project_manager_name }}</dd>{% endif %}
+        {% if project.inspector_name %}<dt class="col-sm-4">Inspector</dt><dd class="col-sm-8">{{ project.inspector_name }}</dd>{% endif %}
         {% if last_synced_display %}<dt class="col-sm-4">Business data last synchronized</dt><dd class="col-sm-8">{{ last_synced_display }}</dd>{% endif %}
     </dl>
+
+    {% if project.notes %}
+    <section class="card mb-4" aria-labelledby="project-notes-heading">
+        <div class="card-body">
+            <h3 class="h5" id="project-notes-heading">Project notes</h3>
+            <p class="project-notes mb-0">{{ project.notes }}</p>
+        </div>
+    </section>
+    {% endif %}
 
     <section class="card mb-4" aria-labelledby="archives-location-heading">
         <div class="card-body">

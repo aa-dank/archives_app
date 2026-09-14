@@ -142,6 +142,11 @@ a[aria-expanded="false"] .collapse-toggle-icon {
   white-space: pre-wrap;
 }
 
+.project-notes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .contract-scope {
   white-space: pre-line;
 }
