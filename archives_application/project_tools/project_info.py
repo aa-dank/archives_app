@@ -34,6 +34,9 @@ OTHER_CONTRACT_DATE_FIELDS = (
     ("termination_date", "Termination"),
 )
 
+PROJECT_INFO_SELECTOR_PARAMETERS = frozenset({"project_id", "project_number"})
+PROJECT_INFO_API_PARAMETERS = PROJECT_INFO_SELECTOR_PARAMETERS | {"include_user_path"}
+
 MULTIPLE_CONTRACT_COLUMN_GROUPS = (
     {
         "label": "Contract and parties",
@@ -88,19 +91,23 @@ class ProjectInfoSelector:
     value: int | str
 
 
-def parse_selector(query_args) -> ProjectInfoSelector:
-    """Validate the strict, mutually exclusive project-info query contract."""
-    allowed_keys = {"project_id", "project_number"}
+def _validate_query_parameters(query_args, allowed_keys) -> None:
+    """Reject unknown or repeated query parameters before interpreting values."""
     supplied_keys = set(query_args.keys())
     unknown_keys = supplied_keys - allowed_keys
     if unknown_keys:
         raise ProjectInfoValidationError("Unknown query parameter(s): " + ", ".join(sorted(unknown_keys)))
 
+    for name in supplied_keys:
+        if len(query_args.getlist(name)) > 1:
+            raise ProjectInfoValidationError(f"{name} must be supplied only once.")
+
+
+def _parse_selector_values(query_args) -> ProjectInfoSelector:
+    """Parse one project selector after its parameter names have been validated."""
     supplied = []
     for name in ("project_id", "project_number"):
         values = query_args.getlist(name)
-        if len(values) > 1:
-            raise ProjectInfoValidationError(f"{name} must be supplied only once.")
         if values:
             supplied.append((name, values[0]))
 
@@ -117,6 +124,28 @@ def parse_selector(query_args) -> ProjectInfoSelector:
     if not number:
         raise ProjectInfoValidationError("project_number must not be blank.")
     return ProjectInfoSelector(kind=name, value=number)
+
+
+def parse_selector(query_args) -> ProjectInfoSelector:
+    """Validate the strict, mutually exclusive HTML project-info query contract."""
+    _validate_query_parameters(query_args, PROJECT_INFO_SELECTOR_PARAMETERS)
+    return _parse_selector_values(query_args)
+
+
+def parse_api_request(query_args) -> tuple[ProjectInfoSelector, bool]:
+    """Validate the project-information API selector and optional path setting."""
+    _validate_query_parameters(query_args, PROJECT_INFO_API_PARAMETERS)
+    selector = _parse_selector_values(query_args)
+    include_user_path_value = query_args.get("include_user_path")
+    if include_user_path_value is None:
+        return selector, False
+
+    normalized_value = include_user_path_value.strip().lower()
+    if normalized_value not in {"true", "false"}:
+        raise ProjectInfoValidationError(
+            "include_user_path must be either true or false."
+        )
+    return selector, normalized_value == "true"
 
 
 def _project_query():
@@ -181,6 +210,22 @@ def indexed_file_count(root: str | None) -> int | None:
     )
 
 
+def project_archive_data(project, user_archives_location: str | None) -> dict:
+    """Return the recorded archive-root data shared by page and API responses."""
+    root = _normalized_root(project.file_server_location)
+    display_path = None
+    if root and user_archives_location:
+        display_path = utils.FileServerUtils.user_path_from_db_data(
+            file_server_directories=root,
+            user_archives_location=user_archives_location,
+        )
+    return {
+        "root": root,
+        "display_path": display_path,
+        "indexed_file_count": indexed_file_count(root) if root else None,
+    }
+
+
 def _has_value(value) -> bool:
     return value is not None and (not isinstance(value, str) or bool(value.strip()))
 
@@ -195,6 +240,29 @@ def _readable_datetime(value: datetime) -> str:
 
 def _currency(value: Decimal) -> str:
     return f"${value:,.2f}"
+
+
+def _decimal_string(value: Decimal | None) -> str | None:
+    """Serialize a database decimal without introducing JSON floating-point loss."""
+    return format(value, "f") if value is not None else None
+
+
+def _iso_date(value: date | None) -> str | None:
+    """Serialize an optional date using the API's calendar-date format."""
+    return value.isoformat() if value is not None else None
+
+
+def _iso_datetime(value: datetime | None) -> str | None:
+    """Serialize an optional timestamp using ISO-8601."""
+    return value.isoformat() if value is not None else None
+
+
+def _sorted_contracts(contracts) -> list:
+    """Sort direct contracts in the stable order used by page and API output."""
+    return sorted(
+        contracts,
+        key=lambda row: (_natural_sort_key(str(row.contract_number or "")), row.id),
+    )
 
 
 def contract_fields(contract) -> list[dict]:
@@ -241,10 +309,7 @@ def _duration_display(value: int, signed: bool = False) -> str:
 def multiple_contract_table(contracts) -> list[dict]:
     """Prepare a complete, stable-order row for every direct contract link."""
     rows = []
-    for contract in sorted(
-        contracts,
-        key=lambda row: (_natural_sort_key(str(row.contract_number or "")), row.id),
-    ):
+    for contract in _sorted_contracts(contracts):
         cells = []
         for group in MULTIPLE_CONTRACT_COLUMN_GROUPS:
             for field, _label, value_type, css_class in group["columns"]:
@@ -371,6 +436,101 @@ def contract_schedule(contract) -> dict:
     }
 
 
+def _serialize_contract_api(contract) -> dict:
+    """Build one contract's stable, typed JSON representation."""
+    schedule_overview = contract_schedule(contract)
+    return {
+        "id": contract.id,
+        "contract_number": contract.contract_number,
+        "contractor_org_name": contract.contractor_org_name,
+        "executive_design_org_name": contract.executive_design_org_name,
+        "scope_description": contract.scope_description,
+        "financials": {
+            "cost_estimate": _decimal_string(contract.cost_estimate),
+            "original_contract_cost": _decimal_string(contract.original_contract_cost),
+            "change_order_total": _decimal_string(contract.change_order_total),
+            "revised_total_including_change_orders": _decimal_string(
+                contract.change_order_revised_cost
+            ),
+            "funding_number": contract.funding_number,
+        },
+        "schedule": {
+            "bid_date": _iso_date(contract.bid_date),
+            "contract_date": _iso_date(contract.contract_date),
+            "ntp_start_date": _iso_date(contract.ntp_start_date),
+            "beneficial_occupancy_date": _iso_date(contract.beneficial_occupancy_date),
+            "substantial_completion_date": _iso_date(contract.substantial_completion_date),
+            "certificate_of_occupancy_date": _iso_date(contract.certificate_of_occupancy_date),
+            "noc_completion_date": _iso_date(contract.noc_completion_date),
+            "noc_recorded_date": _iso_date(contract.noc_recorded_date),
+            "termination_date": _iso_date(contract.termination_date),
+            "revised_expected_end_date": _iso_date(
+                contract.change_order_revised_expected_end
+            ),
+            "original_duration_days": contract.original_project_duration,
+            "change_order_time_days": contract.change_order_time_total,
+            "revised_duration_days": contract.change_order_revised_duration,
+            "duration_reconciles": schedule_overview["duration_reconciled"],
+            "expected_end_reconciles": schedule_overview["expected_end_reconciled"],
+            "actual_vs_expected_days": (
+                (contract.noc_completion_date - contract.change_order_revised_expected_end).days
+                if (
+                    contract.noc_completion_date is not None
+                    and contract.change_order_revised_expected_end is not None
+                )
+                else None
+            ),
+        },
+        "last_synced_at": _iso_datetime(contract.last_synced_at),
+    }
+
+
+def project_api_data(
+    project,
+    user_archives_location: str | None,
+    include_user_path: bool,
+) -> dict:
+    """Serialize one resolved project for the read-only project-information API."""
+    archive_data = project_archive_data(project, user_archives_location)
+    archive_response = {
+        "root_recorded": archive_data["root"] is not None,
+        "database_root": archive_data["root"],
+        "indexed_file_location_count": archive_data["indexed_file_count"],
+    }
+    if include_user_path:
+        archive_response["user_path"] = archive_data["display_path"]
+
+    sorted_caans = sorted(project.caans, key=lambda caan: _natural_sort_key(caan.caan))
+    sorted_contracts = _sorted_contracts(project.contracts)
+    return {
+        "project": {
+            "id": project.id,
+            "number": project.number,
+            "name": project.name,
+            "closed": project.closed,
+            "drawings": project.drawings,
+            "campus_client": project.campus_client,
+            "notes": project.notes,
+            "inspector_name": project.inspector_name,
+            "project_manager_name": project.project_manager_name,
+            "last_synced_at": _iso_datetime(project.last_synced_at),
+        },
+        "archives": archive_response,
+        "caan_count": len(sorted_caans),
+        "caans": [
+            {
+                "id": caan.id,
+                "caan": caan.caan,
+                "name": caan.name,
+                "description": caan.description,
+            }
+            for caan in sorted_caans
+        ],
+        "contract_count": len(sorted_contracts),
+        "contracts": [_serialize_contract_api(contract) for contract in sorted_contracts],
+    }
+
+
 def other_contract_dates(contract) -> list[dict]:
     """Return chronological non-schedule dates without treating them as a schedule."""
     dates = []
@@ -396,16 +556,9 @@ def _status(value: bool | None, true_label: str, false_label: str) -> str:
 
 def project_context(project, user_archives_location: str | None) -> dict:
     """Prepare only presentation-neutral page data; this function never touches SMB."""
-    root = _normalized_root(project.file_server_location)
+    archive_data = project_archive_data(project, user_archives_location)
     contracts = list(project.contracts)
     contract_state = "none" if not contracts else "single" if len(contracts) == 1 else "multiple"
-    display_path = None
-    if root and user_archives_location:
-        display_path = utils.FileServerUtils.user_path_from_db_data(
-            file_server_directories=root,
-            user_archives_location=user_archives_location,
-        )
-    indexed_count = indexed_file_count(root) if root else None
 
     sorted_caans = sorted(project.caans, key=lambda caan: _natural_sort_key(caan.caan))
     context = {
@@ -415,9 +568,9 @@ def project_context(project, user_archives_location: str | None) -> dict:
         "last_synced_display": _readable_datetime(project.last_synced_at) if project.last_synced_at else None,
         "caans": sorted_caans,
         "caans_collapsible": len(sorted_caans) > 10,
-        "root": root,
-        "display_path": display_path,
-        "indexed_file_count": indexed_count,
+        "root": archive_data["root"],
+        "display_path": archive_data["display_path"],
+        "indexed_file_count": archive_data["indexed_file_count"],
         "contract_state": contract_state,
         "contract_count": len(contracts),
         "contract_groups": [],

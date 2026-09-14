@@ -938,3 +938,42 @@ Affected: `archives_application/project_tools/project_info.py`,
 `archives_application/templates/project_info.html`,
 `archives_application/static/main.css`, and
 `research/project_info_feature_spec.md`. Unit-test coverage remains deferred.
+
+---
+
+## Entry 026 - Project-information API, introduction, and shared authentication
+**Date:** 2026-09-14<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Added read-only `GET /api/project_info` for authenticated programmatic access
+to one project's synchronized project, CAAN, contract, and archive-index data.
+It accepts one strict ID-or-number selector, rejects ambiguous numbers, uses
+session or HTTP Basic authentication, and returns decimal-safe financial data,
+ISO dates, raw schedule fields, and supplemental reconciliation values. The
+new route is fully documented in its API docstring and never accesses SMB or
+enumerates file rows; it reuses the page's path-boundary aggregate count and
+project resolver. The page and API now share archive-root preparation and
+stable contract sorting.
+
+Added `authenticate_active_api_user()` as the common active-session or HTTP
+Basic policy for the project and file information APIs. `/api/file_info` and
+`/api/project_info` now use one implementation while preserving their existing
+responses; archive search's legacy JSON-body credentials remain unchanged
+pending a separately documented compatibility migration. The helper lives as a
+`FlaskAppUtils` static method in the established shared utilities module; its
+local `bcrypt` import avoids adding package-initialization coupling to
+`utils.py`.
+
+Added a user-facing Project Information introduction covering navigation from
+CAAN records, direct ID and project-number URLs, archive-index count
+limitations, CAAN disclosure behavior, one-versus-many contract views, and
+the contract schedule's source-data and color-key interpretation.
+
+Affected: `archives_application/utils.py`,
+`archives_application/archiver/routes.py`,
+`archives_application/project_tools/routes.py`,
+`archives_application/project_tools/project_info.py`, and
+`dev_files/project_info_user_facing_intro.md`, and
+`research/development_journal.md`. Verification: Python compilation, minimal
+Flask route registration, user-guide review against the current template and
+route behavior, and `git diff --check`. Unit-test coverage remains deferred.
