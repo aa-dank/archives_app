@@ -177,7 +177,7 @@
                                     </div>
                                 </td>
                                 <td>{{ result.match_source }}</td>
-                                <td>
+                                <td class="archive-filename">
                                     <div>
                                         <a href="{{ url_for('archiver.file_info', file_hash=result.file_hash) }}">{{ result.filename or "Unnamed indexed file" }}</a>
                                     </div>
@@ -317,6 +317,10 @@
         }
         .archive-col-filename {
             width: 280px;
+        }
+        .archive-filename {
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
         .archive-col-location {
             width: 650px;
