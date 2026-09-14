@@ -10,6 +10,7 @@ from archives_application import db, bcrypt
 from archives_application import utils
 from archives_application.models import UserModel, ProjectModel, CAANModel, WorkerTaskModel
 from archives_application.project_tools.forms import CAANSearchForm
+from archives_application.project_tools import project_info as project_info_service
 from sqlalchemy import or_, and_
 
 
@@ -28,6 +29,13 @@ def project_directory_summary_link(location):
     )
 
 def admin_request_user():
+    """Return the authenticated admin and supplied password, if applicable.
+
+    Explicit ``user`` and ``password`` request parameters take precedence over
+    the current session.  Returns ``(user, password)`` for a verified admin,
+    otherwise ``(None, password)`` for an attempted parameter login or
+    ``(None, None)`` when no authenticated admin is available.
+    """
     user_param = utils.FlaskAppUtils.retrieve_request_param("user", None)
     if user_param:
         password_param = utils.FlaskAppUtils.retrieve_request_param("password")
@@ -43,6 +51,12 @@ def admin_request_user():
 
 
 def requested_projects_list():
+    """Return requested project identifiers from singular and plural parameters.
+
+    Combines ``project`` with comma-separated ``projects`` values, strips
+    surrounding whitespace, omits blank entries, and returns ``None`` when
+    neither parameter provides an identifier.
+    """
     project_param = utils.FlaskAppUtils.retrieve_request_param("project", None)
     projects_param = utils.FlaskAppUtils.retrieve_request_param("projects", None)
     project_values = []
@@ -264,6 +278,14 @@ def caan_info(caan):
             return location
 
         return project_directory_summary_link(location)
+
+    def project_info_link(project_id, project_number):
+        """Build a canonical project-detail link without trusting table content."""
+        project_url = flask.url_for('project_tools.project_info', project_id=int(project_id))
+        return (
+            f'<a href="{html.escape(project_url, quote=True)}">'
+            f'{html.escape(str(project_number))}</a>'
+        )
     
     try:
         # check if the caan value exists in the database
@@ -288,20 +310,23 @@ def caan_info(caan):
         caan_projects_df["Drawings?"] = caan_projects_df["drawings"].apply(drawings_label)
         caan_projects_df["_drawings_rank"] = caan_projects_df["Drawings?"].map({"Yes": 0, "UNKNOWN": 1, "No": 2})
         caan_projects_df["_number_sort_key"] = caan_projects_df["number"].apply(project_number_sort_key)
+        caan_projects_df["Number"] = caan_projects_df.apply(
+            lambda row: project_info_link(row["id"], row["number"]), axis=1
+        )
         caan_projects_df["Location"] = caan_projects_df.apply(row_root_location, axis=1)
 
         caan_projects_df.sort_values(by=["_drawings_rank", "_number_sort_key"], inplace=True)
-        projects_table_df = caan_projects_df[["number", "name", "Drawings?", "Location"]]
+        projects_table_df = caan_projects_df[["Number", "name", "Drawings?", "Location"]]
         projects_table_df.columns = ["Number", "Name", "Drawings?", "Location"]
         # ``html_columns`` disables pandas' table-wide escaping so the location
         # links render. Escape the remaining database-backed columns explicitly.
-        for column in ["Number", "Name", "Drawings?"]:
+        for column in ["Name", "Drawings?"]:
             projects_table_df[column] = projects_table_df[column].apply(
                 lambda value: html.escape(str(value))
             )
         projects_html = utils.html_table_from_df(
             df=projects_table_df,
-            html_columns=["Location"],
+            html_columns=["Number", "Location"],
             column_widths=html_col_widths
         )
         
@@ -324,6 +349,175 @@ def caan_info(caan):
             response_message="Error retrieving CAAN information:",
             thrown_exception=e
         )
+
+
+@project_tools.route("/project_info", methods=['GET'])
+def project_info():
+    """Render one project's business, CAAN, contract, and archive-index details.
+
+    The route accepts exactly one query selector: a positive ``project_id`` or
+    an exact case-insensitive ``project_number``. Number lookups redirect to
+    the canonical ID URL and refuse ambiguous numbers rather than choosing an
+    arbitrary project. The page is read-only and makes no filesystem calls.
+    """
+    try:
+        selector = project_info_service.parse_selector(flask.request.args)
+        project = project_info_service.resolve_project(selector)
+        if selector.kind == "project_number":
+            return flask.redirect(
+                flask.url_for('project_tools.project_info', project_id=project.id),
+                code=302,
+            )
+        context = project_info_service.project_context(
+            project=project,
+            user_archives_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION'),
+        )
+        return flask.render_template(
+            'project_info.html',
+            title=f"Project {project.number}: {project.name}",
+            **context,
+        )
+    except project_info_service.ProjectInfoValidationError as error:
+        return flask.Response(str(error), status=400)
+    except project_info_service.ProjectInfoNotFoundError as error:
+        return flask.Response(str(error), status=404)
+    except project_info_service.ProjectInfoAmbiguousNumberError as error:
+        return flask.Response(str(error), status=409)
+    except Exception as error:
+        return utils.FlaskAppUtils.api_exception_subroutine(
+            response_message="Error retrieving project information:",
+            thrown_exception=error,
+        )
+
+
+def _project_info_api_error(status_code: int, message: str):
+    """Return the consistent JSON error representation for project-information API calls."""
+    return flask.jsonify({"error": message}), status_code
+
+
+@project_tools.route("/api/project_info", methods=["GET"])
+def project_info_api():
+    """Return authenticated JSON project, CAAN, contract, and archive-index data.
+
+    ``GET /api/project_info`` is the programmatic counterpart to the HTML
+    ``/project_info`` page. It resolves exactly one project, returns its direct
+    CAAN and contract relationships, and reports the recorded archive root plus
+    one database-indexed file-location count. It is read-only: it performs no
+    SMB/file-server I/O, creates no records, and enqueues no background work.
+
+    Authentication:
+        An active application user is required. A caller may authenticate with
+        an existing application session or HTTP Basic credentials in the
+        ``Authorization`` header. Basic credentials are the user's application
+        email and password; deployments must protect such requests with HTTPS.
+        Credentials are never accepted as query parameters. Missing or invalid
+        credentials return ``401 Unauthorized``. This first version permits
+        every authenticated active user to retrieve project data, including
+        contract financial values and synchronized project notes.
+
+    Query parameters:
+        Supply exactly one selector:
+
+        - ``project_id`` (positive integer): the canonical ``projects.id``.
+        - ``project_number`` (string): an exact case-insensitive
+          ``projects.number`` match after harmless outer whitespace is trimmed.
+
+        The selectors are mutually exclusive. ``project_number`` requests do
+        not redirect: successful API responses always contain the canonical ID
+        at ``project.id``, which clients should retain for future requests.
+        Project numbers are not schema-unique, so an ambiguous number returns
+        ``409 Conflict`` rather than selecting an arbitrary row.
+
+        Optional boolean values accept case-insensitive ``true`` or ``false``:
+
+        - ``include_user_path`` (default ``false``): When ``true``, add
+          ``archives.user_path`` using the configured
+          ``USER_ARCHIVES_LOCATION``. It is ``null`` when no recorded root or
+          user archive mount is available. When ``false``, that key is omitted;
+          the database-relative ``archives.database_root`` remains available.
+
+        Unknown, blank, repeated, or malformed parameters return ``400 Bad
+        Request``. Query parameter names are case-sensitive. Do not use a URL
+        path segment for project numbers because their punctuation and future
+        formats are not constrained to a simple identifier.
+
+    Response schema:
+        A successful request returns ``200 OK`` JSON with top-level
+        ``project``, ``archives``, ``caan_count``, ``caans``,
+        ``contract_count``, and ``contracts`` keys. ``project`` contains the
+        canonical ID, synchronized project fields, and ISO-8601
+        ``last_synced_at``. FileMaker primary IDs are implementation details
+        and are intentionally not exposed.
+
+        ``archives.database_root`` is the normalized Records-relative stored
+        directory or ``null``; ``root_recorded`` distinguishes that state.
+        ``indexed_file_location_count`` is a single count of indexed
+        ``file_locations`` at that root or beneath its directory boundary. It
+        is not a live filesystem inventory, and it is ``null`` when no root is
+        recorded. A count of zero means no indexed paths are currently
+        recorded, not that the directory is known to be empty.
+
+        ``caans`` is naturally sorted by CAAN code and contains each direct
+        relationship's ID, code, name, and description. ``contracts`` is
+        sorted by contract number then ID and always contains every direct
+        ``contracts.project_id`` relationship, including when there is only
+        one or there are many. Long scope descriptions are returned in full;
+        the HTML page's disclosure presentation does not apply to JSON.
+
+        Each contract includes identity/party fields, a ``financials`` object,
+        a ``schedule`` object, and ``last_synced_at``. Monetary values are
+        decimal strings such as ``"13587.39"`` rather than JSON floats, so
+        clients do not lose precision. Dates use ``YYYY-MM-DD`` and timestamps
+        use ISO-8601; database nulls are JSON ``null``. The schedule contains
+        raw synchronized dates and durations plus three supplemental checks:
+        ``duration_reconciles`` tests original duration plus change-order time
+        against revised duration, ``expected_end_reconciles`` tests NTP plus
+        revised duration against the recorded expected end, and
+        ``actual_vs_expected_days`` compares actual NOC completion with that
+        recorded expected end. These fields never substitute derived values for
+        the synchronized source values. Deprecated contract account numbers
+        and FileMaker primary IDs are not returned.
+
+    Errors:
+        - ``400``: Invalid selector or query parameter.
+        - ``401``: Missing or invalid authentication.
+        - ``404``: No project matches a valid selector.
+        - ``409``: More than one project has the supplied project number.
+        - ``500``: Unexpected lookup or serialization failure.
+
+        Every successful response sends ``Cache-Control: private, no-store``
+        because project, archive-path, and contract information can be
+        sensitive.
+    """
+    if utils.FlaskAppUtils.authenticate_active_api_user() is None:
+        return _project_info_api_error(401, "Unauthorized.")
+
+    try:
+        selector, include_user_path = project_info_service.parse_api_request(
+            flask.request.args
+        )
+        project = project_info_service.resolve_project(selector)
+        api_data = project_info_service.project_api_data(
+            project=project,
+            user_archives_location=flask.current_app.config.get(
+                "USER_ARCHIVES_LOCATION"
+            ),
+            include_user_path=include_user_path,
+        )
+        response = flask.jsonify(api_data)
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+    except project_info_service.ProjectInfoValidationError as error:
+        return _project_info_api_error(400, str(error))
+    except project_info_service.ProjectInfoNotFoundError as error:
+        return _project_info_api_error(404, str(error))
+    except project_info_service.ProjectInfoAmbiguousNumberError as error:
+        return _project_info_api_error(409, str(error))
+    except Exception:
+        flask.current_app.logger.error(
+            "Project information API request failed", exc_info=True
+        )
+        return _project_info_api_error(500, "Unable to retrieve project information.")
 
 
 @project_tools.route("/api/project_location", methods=['GET', 'POST'])
