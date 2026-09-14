@@ -44,28 +44,6 @@ def _file_info_api_error(status_code: int, message: str):
     return flask.jsonify({"error": message}), status_code
 
 
-def _file_info_api_user():
-    """Authenticate a GET API caller with a session or HTTP Basic credentials."""
-    if current_user.is_authenticated and getattr(current_user, "active", False):
-        return current_user
-
-    authorization = flask.request.authorization
-    if not authorization or authorization.type.lower() != "basic":
-        return None
-    if not isinstance(authorization.username, str) or not isinstance(authorization.password, str):
-        return None
-
-    user = UserModel.query.filter_by(email=authorization.username).first()
-    if (
-        user
-        and user.active
-        and user.password
-        and bcrypt.check_password_hash(user.password, authorization.password)
-    ):
-        return user
-    return None
-
-
 def _file_info_api_boolean_parameter(name: str) -> bool:
     """Parse one optional API boolean while rejecting repeated or malformed values."""
     values = flask.request.args.getlist(name)
@@ -193,7 +171,7 @@ def file_info_api():
           canonical hashes.
         - ``500``: Unexpected lookup or serialization failure.
     """
-    if _file_info_api_user() is None:
+    if utils.FlaskAppUtils.authenticate_active_api_user() is None:
         return _file_info_api_error(401, "Unauthorized.")
 
     try:
