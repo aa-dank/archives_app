@@ -2140,6 +2140,7 @@ def archived_or_not():
     """
     form = archiver_forms.ArchivedOrNotForm()
     if form.validate_on_submit():
+        temp_path = None
         try:
             # Save file to temporary directory
             filename = form.upload.data.filename
@@ -2155,7 +2156,6 @@ def archived_or_not():
             # Create html table of all locations that match the hash
             locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == matching_file.id)
             locations_df = utils.FlaskAppUtils.db_query_to_df(locations)
-            os.remove(temp_path)
             if locations_df.empty:
                 raise Exception(f"No locations found for file, {filename}, with hash {file_hash}, though file was found in database.")
             
@@ -2165,12 +2165,14 @@ def archived_or_not():
                                          file_locations_list=[{"filename":filename, "locations_html":location_table_html}])
 
         except Exception as e:
-            os.remove(temp_path)
             return utils.FlaskAppUtils.web_exception_subroutine(
                 flash_message="Error looking for instances of file on Server.",
                 thrown_exception=e,
                 app_obj=flask.current_app
             )
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
 
     return flask.render_template('archived_or_not.html', title='Determine if File Already Archived', form=form)
 

@@ -769,7 +769,41 @@ Affected: archives_application/models.py, pyproject.toml, research/development_j
 
 ---
 
-## Entry 016 - Project-information timeline and index-count specification
+## Entry 016 - Archived-or-not temporary upload cleanup
+**Date:** 2026-09-10<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Moved `/archived_or_not` temporary-upload cleanup into a single guarded
+`finally` block. This prevents the no-locations error path from deleting the
+same temporary file twice and masking the intended exception before the web
+exception handler can flash, log, and redirect. It also cleans up uploads when
+their hash has no matching `FileModel`, and avoids referencing an unassigned
+temporary path if setup fails.
+
+Affected: `archives_application/archiver/routes.py`,
+`research/development_journal.md`. Verification: Python compilation and
+focused source-flow review. Follow-on: reconcile `FileModel` records that have
+no related `FileLocationModel` rows.
+
+---
+
+## Entry 017 - Replacement-file location reconciliation
+**Date:** 2026-09-11<br>
+**Author:** OpenAI Codex (GPT-5)
+
+`add_file_to_db_task` now handles a changed file at an already-indexed path as
+one transaction. It flushes a newly created `FileModel` rather than committing
+it before its first location, and when replacing a location it deletes the
+displaced `FileModel` only when that model has no remaining locations. Linked
+`archived_files` rows are detached first. A rollback now occurs before the task
+is marked failed, preserving a usable session for task-status persistence.
+
+Affected: `archives_application/archiver/archiver_tasks.py` and this journal.
+Verification: Python compilation and focused replacement-path source review.
+
+---
+
+## Entry 018 - Project-information timeline and index-count specification
 **Date:** 2026-08-28<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -790,7 +824,7 @@ database migration/index if production query plans require it.
 
 ---
 
-## Entry 017 - Project timeline responsive-layout scope
+## Entry 019 - Project timeline responsive-layout scope
 **Date:** 2026-08-28<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -801,7 +835,7 @@ narrow-layout adaptation is required. No application behavior changed.
 
 ---
 
-## Entry 018 - Project contract-field access decision
+## Entry 020 - Project contract-field access decision
 **Date:** 2026-08-31<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -812,7 +846,7 @@ role-based authorization policy. No application behavior changed.
 
 ---
 
-## Entry 019 - Project-information page implementation
+## Entry 021 - Project-information page implementation
 **Date:** 2026-08-31<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -838,7 +872,7 @@ plan requires one.
 
 ---
 
-## Entry 020 - Collapsible long associated-CAAN lists
+## Entry 022 - Collapsible long associated-CAAN lists
 **Date:** 2026-08-31<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -856,7 +890,7 @@ Jinja parsing, and `git diff --check`.
 
 ---
 
-## Entry 021 - Contract schedule overview replaces milestone timeline
+## Entry 023 - Contract schedule overview replaces milestone timeline
 **Date:** 2026-09-01<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -876,7 +910,7 @@ Affected: `archives_application/project_tools/project_info.py`,
 
 ---
 
-## Entry 022 - Schedule-duration color key
+## Entry 024 - Schedule-duration color key
 **Date:** 2026-09-01<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -893,7 +927,7 @@ Affected: `archives_application/project_tools/project_info.py`,
 
 ---
 
-## Entry 023 - Project-information branch aligned with master data models
+## Entry 025 - Project-information branch aligned with master data models
 **Date:** 2026-09-08<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -909,7 +943,7 @@ and `git diff --check`. Unit-test coverage remains deferred.
 
 ---
 
-## Entry 024 - Multiple-contract data table
+## Entry 026 - Multiple-contract data table
 **Date:** 2026-09-08<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -926,7 +960,7 @@ Affected: `archives_application/project_tools/project_info.py`,
 
 ---
 
-## Entry 025 - Collapsible multiple-contract scope descriptions
+## Entry 027 - Collapsible multiple-contract scope descriptions
 **Date:** 2026-09-11<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -941,7 +975,7 @@ Affected: `archives_application/project_tools/project_info.py`,
 
 ---
 
-## Entry 026 - Project-information API, introduction, and shared authentication
+## Entry 028 - Project-information API, introduction, and shared authentication
 **Date:** 2026-09-14<br>
 **Author:** OpenAI Codex (GPT-5)
 
@@ -977,3 +1011,21 @@ Affected: `archives_application/utils.py`,
 `research/development_journal.md`. Verification: Python compilation, minimal
 Flask route registration, user-guide review against the current template and
 route behavior, and `git diff --check`. Unit-test coverage remains deferred.
+
+---
+
+## Entry 029 - Project-information integration and 1.18.0 release preparation
+**Date:** 2026-09-14<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Integrated `feature/project_info` with the current master branch, retaining
+the master operational fixes and renumbering the feature's journal series to
+preserve a single continuous record. Rolled the application package from
+1.17.8 to 1.18.0 and regenerated the lockfile; dependency versions were not
+intentionally changed.
+
+Affected: `pyproject.toml`, `uv.lock`, and
+`research/development_journal.md`, plus the project-information feature and
+the master changes included by the merge. Verification: merged current
+`origin/master`, resolved the journal conflict, and regenerated `uv.lock`.
+Full application verification remains pending.
