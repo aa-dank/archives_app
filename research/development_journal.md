@@ -1029,3 +1029,25 @@ Affected: `pyproject.toml`, `uv.lock`, and
 the master changes included by the merge. Verification: merged current
 `origin/master`, resolved the journal conflict, and regenerated `uv.lock`.
 Full application verification remains pending.
+
+---
+
+## Entry 030 - Project team and notes on project information
+**Date:** 2026-09-14<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Added optional Project manager and Inspector facts plus a visible Project notes
+card to the project-information page. Notes preserve source line breaks and
+wrap long text without interpreting it as markup. The existing API serializer
+already returns `project_manager_name`, `inspector_name`, and `notes`; its
+usage docstring now explicitly identifies those fields. A read-only data
+profile found manager names on most projects, inspector names less often, and
+rare but occasionally multi-line notes, supporting this optional-facts and
+separate-notes presentation.
+
+Affected: `archives_application/templates/project_info.html`,
+`archives_application/static/main.css`,
+`archives_application/project_tools/routes.py`,
+`dev_files/project_info_user_facing_intro.md`, and
+`research/development_journal.md`. Verification: Python compilation, Jinja
+template parsing, and `git diff --check`. Unit-test coverage remains deferred.
