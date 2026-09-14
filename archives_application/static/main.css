@@ -130,3 +130,146 @@ a[aria-expanded="false"] .collapse-toggle-icon {
 .nav-sub-item a:hover {
   color: #5f788a !important;
 }
+
+.project-info-page dl dd,
+.project-info-page td,
+.project-info-page .project-path {
+  overflow-wrap: anywhere;
+}
+
+.project-path {
+  font-family: monospace;
+  white-space: pre-wrap;
+}
+
+.contract-scope {
+  white-space: pre-line;
+}
+
+.project-caans-disclosure summary {
+  margin-bottom: 0.75rem;
+  cursor: pointer;
+  color: #35759a;
+  font-weight: 600;
+}
+
+.contract-schedule-dates {
+  display: flex;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-bottom: 0.35rem;
+}
+
+.contract-schedule-dates div:last-child {
+  text-align: right;
+}
+
+.contract-schedule-dates strong,
+.contract-schedule-dates time {
+  display: block;
+}
+
+.contract-schedule-bar {
+  display: flex;
+  height: 1.2rem;
+  overflow: hidden;
+  margin-bottom: 1rem;
+  border: 1px solid #49697e;
+  border-radius: 0.25rem;
+  background: #d8e1e7;
+}
+
+.contract-schedule-segment-original {
+  background: #5f788a;
+}
+
+.contract-schedule-segment-change-order {
+  background: #d39e00;
+}
+
+.contract-schedule-segment-current {
+  background: #5f788a;
+}
+
+.contract-schedule-components dd {
+  margin-bottom: 0.35rem;
+}
+
+.contract-schedule-key {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-right: 0.35rem;
+  border-radius: 0.15rem;
+  vertical-align: -0.05rem;
+}
+
+.contract-schedule-key-original {
+  background: #5f788a;
+}
+
+.contract-schedule-key-change-order {
+  background: #d39e00;
+}
+
+.contract-schedule-variance {
+  color: #6c757d;
+}
+
+.contract-other-dates {
+  max-width: 38rem;
+}
+
+.contract-table-wrap {
+  margin-bottom: 1rem;
+}
+
+.contract-table {
+  width: max-content;
+  min-width: 142rem;
+}
+
+.contract-table th,
+.contract-table td {
+  min-width: 7.5rem;
+  vertical-align: top;
+}
+
+.contract-table-group-head {
+  background: #5f788a;
+  color: #ffffff;
+  text-align: center;
+}
+
+.contract-table-contract-number {
+  min-width: 7rem;
+}
+
+.contract-table-contractor,
+.contract-table-design-org {
+  min-width: 13rem;
+}
+
+.contract-table-scope {
+  min-width: 9rem;
+}
+
+.contract-table-scope-details {
+  min-width: 8rem;
+}
+
+.contract-table-scope-details summary {
+  cursor: pointer;
+  color: #35759a;
+  font-weight: 600;
+}
+
+.contract-table-scope-details[open] {
+  width: 24rem;
+}
+
+.contract-table-scope-text {
+  margin-top: 0.5rem;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}

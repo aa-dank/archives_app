@@ -862,6 +862,44 @@ class FlaskAppUtils:
             return False
         
         return any([admin_str in usr.roles.split(",") for admin_str in ['admin', 'ADMIN']])
+
+    @staticmethod
+    def authenticate_active_api_user():
+        """Return an active user authenticated by session or HTTP Basic credentials.
+
+        This is the shared authentication policy for read-only APIs that expose
+        archive or business data. An active Flask-Login session takes precedence.
+        Otherwise, the request must use HTTP Basic authentication with an existing
+        user's email and application password. The function returns ``None`` for
+        missing, malformed, inactive, or invalid credentials; routes are
+        responsible for converting that result into their public ``401`` response.
+
+        Basic credentials are intentionally read only from the HTTP Authorization
+        header, never from query parameters or a JSON body. Deployments must use
+        HTTPS for requests that use this authentication method.
+        """
+        if current_user.is_authenticated and getattr(current_user, "active", False):
+            return current_user
+
+        authorization = flask.request.authorization
+        if not authorization or getattr(authorization, "type", "").lower() != "basic":
+            return None
+        if not isinstance(authorization.username, str) or not isinstance(authorization.password, str):
+            return None
+
+        # Keep this import local so this broadly imported utility module does not
+        # add an application-package initialization dependency at module import time.
+        from archives_application import bcrypt
+
+        user = UserModel.query.filter_by(email=authorization.username).first()
+        if (
+            user
+            and user.active
+            and user.password
+            and bcrypt.check_password_hash(user.password, authorization.password)
+        ):
+            return user
+        return None
     
     @staticmethod
     def retrieve_request_param(

@@ -747,7 +747,6 @@ Verification: Python compilation, focused URL-generation check, and `git diff
 stale failure that still requests the renamed `/api/files` endpoint. Follow-on:
 update that unrelated test to `/api/file_info` separately.
 
-
 ---
 
 ## Entry 014 - Project model synchronization fields
@@ -757,7 +756,6 @@ update that unrelated test to `/api/file_info` separately.
 Added `notes`, `inspector_fmp_id`, `inspector_name`, `project_manager_fmp_id`, and `project_manager_name` fields to `ProjectModel` in `archives_application/models.py` aligning with the `business_services_db` Alembic migration `d2c4e6f8a1b3_add_project_sync_fields`. Rolled version to 1.17.4 in `pyproject.toml`.
 
 Affected: `archives_application/models.py`, `pyproject.toml`, `research/development_journal.md`, `uv.lock`. Verification: Python compilation and model import checks.
-
 
 ---
 
@@ -802,3 +800,232 @@ is marked failed, preserving a usable session for task-status persistence.
 
 Affected: `archives_application/archiver/archiver_tasks.py` and this journal.
 Verification: Python compilation and focused replacement-path source review.
+
+---
+
+## Entry 018 - Project-information timeline and index-count specification
+**Date:** 2026-08-28<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Extended `research/project_info_feature_spec.md` with two initial project-page
+features: a semantic single-contract milestone timeline and a single
+indexed-file-location count for the recorded project root. The timeline shows
+only non-null contract dates, distinguishes revised expected end from actual
+milestones, remains readable for same-day/single-date cases, and remains
+absent when the project has multiple linked contracts. The count applies only
+to the exact root and its directory-boundary descendants, is labelled as an
+index result rather than a live filesystem inventory, and does not run for a
+missing root.
+
+No application behavior changed. Verification: reviewed the existing archive
+search boundary predicate and current file-location indexes. Follow-on:
+measure the aggregate count with EXPLAIN ANALYZE and add the appropriate
+database migration/index if production query plans require it.
+
+---
+
+## Entry 019 - Project timeline responsive-layout scope
+**Date:** 2026-08-28<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Updated the project-information specification to keep the contract milestone
+timeline desktop-only for its first implementation. The timeline retains its
+semantic event text and same-date stacking behavior, but no mobile or
+narrow-layout adaptation is required. No application behavior changed.
+
+---
+
+## Entry 020 - Project contract-field access decision
+**Date:** 2026-08-31<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Updated `research/project_info_feature_spec.md` to make contract financial,
+account, and funding fields part of the normal single-contract display. They
+follow the existing CAAN-page access behavior and do not need a separate
+role-based authorization policy. No application behavior changed.
+
+---
+
+## Entry 021 - Project-information page implementation
+**Date:** 2026-08-31<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Implemented the read-only `GET /project_info` page and its strict ID/number
+selector contract. ID lookups render the project; unique case-insensitive
+numbers redirect to the canonical ID URL; ambiguous numbers return 409 rather
+than selecting an arbitrary row. The page renders project facts, recorded
+archive-root state, one boundary-safe indexed-file-location aggregate, linked
+CAANs, and the zero/one/multiple contract states. A single contract includes
+financial fields and an HTML/CSS milestone timeline that groups same-date
+events and distinguishes the revised expected end.
+
+The CAAN detail table now links project numbers to the canonical project ID
+page while retaining the directory-summary location links. Affected:
+`archives_application/project_tools/project_info.py`,
+`archives_application/project_tools/routes.py`,
+`archives_application/templates/project_info.html`,
+and `archives_application/static/main.css`. Verification: Python compilation,
+Jinja parsing, and `git diff --check`. Unit-test coverage is deferred. Follow-on:
+measure the indexed-file aggregate with `EXPLAIN ANALYZE` against
+production-like data and add a migration-backed index only if that measured
+plan requires one.
+
+---
+
+## Entry 022 - Collapsible long associated-CAAN lists
+**Date:** 2026-08-31<br>
+**Author:** OpenAI Codex (GPT-5)
+
+The project-information page now places its associated-CAAN table in a closed
+native disclosure control when more than 10 CAANs are linked to a project. The
+summary states the associated-CAAN count; shorter lists remain visible as
+before. This keeps the contract area near the project summary without adding
+client-side behavior.
+
+Affected: `archives_application/project_tools/project_info.py`,
+`archives_application/templates/project_info.html`,
+`archives_application/static/main.css`, and
+`research/project_info_feature_spec.md`. Verification: Python compilation,
+Jinja parsing, and `git diff --check`.
+
+---
+
+## Entry 023 - Contract schedule overview replaces milestone timeline
+**Date:** 2026-09-01<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Replaced the project page's generic contract-milestone timeline with a
+contractual schedule overview. It anchors the visual to Notice-to-Proceed and
+the recorded current expected end, distinguishes original duration from
+approved change-order time when those values reconcile, and shows actual NOC
+completion variance when both completion and expected-end dates exist. The
+page surfaces inconsistent schedule source values as warnings without replacing
+them with derived dates. Other administrative and outcome dates now appear in
+a compact chronological table rather than an inferred schedule line.
+
+Affected: `archives_application/project_tools/project_info.py`,
+`archives_application/templates/project_info.html`,
+`archives_application/static/main.css`, and
+`research/project_info_feature_spec.md`. Unit-test coverage remains deferred.
+
+---
+
+## Entry 024 - Schedule-duration color key
+**Date:** 2026-09-01<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Added matching blue and amber swatches to the original-duration and approved
+change-order-time labels beneath a split contract schedule bar. The text now
+acts as the bar's visible key, while the combined current-duration total remains
+uncolored. The swatches are omitted when the source values cannot support a
+split bar.
+
+Affected: `archives_application/project_tools/project_info.py`,
+`archives_application/templates/project_info.html`,
+`archives_application/static/main.css`, and
+`research/project_info_feature_spec.md`. Unit-test coverage remains deferred.
+
+---
+
+## Entry 025 - Project-information branch aligned with master data models
+**Date:** 2026-09-08<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Rebased `feature/project_info` onto master commits `e7724eb` and `97a4231`.
+The branch now inherits the project synchronization fields and the string
+contract-number model type that correspond to the database migrations already
+applied on master. Renumbered the feature branch's journal entries after the
+master entries so the combined record remains sequential.
+
+Affected: branch ancestry and `research/development_journal.md`. Verification:
+reviewed the inherited model fields, package version 1.17.5, feature-only diff,
+and `git diff --check`. Unit-test coverage remains deferred.
+
+---
+
+## Entry 026 - Multiple-contract data table
+**Date:** 2026-09-08<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Projects with two or more direct contract records now show a horizontally
+scrollable, grouped table rather than hiding contract data. It includes one
+stable-order row per record across identity/party, financial, schedule-date,
+and duration fields; null values use an em dash. The detailed single-contract
+schedule overview remains exclusive to projects with exactly one contract.
+
+Affected: `archives_application/project_tools/project_info.py`,
+`archives_application/templates/project_info.html`,
+`archives_application/static/main.css`, and
+`research/project_info_feature_spec.md`. Unit-test coverage remains deferred.
+
+---
+
+## Entry 027 - Collapsible multiple-contract scope descriptions
+**Date:** 2026-09-11<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Replaced full scope-description text in the multiple-contract table with a
+closed native “View scope” disclosure. Opening one disclosure expands only
+that contract row; null values continue to display as an em dash.
+
+Affected: `archives_application/project_tools/project_info.py`,
+`archives_application/templates/project_info.html`,
+`archives_application/static/main.css`, and
+`research/project_info_feature_spec.md`. Unit-test coverage remains deferred.
+
+---
+
+## Entry 028 - Project-information API, introduction, and shared authentication
+**Date:** 2026-09-14<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Added read-only `GET /api/project_info` for authenticated programmatic access
+to one project's synchronized project, CAAN, contract, and archive-index data.
+It accepts one strict ID-or-number selector, rejects ambiguous numbers, uses
+session or HTTP Basic authentication, and returns decimal-safe financial data,
+ISO dates, raw schedule fields, and supplemental reconciliation values. The
+new route is fully documented in its API docstring and never accesses SMB or
+enumerates file rows; it reuses the page's path-boundary aggregate count and
+project resolver. The page and API now share archive-root preparation and
+stable contract sorting.
+
+Added `authenticate_active_api_user()` as the common active-session or HTTP
+Basic policy for the project and file information APIs. `/api/file_info` and
+`/api/project_info` now use one implementation while preserving their existing
+responses; archive search's legacy JSON-body credentials remain unchanged
+pending a separately documented compatibility migration. The helper lives as a
+`FlaskAppUtils` static method in the established shared utilities module; its
+local `bcrypt` import avoids adding package-initialization coupling to
+`utils.py`.
+
+Added a user-facing Project Information introduction covering navigation from
+CAAN records, direct ID and project-number URLs, archive-index count
+limitations, CAAN disclosure behavior, one-versus-many contract views, and
+the contract schedule's source-data and color-key interpretation.
+
+Affected: `archives_application/utils.py`,
+`archives_application/archiver/routes.py`,
+`archives_application/project_tools/routes.py`,
+`archives_application/project_tools/project_info.py`, and
+`dev_files/project_info_user_facing_intro.md`, and
+`research/development_journal.md`. Verification: Python compilation, minimal
+Flask route registration, user-guide review against the current template and
+route behavior, and `git diff --check`. Unit-test coverage remains deferred.
+
+---
+
+## Entry 029 - Project-information integration and 1.18.0 release preparation
+**Date:** 2026-09-14<br>
+**Author:** OpenAI Codex (GPT-5)
+
+Integrated `feature/project_info` with the current master branch, retaining
+the master operational fixes and renumbering the feature's journal series to
+preserve a single continuous record. Rolled the application package from
+1.17.8 to 1.18.0 and regenerated the lockfile; dependency versions were not
+intentionally changed.
+
+Affected: `pyproject.toml`, `uv.lock`, and
+`research/development_journal.md`, plus the project-information feature and
+the master changes included by the merge. Verification: merged current
+`origin/master`, resolved the journal conflict, and regenerated `uv.lock`.
+Full application verification remains pending.

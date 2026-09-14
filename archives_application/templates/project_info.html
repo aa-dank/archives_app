@@ -1,0 +1,145 @@
+{% set hide_sidebar = True %}
+{% extends "layout.html" %}
+{% block content %}
+<div class="content-section project-info-page">
+    <h2>Project {{ project.number }}: {{ project.name }}</h2>
+
+    <dl class="project-facts row mb-4">
+        <dt class="col-sm-4">Project status</dt><dd class="col-sm-8">{{ project_status }}</dd>
+        <dt class="col-sm-4">Drawings</dt><dd class="col-sm-8">{{ drawings_status }}</dd>
+        {% if project.campus_client %}<dt class="col-sm-4">Campus client</dt><dd class="col-sm-8">{{ project.campus_client }}</dd>{% endif %}
+        {% if last_synced_display %}<dt class="col-sm-4">Business data last synchronized</dt><dd class="col-sm-8">{{ last_synced_display }}</dd>{% endif %}
+    </dl>
+
+    <section class="card mb-4" aria-labelledby="archives-location-heading">
+        <div class="card-body">
+            <h3 class="h5" id="archives-location-heading">Archives location</h3>
+            {% if not root %}
+                <p class="mb-0">No project root location is recorded in the archive database. This does not establish that the project has no files.</p>
+            {% elif display_path %}
+                <p class="project-path mb-2">{{ display_path }}</p>
+                <a href="{{ url_for('archiver.dir_contents_summary', path=display_path) }}">Directory contents summary</a>
+            {% else %}
+                <p class="mb-0">A project root is recorded, but the user archive mount is unavailable for displaying a user path.</p>
+            {% endif %}
+            <hr>
+            <p class="mb-0"><strong>Indexed files in this project directory:</strong>
+                {% if indexed_file_count is none %}
+                    Indexed file count unavailable because no project root location is recorded.
+                {% elif indexed_file_count == 0 %}
+                    No indexed files are currently recorded under this project location.
+                {% else %}
+                    {{ indexed_file_count }} indexed file path{{ '' if indexed_file_count == 1 else 's' }}.
+                {% endif %}
+                <span class="text-muted">This is a database-index count, not a live file-server check.</span>
+            </p>
+        </div>
+    </section>
+
+    <section class="mb-4" aria-labelledby="associated-caans-heading">
+        <h3 class="h4" id="associated-caans-heading">Associated CAANs</h3>
+        {% if caans %}
+            {% if caans_collapsible %}
+            <details class="project-caans-disclosure">
+                <summary>Show {{ caans|length }} associated CAANs</summary>
+            {% endif %}
+            <div class="table-responsive">
+                <table class="table table-sm table-striped table-bordered">
+                    <thead><tr><th>CAAN</th><th>Name</th><th>Description</th></tr></thead>
+                    <tbody>{% for caan in caans %}<tr>
+                        <td><a href="{{ url_for('project_tools.caan_info', caan=caan.caan) }}">{{ caan.caan }}</a></td>
+                        <td>{{ caan.name or '' }}</td><td>{{ caan.description or '' }}</td>
+                    </tr>{% endfor %}</tbody>
+                </table>
+            </div>
+            {% if caans_collapsible %}
+            </details>
+            {% endif %}
+        {% else %}
+            <p>No CAAN records are linked to this project.</p>
+        {% endif %}
+    </section>
+
+    <section aria-labelledby="associated-contract-heading">
+        <h3 class="h4" id="associated-contract-heading">Associated contract{% if contract_state == 'multiple' %}s{% endif %}</h3>
+        {% if contract_state == 'none' %}
+            <p>No linked contract record.</p>
+        {% elif contract_state == 'multiple' %}
+            <p>{{ contract_count }} linked contract records are present. Each row contains the synchronized contract data; scroll horizontally to view all fields.</p>
+            <div class="table-responsive contract-table-wrap">
+                <table class="table table-sm table-striped table-bordered contract-table">
+                    <thead>
+                        <tr>{% for group in multiple_contract_column_groups %}<th class="contract-table-group-head" colspan="{{ group.columns|length }}">{{ group.label }}</th>{% endfor %}</tr>
+                        <tr>{% for group in multiple_contract_column_groups %}{% for column in group.columns %}<th class="{{ column[3] }}">{{ column[1] }}</th>{% endfor %}{% endfor %}</tr>
+                    </thead>
+                    <tbody>{% for row in multiple_contract_rows %}<tr>{% for cell in row.cells %}<td class="{{ cell.css_class }}">{% if cell.is_scope and cell.has_value %}<details class="contract-table-scope-details"><summary>View scope</summary><div class="contract-table-scope-text">{{ cell.value }}</div></details>{% else %}{{ cell.value }}{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
+                </table>
+            </div>
+        {% else %}
+            {% for group in contract_groups %}
+                <h4 class="h6 mt-3">{{ group.label }}</h4>
+                <dl class="contract-fields row">
+                    {% for field in group.fields %}
+                        <dt class="col-sm-4">{{ field.label }}</dt>
+                        <dd class="col-sm-8{% if field.is_scope %} contract-scope{% endif %}">{{ field.value }}</dd>
+                    {% endfor %}
+                </dl>
+            {% endfor %}
+
+            <section class="contract-schedule mt-4" aria-labelledby="contract-schedule-heading">
+                <h3 class="h4" id="contract-schedule-heading">Contract schedule</h3>
+                {% if contract_schedule.has_schedule_dates %}
+                    <div class="contract-schedule-dates">
+                        <div><strong>Notice to proceed</strong><time datetime="{{ contract_schedule.ntp_start.isoformat() }}">{{ contract_schedule.ntp_start_display }}</time></div>
+                        <div><strong>Current expected end</strong><time datetime="{{ contract_schedule.expected_end.isoformat() }}">{{ contract_schedule.expected_end_display }}</time></div>
+                    </div>
+                    {% if contract_schedule.bar_segments %}
+                    <div class="contract-schedule-bar" aria-label="Contractual schedule duration">
+                        {% for segment in contract_schedule.bar_segments %}
+                        <span class="contract-schedule-segment contract-schedule-segment-{{ segment.style }}" style="flex-grow: {{ segment.percent }};" title="{{ segment.label }}: {{ segment.days }} calendar days"></span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                {% else %}
+                    <p>Schedule span unavailable because Notice-to-Proceed start and current expected end are not both recorded.</p>
+                {% endif %}
+
+                {% if contract_schedule.components %}
+                <dl class="contract-schedule-components row">
+                    {% for component in contract_schedule.components %}
+                    <dt class="col-sm-4">{% if contract_schedule.show_duration_key and component.style %}<span class="contract-schedule-key contract-schedule-key-{{ component.style }}" aria-hidden="true"></span>{% endif %}{{ component.label }}</dt><dd class="col-sm-8">{{ component.value }}</dd>
+                    {% endfor %}
+                </dl>
+                {% endif %}
+
+                {% if contract_schedule.actual_completion_display %}
+                <p><strong>Actual Completion Date:</strong> <time datetime="{{ contract_schedule.actual_completion.isoformat() }}">{{ contract_schedule.actual_completion_display }}</time>{% if contract_schedule.actual_variance_label %} <span class="contract-schedule-variance">({{ contract_schedule.actual_variance_label }})</span>{% endif %}</p>
+                {% else %}
+                <p><strong>Actual Completion Date:</strong> Not recorded.</p>
+                {% endif %}
+
+                {% if contract_schedule.duration_reconciled is sameas false %}
+                <p class="text-warning mb-1">The recorded original duration, approved change-order time, and current duration do not reconcile.</p>
+                {% endif %}
+                {% if contract_schedule.expected_end_reconciled is sameas false %}
+                <p class="text-warning mb-0">The recorded current expected end does not match Notice-to-Proceed plus the current contractual duration.</p>
+                {% endif %}
+            </section>
+
+            <section class="mt-4" aria-labelledby="other-contract-dates-heading">
+                <h3 class="h5" id="other-contract-dates-heading">Other recorded contract dates</h3>
+                {% if other_contract_dates %}
+                <table class="table table-sm table-bordered contract-other-dates">
+                    <thead><tr><th>Date</th><th>Record</th></tr></thead>
+                    <tbody>{% for event in other_contract_dates %}<tr>
+                        <td><time datetime="{{ event.iso_date }}">{{ event.display_date }}</time></td><td>{{ event.label }}</td>
+                    </tr>{% endfor %}</tbody>
+                </table>
+                {% else %}
+                <p>No other contract dates are recorded.</p>
+                {% endif %}
+            </section>
+        {% endif %}
+    </section>
+</div>
+{% endblock content %}
