@@ -2315,7 +2315,7 @@ def scrape_files():
                                                             enqueued_function=scrape_file_data_task,
                                                             task_kwargs=scrape_params,
                                                             enqueue_call_kwargs=nq_call_kwargs,
-                                                            timeout=scrape_time.seconds + 60)
+                                                            timeout=scrape_time.seconds + 300) # add operation buffer to ensure task completion
             
             nq_results = {"enqueueing_results": utils.serializable_dict(nq_results),
                           "scrape_task_params": utils.serializable_dict(scrape_params)}
