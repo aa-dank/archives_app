@@ -22,6 +22,12 @@ import archives_application.archiver.forms as archiver_forms
 from archives_application.archiver import archive_search as archive_search_service
 from archives_application.archiver import file_info as file_info_service
 from archives_application.archiver.archival_file import ArchivalFile
+from archives_application.archiver.file_policy import (
+    EXCLUDED_FILE_EXTENSIONS,
+    EXCLUDED_FILENAMES,
+    exclude_extensions,
+    exclude_filenames,
+)
 from archives_application import utils
 from archives_application.models import *
 from archives_application import db, bcrypt
@@ -29,8 +35,6 @@ from archives_application import db, bcrypt
 
 archiver = flask.Blueprint('archiver', __name__)
 
-EXCLUDED_FILENAMES = ['Thumbs.db', 'thumbs.db', 'desktop.ini']
-EXCLUDED_FILE_EXTENSIONS = ['DS_Store', '.ini', '.git']
 FILE_INFO_API_PARAMETERS = {
     "file_hash",
     "user_path",
@@ -272,19 +276,6 @@ def get_user_handle():
     '''
     return current_user.email.split("@")[0]
 
-def exclude_extensions(f_path, extensions_list=EXCLUDED_FILE_EXTENSIONS):
-    """
-    checks filepath to see if it is using excluded extensions
-    """
-    filename = utils.FileServerUtils.split_path(f_path)[-1].lower()
-    return any([filename.endswith(ext.lower()) for ext in extensions_list])
-
-def exclude_filenames(f_path, excluded_names=EXCLUDED_FILENAMES):
-    """
-    excludes files with certain names
-    """
-    filename = utils.FileServerUtils.split_path(f_path)[-1].lower()
-    return any([filename == name.lower() for name in excluded_names])
 
 def cleanse_locations_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """
