@@ -318,6 +318,8 @@ API without implementing that endpoint yet.
 - Did not add telemetry to `/file_search`, initial form GET requests, invalid
   form submissions, or timestamped workbook-download requests.
 
+---
+
 ### Search run lifecycle
 
 Each validated search submission follows this lifecycle:
@@ -1051,3 +1053,44 @@ Affected: `archives_application/templates/project_info.html`,
 `dev_files/project_info_user_facing_intro.md`, and
 `research/development_journal.md`. Verification: Python compilation, Jinja
 template parsing, and `git diff --check`. Unit-test coverage remains deferred.
+
+---
+
+## Entry 031 - Dynamic server-edit timeout scaling for large directory reconciliations
+**Date:** 2026-09-14  
+**Author:** OpenAI Codex (GPT-5)
+
+---
+
+### Context
+
+A production failure showed that a directory rename affecting 33,298 file rows could still time out even after the filesystem rename completed. The route layer was issuing a fixed `timeout=1200` when queuing the DB reconciliation task, while the actual work in `ServerEdit.add_renaming_to_db_task` scales with `FileLocationModel` row count for every affected file under the renamed directory.
+
+### What changed
+
+The timeout policy is now derived from the estimated scope of the edit instead of a hard-coded value. `ServerEdit.estimate_timeout_seconds()` computes a floor and ceiling based on the real `files_effected` estimate, and `ServerEdit.execute()` uses it when enqueuing the follow-up reconciliation task unless a caller passes an explicit override.
+
+The chosen formula is:
+
+```text
+timeout = max(300, min(300 + ceil(files_effected * 0.2), 7200))
+```
+
+This keeps single-file edits at 300 seconds while allowing large directory renames and moves to scale up to 7,200 seconds. The route no longer injects a fixed `1200` second timeout; it simply calls `server_edit.execute(...)` with the app limits unchanged.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `archives_application/archiver/server_edit.py` | Added dynamic timeout estimation and ensured the timeout is computed at enqueue time from `change_type`, `is_file`, and `files_effected`. |
+| `archives_application/archiver/routes.py` | Removed the hard-coded `timeout=1200` channel override for server edits. |
+| `tests/test_server_edit_timeouts.py` | Added focused regression tests covering the floor and large-directory cases. |
+
+### Why this matters
+
+The database reconciliation for directory renames updates every affected `FileLocationModel` row and commits inside the loop. That makes runtime proportional to directory size, so a fixed timeout is too brittle for large edits. The new estimate tracks the actual work and keeps the permission and limit checks unchanged.
+
+### Verification
+
+- `.venv/bin/python -m pytest tests/test_server_edit_timeouts.py -q` passed after the fix.
+- The regression covers the single-file floor case and the 33,298-file production-scale directory rename case.

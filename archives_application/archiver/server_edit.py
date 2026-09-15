@@ -2,6 +2,7 @@
 
 import datetime
 import errno
+import math
 import flask
 import flask_sqlalchemy
 import os
@@ -160,7 +161,28 @@ class ServerEdit:
             FileContentFailureModel.file_hash == file_hash
         ).delete(synchronize_session=False)
 
-    def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=900):
+    @staticmethod
+    def estimate_timeout_seconds(change_type: str, is_file: bool, files_effected: int,
+                                timeout_floor: int = 1200, timeout_ceiling: int = 14400):
+        """
+        Derive a task timeout from the estimated amount of work in the edit.
+
+        Single-file edits keep a short timeout floor. Directory edits scale upward
+        with the number of rows/files affected, bounded by a ceiling to prevent
+        unbounded timeouts while still allowing large reconciliations to finish.
+        """
+        files_effected = max(0, int(files_effected or 0))
+        change_type = (change_type or '').upper()
+
+        if is_file or not files_effected or change_type in {'CREATE'}:
+            return timeout_floor
+
+        # Directory-level renames/moves reconcile every affected file row, so scale
+        # the timeout to the amount of work rather than a fixed 1200s value.
+        derived_timeout = timeout_floor + int(math.ceil(files_effected * 0.2))
+        return max(timeout_floor, min(derived_timeout, timeout_ceiling))
+
+    def execute(self, files_limit = 500, effected_data_limit=500000000, timeout=None):
         """
         This function executes the server change that was specified during the creation of the ServerEdit object. The change can be of the following types:
 
@@ -176,7 +198,7 @@ class ServerEdit:
         :type files_limit: int
         :param effected_data_limit: Maximum amount of data that can be affected by the change (default is 50,000,000).
         :type effected_data_limit: int
-        :param timeout: Maximum time in seconds that the function can run before it is terminated (default is 900).
+        :param timeout: Optional explicit timeout override in seconds.
         :return: Dictionary containing the results of the enqueuing task.
         :rtype: dict
         """
@@ -206,9 +228,16 @@ class ServerEdit:
             :rtype: dict
             """
             task_info = utils.serializable_dict(self.to_dict())
+            effective_timeout = timeout
+            if effective_timeout is None:
+                effective_timeout = self.estimate_timeout_seconds(
+                    change_type=self.change_type,
+                    is_file=self.is_file,
+                    files_effected=self.files_effected,
+                )
             return utils.RQTaskUtils.enqueue_new_task(db=flask.current_app.extensions['sqlalchemy'],
                                                       enqueued_function=task_func,
-                                                      timeout=timeout,
+                                                      timeout=effective_timeout,
                                                       task_info=task_info)
         
         
