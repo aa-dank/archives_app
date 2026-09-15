@@ -1,8 +1,9 @@
 # archives_application/archiver/archiver_tasks.py
 
-from archives_application import create_app, utils
+from archives_application import utils
 from archives_application.models import ArchivedFileModel, FileLocationModel, FileModel, WorkerTaskModel, ServerChangeModel
-from archives_application.archiver.routes import exclude_extensions, exclude_filenames
+from archives_application.archiver.file_policy import exclude_extensions, exclude_filenames
+from archives_application.task_context import task_app_context
 import flask
 import os
 import random
@@ -13,10 +14,6 @@ from itertools import cycle
 from typing import Callable
 
 
-# Create the app context so that tasks can access app extensions even though
-# they are not running in the main thread.
-app = create_app()
-
 
 def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
     """
@@ -25,7 +22,7 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
     :param queue_id: The id of task in the worker queue.
     :param archiving: A flag to indicate if the file is being added to the database as part of an archiving event.
     """
-    with app.app_context():
+    with task_app_context():
         task_results = {'queue_id': queue_id, 'filepath': filepath}
         try:
             db = flask.current_app.extensions['sqlalchemy']

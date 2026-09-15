@@ -1094,3 +1094,31 @@ The database reconciliation for directory renames updates every affected `FileLo
 
 - `.venv/bin/python -m pytest tests/test_server_edit_timeouts.py -q` passed after the fix.
 - The regression covers the single-file floor case and the 33,298-file production-scale directory rename case.
+
+---
+
+## Entry 032 - Dedicated project-search specification
+**Date:** 2026-09-15
+**Author:** OpenAI Codex (GPT-5)
+
+Selected a separate project-search page rather than combining project, CAAN,
+and archive-file results into one interface. The specification preserves the
+existing `/caan_search` workflow, adds a planned `/project_search` route for
+bounded project metadata lookup, and keeps `/archives_search` as the distinct
+file/document retrieval workflow.
+
+The proposed project search uses canonical project-ID links to
+`/project_info`, explicitly handles duplicate project numbers, supports
+project/CAAN/contract metadata matches and bounded filters, and does not infer
+archive roots or perform filesystem access. The specification also identifies
+baseline database indexes for normalized project-number lookup and reverse
+CAAN-to-project joins, with full-text/trigram indexes deferred to measured
+query-plan results.
+
+Affected: `research/project_search_feature_spec.md` and this journal.
+Verification: reviewed against the current project-info, CAAN-search, and
+archive-search routes plus the supplied database schema/reference; `git
+diff --check` passed.
+
+Follow-on: implement the project-search service and route only after query
+preflight and index-plan validation.

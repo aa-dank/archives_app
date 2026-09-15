@@ -34,8 +34,12 @@ google_creds_json = r'google_client_secret.json'
 #config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
 config_json = r'deploy_app_config.json'
 
-def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,
-                                                              config_json_path=config_json)):
+def create_app(config_class=None):
+    if config_class is None:
+        config_class = app_config.json_to_config_factory(
+            google_creds_path=google_creds_json,
+            config_json_path=config_json
+        )
 
     # logging format
     # example usage: https://github.com/tenable/flask-logging-demo

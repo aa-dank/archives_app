@@ -11,12 +11,9 @@ import time
 from datetime import datetime, timedelta
 from typing import Dict
 from sqlalchemy.engine import make_url
-from archives_application import create_app, utils
+from archives_application import utils
 from archives_application.models import WorkerTaskModel
-
-# Create the app context so that tasks can access app extensions even though
-# they are not running in the main thread.
-app = create_app()
+from archives_application.task_context import task_app_context
 
 DB_BACKUP_FILE_PREFIX = "db_backup_"
 DB_BACKUP_FILE_TIMESTAMP_FORMAT = r"%Y%m%d%H%M%S"
@@ -59,7 +56,7 @@ class AppCustodian:
         This task will remove all files in the temp_files directory that are older than the specified lifespan.
         :param queue_id: the id of the task in the RQ queue
         """
-        with app.app_context():
+        with task_app_context():
             db = flask.current_app.extensions['sqlalchemy']
             utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             now = datetime.now()
@@ -143,12 +140,12 @@ def restart_app_task(queue_id: str, delay: int = 0):
     :param queue_id: the id of the task in the RQ queue
     :param delay: the number of seconds to wait before restarting the app
     """
-    with app.app_context():
+    with task_app_context():
         try:
             db = flask.current_app.extensions['sqlalchemy']
             utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             log = {"task_id": queue_id, "errors": []}
-            cmd = app.config.get("APP_RESTART_COMMAND")
+            cmd = flask.current_app.config.get("APP_RESTART_COMMAND")
             if not cmd:
                 raise ValueError("APP_RESTART_COMMAND not found in app config.")
             

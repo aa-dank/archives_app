@@ -6,12 +6,9 @@ import logging
 import os
 from typing import Optional
 
-from archives_application import create_app, utils
+from archives_application import utils
 from archives_application.models import ProjectModel
-
-# Create the app context so that tasks can access app extensions even though
-# they are not running in the main thread.
-app = create_app()
+from archives_application.task_context import task_app_context
 
 
 def _project_location_relative_to_archive(project_location: str, archives_location: str) -> str:
@@ -25,7 +22,7 @@ def confirm_project_locations_task(queue_id: str, projects_list: Optional[list] 
     If ``projects_list`` is supplied, only those project numbers are checked; otherwise
     every project in the database is checked.
     """
-    with app.app_context():
+    with task_app_context():
         os.environ["no_proxy"] = "*"
         db: flask_sqlalchemy.SQLAlchemy = flask.current_app.extensions["sqlalchemy"]
         utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)

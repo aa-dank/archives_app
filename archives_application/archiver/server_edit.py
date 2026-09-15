@@ -9,12 +9,10 @@ import os
 import shutil
 from sqlalchemy import func
 from typing import List, Callable
-from archives_application import create_app, utils
+from archives_application import utils
 from archives_application.archiver import archiver_tasks
 from archives_application.models import ArchivedFileModel, FileLocationModel, FileModel, FileContentModel, FileContentFailureModel, FileDateMentionModel
-# Create the app context so that tasks can access app extensions even though
-# they are not running in the main thread.
-app = create_app()
+from archives_application.task_context import task_app_context
 
 
 def directory_contents_quantities(dir_path: str, server_location: str, db: flask_sqlalchemy.SQLAlchemy):
@@ -463,7 +461,7 @@ class ServerEdit:
         It is a task function that is enqueued for a seperate thread to execute.
         """
         
-        with app.app_context():
+        with task_app_context():
             db = flask.current_app.extensions['sqlalchemy']
             utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
             file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
