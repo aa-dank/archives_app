@@ -1094,3 +1094,14 @@ The database reconciliation for directory renames updates every affected `FileLo
 
 - `.venv/bin/python -m pytest tests/test_server_edit_timeouts.py -q` passed after the fix.
 - The regression covers the single-file floor case and the 33,298-file production-scale directory rename case.
+---
+
+## Entry 032 - Contrastive exemplar search implementation specification
+**Date:** 2026-09-15
+**Author:** OpenAI Codex (GPT-5)
+
+Added an implementation-oriented specification for the proposed contrastive exemplar search feature on `feature/embed-search`. The specification aligns the application-agnostic overview with the current archive-search service, file-hash/location model, pgvector MiniLM embeddings, shared API authentication, and the scraper-owned embedding provider. It defines the opt-in HTML/API workflow, exemplar validation, positive/negative prototype ranking, candidate-pool and scope-query constraints, baseline comparison, explanations, telemetry, privacy, testing, rollout, and acceptance criteria.
+
+The specification also records pre-implementation gates: production embedding/model coverage profiling, pgvector query-plan benchmarks, a separate Alembic-owned telemetry migration, creation of a focused test layout, and an explicit decision about whether pasted-text exemplars are disabled initially or supported through a shared embedding provider. No application behavior or database schema was changed.
+
+Affected: `research/CONTRASTIVE_EXEMPLAR_SEARCH_FEATURE_SPEC.md`, `research/development_journal.md`. Verification: branch/status review, source-context review, and `git diff --check` for the generated specification.
