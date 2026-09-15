@@ -767,7 +767,7 @@ def server_change():
                                      new_path=new_path,
                                      old_path=old_path,
                                      exclusion_functions=[exclude_filenames, exclude_extensions])
-            nq_results = server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit, timeout=1200)
+            nq_results = server_edit.execute(files_limit=files_limit, effected_data_limit=data_limit)
 
 
             # record the change in the database
