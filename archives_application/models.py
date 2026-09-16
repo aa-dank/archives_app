@@ -232,6 +232,15 @@ class ArchiveSearchRunModel(db.Model):
 
 class ProjectCaanModel(db.Model):
     __tablename__ = 'project_caans'
+    __table_args__ = (
+        db.Index(
+            "ix_project_caans_caan_id_project_id",
+            "caan_id",
+            "project_id",
+            unique=False,
+            postgresql_using="btree",
+        ),
+    )
     project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), primary_key=True)
     caan_id = db.Column(db.Integer, db.ForeignKey('caans.id'), primary_key=True)
     project = db.relationship('ProjectModel', back_populates='project_caans', overlaps="caans,project_caans,projects")
@@ -240,6 +249,14 @@ class ProjectCaanModel(db.Model):
 
 class ProjectModel(db.Model):
     __tablename__ = "projects"
+    __table_args__ = (
+        db.Index(
+            "ix_projects_number_normalized",
+            text("lower(btrim(number))"),
+            unique=False,
+            postgresql_using="btree",
+        ),
+    )
     id = db.Column(db.Integer, primary_key=True)
     number = db.Column(db.String, nullable=False)
     name = db.Column(db.String, nullable=False)
