@@ -1130,3 +1130,33 @@ Affected: `archives_application/templates/inbox_item.html` and `research/develop
 Refined the inbox archiving page to make its workflow easier to scan: guide links are compact actions, the current file and bounded preview are presented as a distinct panel, and optional document details and archive-destination fields are separated into clearly headed sections. The archive action is now visually primary, long filenames and indexed archive paths wrap safely, and preview images are constrained to the viewport rather than expanding the page indefinitely. No archive form behavior or duplicate-detection logic changed.
 
 Affected: `archives_application/templates/inbox_item.html`, `archives_application/static/main.css`, and `research/development_journal.md`. Verification: Jinja parsing and `git diff --check`.
+
+---
+
+## Entry 036 - Public project metadata search and XLSX export
+**Date:** 2026-09-21
+**Author:** OpenAI Codex (GPT-5)
+
+Added public read-only `GET /project_search` and `GET /project_search/export`
+workflows. The HTML page validates its bookmarkable query/filter contract,
+searches approved project and direct-contract metadata with literal,
+case-insensitive AND-term matching, preserves duplicate project numbers as
+separate project-ID rows, ranks results deterministically, and bounds the page
+to the top 300 projects. It adds a distinct Project Search navigation item and
+does not change the dedicated CAAN or Archive Search workflows.
+
+The export applies the same complete ranking and emits a write-only XLSX
+workbook with flattened project-contract rows, a search-information sheet,
+formula-safe database text, aggregate initial-contract-cost state, and only a
+converted user-facing archive location. It never exposes raw stored archive
+paths, project notes, or FileMaker IDs, and it performs no SMB access,
+background work, database writes, or file-location counts.
+
+Affected runtime components: `archives_application/project_tools/project_search.py`,
+`archives_application/project_tools/routes.py`, the Project Search template and
+navigation, and focused tests. Verification: focused SQLite-backed route,
+ranking, filter, duplicate-ID-link, export-expansion, and formula-neutralization
+tests; Python compilation; Jinja parsing; PostgreSQL query-shape compilation;
+and `git diff --check`. Follow-on: measure the specified production PostgreSQL
+query plans and revisit indexes only if observed latency justifies a controlled
+database-repository migration.
