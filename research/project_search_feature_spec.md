@@ -1,6 +1,6 @@
 # Project Search Feature Specification
 
-Last updated: 2026-09-15
+Last updated: 2026-09-21
 
 ## Purpose
 
@@ -60,23 +60,23 @@ Project search must not duplicate these file-search modes or merge file rows int
 
 ### Database context
 
-The current database reference documents approximately:
+The current database reference documents:
 
-- 10,000 projects;
-- 1,400 CAANs;
-- 12,800 project-CAAN relationships;
-- 5,700 contracts;
+- 10,059 projects;
+- 1,393 CAANs;
+- 12,828 project-CAAN relationships;
+- 5,711 contracts;
 - 760,000 unique files; and
 - 1,000,000 file-location rows.
 
-The `projects` table currently has primary-key and FileMaker-key indexes but no dedicated normalized project-number or project-text search index. The `project_caans` primary key is ordered `(project_id, caan_id)` and does not provide the preferred leading order for CAAN-to-project lookup.
+As of 2026-09-16, `projects` has the deployed non-unique normalized-number index `ix_projects_number_normalized` on `lower(btrim(number))`. `project_caans` also has the deployed reverse index `ix_project_caans_caan_id_project_id` on `(caan_id, project_id)` for the separate CAAN workflows. There is no dedicated project or contract text-search index.
 
 The authoritative schema and migration source are in `business_services_db`. New indexes must be added through that repository's Alembic migrations and applied with the database administration role. The Archives App must not create production DDL at request time.
 
 Reference material:
 
 - `C:\Users\adankert\projects\business_services_db\reference\ARCHIVES_DB_AND_FILE_SERVER_REFERENCE.md`
-- `C:\Users\adankert\projects\business_services_db\reference\business_services_db_schema_20260902.md`
+- `C:\Users\adankert\projects\business_services_db\reference\business_services_db_schema_20260916.md`
 - `research/project_info_feature_spec.md`
 - `research/user_search_feature_spec.md`
 
@@ -84,11 +84,11 @@ Reference material:
 
 - Provide a dedicated, bookmarkable project-search page.
 - Make project number and project name easy to find.
-- Support useful metadata and relationship matches without exposing a large detail record in the result list.
+- Support useful project and contract metadata matches without exposing a large detail record in the result list.
 - Preserve duplicate project-number safety.
 - Link every result to the canonical project-information page.
 - Make a future project-to-file-search handoff possible without introducing ambiguous project-number behavior.
-- Provide bounded, paginated results rather than loading all matching projects into memory.
+- Provide a bounded top-300 HTML result list and a complete, on-demand spreadsheet export without loading either complete result set into application memory.
 - Use database-backed search and indexes appropriate for the current data size and future growth.
 - Keep project search understandable as a metadata lookup tool distinct from archive document retrieval.
 
@@ -97,6 +97,7 @@ Reference material:
 The first release does not:
 
 - combine project and CAAN rows into a single mixed result page;
+- search CAAN fields or relationships from Project Search; users should use the dedicated CAAN Search workflow for that discovery path;
 - replace or redesign `/caan_search`;
 - replace `/archives_search`;
 - search extracted document text;
@@ -127,26 +128,21 @@ The route should reject unknown or repeated query parameters rather than silentl
 
 The first release may accept:
 
-- `q`: optional free-text query, trimmed and limited to a configured maximum length such as 200 characters;
+- `query`: optional free-text query, trimmed and limited to 200 characters;
 - `status`: optional `any`, `open`, `closed`, or `unknown`;
 - `drawings`: optional `any`, `yes`, `no`, or `unknown`;
 - `has_archive_location`: optional `any`, `yes`, or `no`;
-- `caan`: optional exact CAAN code used as a project relationship filter;
-- `campus_client`: optional campus-client filter when a controlled value is supplied;
-- `page`: positive integer, default `1`; and
-- `page_size`: positive integer, default `50`, with a hard maximum of `100`.
 
-A request must contain either a non-empty `q` value or at least one supported filter. An unfiltered request must not render all projects by default.
+A request must contain either a non-empty `query` value or at least one active filter. `any` values are inactive. A blank or whitespace-only `query` with no active filter renders the empty form and must not render all projects by default. A blank `query` with an active filter, such as `status=open`, is a valid filtered search.
 
-`q` is a search query, not a project selector with redirect semantics. Even when it exactly matches one project number, the response remains a result page. This avoids special behavior for duplicate numbers and lets users see the selected record before opening its detail page.
+`query` is a search query, not a project selector with redirect semantics. Even when it exactly matches one project number, the response remains a result page. This avoids special behavior for duplicate numbers and lets users see the selected record before opening its detail page.
 
 ### Validation outcomes
 
 - Empty initial request: `200 OK`, empty search form.
-- Valid query or filter: `200 OK`, paginated results.
+- Valid query or filter: `200 OK`, ranked results.
 - Unknown/repeated/malformed parameters: `400 Bad Request`.
 - Valid query with no matches: `200 OK`, no-results state with the active query and filters preserved.
-- Page beyond the result set: `200 OK` with an empty page and a clear navigation state, or `404` if that convention is preferred consistently with the rest of the application. The implementation should choose one behavior and test it.
 
 ## User interface
 
@@ -165,10 +161,9 @@ Do not rename the existing CAAN Search item in the first release. The two pages 
 The page should contain:
 
 1. A prominent **Search projects** text field.
-2. A short explanation that the query searches project metadata and related CAAN/contract metadata.
-3. An advanced filter section containing status, drawings, archive-location state, CAAN, and campus-client filters.
-4. A bounded page-size choice only if the existing UI conventions support it; otherwise retain the configured default.
-5. A submit button that disables itself while the request is being submitted, following the existing CAAN and archive-search behavior.
+2. A short explanation that the query searches project metadata and linked contract metadata.
+3. An advanced filter section containing status, drawings, and archive-location-state filters.
+4. A submit button that disables itself while the request is being submitted, following the existing CAAN and archive-search behavior.
 
 The form should explain:
 
@@ -179,48 +174,59 @@ The form should explain:
 
 ### Result presentation
 
-Render one row per `projects.id`. Do not render one row per CAAN, contract, or file location.
+Render one row per `projects.id`. Do not render one row per contract or file location.
 
-Recommended project result columns:
+The HTML table is a compact, ranked navigation view. Its columns are:
 
-- Project number;
-- Project name;
+- Project number, linked to Project Information;
+- Project name, with project manager as compact secondary text when present;
 - Project status: Open, Closed, or Unknown;
 - Drawings: Yes, No, or Unknown;
-- Campus client, when present;
-- Project manager, when present;
-- Associated CAAN codes or a compact count;
-- Contract count;
-- Archive root status: Recorded or Not recorded;
-- Match source, such as Project name, CAAN, Contract, or Notes; and
-- A link to project information.
+- Initial contract value, aggregated from linked contracts' recorded original contract costs;
+- Archive root status: Recorded or Not recorded; and
+- Matched in: Project and/or Contract.
 
 The visible project-number link must use:
 
 `url_for('project_tools.project_info', project_id=row.id)`
 
-It must never construct a project-information link from the project number alone.
+It must never construct a project-information link from the project number alone. The table provides no other per-row action; a future project-to-file-search action belongs on the Project Information page, where the recorded archive-root state is already visible.
 
-Do not show full project notes, contract scope descriptions, financial values, or FileMaker IDs in the result table. A match in one of those fields may be indicated with a concise match-source label; the user can open the project-information page for the synchronized detail.
+For Initial contract value, distinguish missing-record states rather than implying a zero-dollar amount:
 
-### Result ordering and pagination
+- `No contract data` when the project has no linked contract records;
+- `Not recorded` when linked contracts exist but none has an original contract cost;
+- a currency total when every linked contract has an original contract cost; and
+- a currency total marked `Partial` when one or more linked contracts lack an original contract cost.
+
+Do not show full project notes, contract scope descriptions, individual contract financial values, or FileMaker IDs in the result table. A match in a searchable project or contract field may be indicated with concise `Project` and/or `Contract` labels; the user can open the project-information page for the synchronized detail.
+
+Do not offer user-controlled sorting in the HTML table. Its row order communicates the search ranking; users who need to sort, filter, or compare the complete result set should use the spreadsheet export.
+
+### Result ordering and display limit
 
 Use stable ordering:
 
 1. exact normalized project-number match;
 2. project-number prefix match;
-3. exact phrase/name match;
-4. weighted text relevance;
-5. normalized project number; and
-6. project ID as the final tie-breaker.
+3. exact normalized project-name match;
+4. every term matched in project-local metadata;
+5. every term matched in one directly linked contract;
+6. terms distributed across project-local metadata and/or multiple directly linked contracts;
+7. normalized project number; and
+8. project ID as the final tie-breaker.
 
-Return at most `page_size` rows. Use a bounded query and avoid loading the complete matching set into Pandas or Python.
+An exact normalized project-name match means the full normalized `query` value equals the full normalized project name.
+Compute rank over the complete matching set before applying the HTML limit. Return the top 300 ranked rows in the HTML response. Query for one additional row so the UI can state clearly when more matching projects exist.
+
+The on-demand spreadsheet export must use the same query semantics and project ordering, but include the complete matching result set rather than the HTML top-300 subset. It is the bulk review and sorting format, with the explicitly approved export-only disclosures for user-facing archive paths and contract detail. The workbook represents the data at export time; synchronized data may change between the HTML search and export requests.
 
 The page should show:
 
 - the escaped query and active filters;
-- the number of results on the current page;
-- previous/next navigation when applicable; and
+- the number of displayed results;
+- a notice when the top-300 HTML limit excludes additional matches;
+- a link to download the complete matching result set as a spreadsheet when results exist; and
 - a clear no-results message that does not imply the project or its files do not exist.
 
 An exact project-number query that matches multiple records must display all matching project rows. It must not select an arbitrary row or redirect to `/project_info?project_number=...`.
@@ -235,15 +241,7 @@ Project-local fields:
 - `projects.name`;
 - `projects.campus_client`;
 - `projects.project_manager_name`;
-- `projects.inspector_name`;
-- `projects.file_server_location`, at a lower weight; and
-- `projects.notes`, at the lowest weight.
-
-Related CAAN fields:
-
-- `caans.caan`;
-- `caans.name`; and
-- `caans.description`.
+- `projects.inspector_name`.
 
 Related contract fields:
 
@@ -255,38 +253,23 @@ Related contract fields:
 
 Financial values and FileMaker primary IDs are not searched in the normal query.
 
+Project notes and raw `file_server_location` values are not searched in the first release. Notes are often noisy and may contain sensitive operational context; raw archive-root paths are implementation data rather than useful discovery text. `has_archive_location` remains the way to filter on whether a root has been recorded.
+
 ### Query parsing
 
-Normalize only harmless outer whitespace and case. Preserve meaningful project-number punctuation such as hyphens.
+The first release uses simple whitespace-term parsing. Each term is a case-insensitive substring match within an allowed field: conceptually, `ILIKE '%' || escaped_term || '%' ESCAPE '\\'`. Terms use AND semantics across the query and OR semantics across the permitted project-local and linked-contract fields. Escape SQL `LIKE` wildcard characters in user input so `%` and `_` retain literal meaning. Normalize only harmless outer whitespace and case; preserve meaningful project-number punctuation such as hyphens.
 
-The preferred text-search behavior is PostgreSQL web-style parsing with the `simple` text configuration:
-
-- plain words match all required terms;
-- quoted words support phrases;
-- `OR` broadens a term group; and
-- a leading `-` excludes a term.
-
-The implementation must separately retain exact and prefix project-number matching because full-text parsing alone is not a sufficient identifier search strategy.
-
-If the first release chooses simpler whitespace-term parsing instead, it must preserve the same core semantics: AND across terms, OR across searchable fields, case-insensitive comparison, and exact-number ranking.
+The implementation must separately retain exact and prefix project-number matching because whitespace-term matching is not a sufficient identifier search strategy. Web-style query syntax, quoted phrases, `OR`, and negative terms are deferred. If phrases are added later, a phrase must match within one project-local record or one contract row; it must not bridge fields or records.
 
 CAAN Search retains its current whitespace-term behavior in the first project-search release. Aligning CAAN and project query syntax is deferred until there is a reason to change the existing CAAN workflow.
 
 ### Relationship matching
 
-A project matches when every required query term can be satisfied by at least one project-local field or directly related CAAN/contract field.
+A project matches when every required query term can be satisfied by at least one project-local field or one field on a directly linked contract. Terms may be satisfied by different project fields and by different linked contract rows.
 
-Use relationship predicates that return project IDs, rather than joining every CAAN and contract row into the result set. This prevents duplicate project rows and keeps pagination correct.
+Use contract relationship predicates that return project IDs, rather than joining every contract row into the result set. This prevents duplicate project rows and keeps the top-N display and ordering correct. Contracts without a `project_id` cannot match.
 
-The result should expose which broad source produced the match:
-
-- Project;
-- CAAN;
-- Contract;
-- Notes; or
-- Archive root.
-
-The match-source label is explanatory only; it must not expose full note or contract-scope text.
+The result must expose the ordered set of broad sources that contributed one or more query-term matches: `Project`, `Contract`, or both. These labels are explanatory only; they must not expose note or contract-scope text. A one-contract match ranks above a distributed contract match, and either ranks below a project-local match of comparable identifier quality.
 
 ### Filters
 
@@ -302,8 +285,6 @@ The match-source label is explanatory only; it must not expose full note or cont
 `has_archive_location=yes` means a non-null, non-blank `file_server_location`.
 
 `has_archive_location=no` means null or blank `file_server_location`.
-
-The `caan` filter must use the unique CAAN business code and the direct `project_caans` relationship. It must not infer a CAAN from an archive path or project-number prefix.
 
 The first release should not offer a `has_indexed_files` filter. That would require an aggregate over the much larger `file_locations` table and could be confused with a live filesystem check. The existing project-information page remains the authoritative place for the one-project indexed-location count.
 
@@ -322,8 +303,8 @@ It should own:
 3. project search construction;
 4. relationship-match predicates;
 5. score and match-source calculation;
-6. pagination;
-7. result-row preparation; and
+6. HTML display-limit detection;
+7. result-row and spreadsheet-row preparation; and
 8. user-facing search-state metadata.
 
 The route should remain thin:
@@ -337,15 +318,17 @@ Do not generate raw HTML tables from database content. Let Jinja escape all data
 
 ### ORM and SQL strategy
 
-Use SQLAlchemy for ordinary filters and relationship existence checks. PostgreSQL-specific full-text ranking may use parameterized SQL expressions or a carefully bounded text query when ORM construction becomes unclear.
+Use SQLAlchemy for ordinary filters and contract relationship existence checks. Keep all search values parameterized.
 
 The query must:
 
 - select project rows as the primary result identity;
-- avoid duplicate rows from CAAN/contract joins;
-- use `EXISTS` or grouped subqueries for relationship matches;
-- eager-load CAANs only for the returned page; and
+- avoid duplicate rows from contract joins;
+- use `EXISTS` or grouped subqueries for contract matches and counts;
+- load only the project and aggregate data needed for the returned page; and
 - avoid one query per result row.
+
+The HTML query must retrieve at most 301 ranked rows. The spreadsheet export may iterate the complete ordered result set, but should use a write-only workbook or similarly bounded-memory approach rather than construct a complete DataFrame.
 
 The project-information resolver should share normalization rules with project search. The existing `/api/project_location` legacy endpoint is not a suitable resolver because it uses a first-match, number-only lookup and should not be copied into the new feature.
 
@@ -359,25 +342,37 @@ The template should use `layout.html` and existing Bootstrap conventions. It sho
 
 No filesystem calls, `ServerEdit`, RQ tasks, or database writes are permitted in this route.
 
+### Spreadsheet export
+
+Add an on-demand, public `GET /project_search/export` route that accepts the same validated search criteria as the HTML route. The **Download all results** control appears only on a non-empty HTML result page and invokes this route with that page's query and filters. It must reject unknown or repeated parameters, require an active query or filter, and create no database or filesystem records beyond the temporary downloadable workbook. The export is a direct download rather than a background job because the current project table contains approximately 10,000 rows and the expected matching sets are substantially smaller. It requires no login and intentionally supports bulk export of the public project and contract data described below. Do not impose a feature-specific result-row cap; apply the deployment's ordinary public-route or proxy rate limits if present.
+
+Sanitize spreadsheet cell values that could be interpreted as formulas before writing database-backed text to XLSX. The workbook must contain a `Projects and contracts` sheet and a `Search information` sheet. The latter records the query/filter state, export timestamp, total matched-project count, and total exported-row count.
+
+`Projects and contracts` is a flattened table, ordered first by the complete project ranking and then by the existing stable natural contract-number order. Emit one row for every direct project-contract relationship, repeating the project columns for each linked contract. A matching project with no linked contracts must still produce one row with blank contract columns. Include every directly linked contract for each matching project, not only a contract that contributed to the search match.
+
+Project columns are:
+
+- result rank and ranking band;
+- canonical project ID and Project Information URL;
+- project number and name;
+- status, drawings, campus client, project manager, and inspector;
+- user-facing archive location, produced with `FileServerUtils.user_path_from_db_data(...)` and `USER_ARCHIVES_LOCATION`, plus archive-root status;
+- initial contract value, with the same `No contract data`, `Not recorded`, and `Partial` semantics as the HTML table, plus the number of linked contracts with a recorded original contract cost and the total linked-contract count; and
+- matched-in labels.
+
+The archive-location column must never reveal the raw database value. When no root is recorded it is blank; when a recorded root cannot be converted because the configured user archive location is unavailable, it is `Unavailable` rather than a raw path.
+
+Contract columns mirror the established Project Information contract table, except FileMaker IDs: contract number; contractor; executive design organization; scope description; cost estimate; original contract cost; change-order total; revised total including change orders; funding number; bid, contract, notice-to-proceed, occupancy, completion, termination, and current-expected-end dates; and original, change-order, and current durations. Contract cells are blank for a project-only row.
+
+The HTML result table remains compact and does not display the user-facing archive path, contract scope, or individual contract financial values. Project notes, FileMaker IDs, CAAN data, and raw database archive-root paths remain excluded from the workbook. The user-facing archive path and the listed contract-detail fields are intentional public export disclosures.
+
 ## Database and indexing requirements
 
-### Required baseline indexes
+### Deployed baseline indexes
 
-Add a migration in `business_services_db/alembic/versions/` for:
+`business_services_db` migration `30966ca0a87a`, deployed on 2026-09-16, provides a non-unique normalized project-number B-tree index equivalent to `lower(btrim(projects.number))`. The application model metadata declares the same index, but the Alembic migration remains the production schema source of truth.
 
-1. A normalized project-number B-tree index equivalent to:
-
-`lower(btrim(projects.number))`
-
-This supports project search, the existing case-insensitive project-information resolver, and future canonical-number lookups.
-
-2. A reverse project-CAAN relationship index equivalent to:
-
-`project_caans (caan_id, project_id)`
-
-This supports CAAN filtering and the existing CAAN-to-project direction more efficiently than the current `(project_id, caan_id)` primary key alone.
-
-The migration must be the source of truth. If application model metadata declares the indexes, it must remain aligned with the database migration, but the app must not rely on `db.create_all()` for production schema changes.
+The same migration also provides the reverse `project_caans (caan_id, project_id)` index for the separate CAAN workflows. Project Search does not use CAAN data in its first release.
 
 ### Full-text index option
 
@@ -385,11 +380,10 @@ For the first implementation, use the current row counts and `EXPLAIN (ANALYZE, 
 
 If text search requires them, add expression indexes using the same expressions used in the query:
 
-- Projects: a `simple` tsvector over number, name, campus client, manager, inspector, archive root, and optionally notes.
-- CAANs: a `simple` tsvector over CAAN code, name, description, area, and address.
+- Projects: a `simple` tsvector over number, name, campus client, manager, and inspector.
 - Contracts: a `simple` tsvector over contract number, contractor, design organization, funding number, and scope.
 
-Relationship fields cannot be included in a generated `projects` search column without denormalizing synchronized data. Keep CAAN and contract matching as indexed relationship predicates unless a future materialized search document is justified.
+Contract fields cannot be included in a generated `projects` search column without denormalizing synchronized data. Keep contract matching as indexed relationship predicates unless a future materialized search document is justified.
 
 ### Trigram option
 
@@ -409,7 +403,7 @@ Project Search and Archive Search remain separate features, but they should have
 
 ### Project-to-file handoff
 
-A project result may offer **Search files in this project**.
+A future Project Information page may offer **Search files in this project**. The Project Search result table does not include this action.
 
 Because project numbers are not unique, a canonical project-ID handoff is required. The archive-search scope layer must eventually accept a project ID, for example through an internal `project_id` scope parameter or equivalent validated state.
 
@@ -444,7 +438,7 @@ If added later, it should:
 - use the same search service as the HTML route;
 - require the same active-user authentication policy as `/api/project_info`;
 - return stable project IDs and canonical detail URLs;
-- support bounded pagination;
+- support bounded result limits;
 - reject unknown or repeated parameters; and
 - return structured match-source values rather than HTML.
 
@@ -452,32 +446,31 @@ The API should not accept credentials in query parameters.
 
 ## Performance and operational constraints
 
-- Default HTML page size: 50.
-- Hard maximum page size: 100.
-- Query length should be bounded.
+- HTML result limit: 300 ranked project rows.
+- Query length maximum: 200 characters.
 - Search must remain synchronous for the first release; project metadata volume is small enough to validate this assumption.
-- Do not build a full result DataFrame.
+- Do not build a full result DataFrame for the HTML response or spreadsheet export.
 - Do not count `file_locations` per result.
-- Do not load all CAANs or contracts for all matching projects.
-- Use a stable final tie-breaker to prevent rows moving between pages.
-- Log unexpected search failures, but do not log full project notes or contract scope text.
+- The HTML query must not load all contracts for all matching projects. The flattened spreadsheet export intentionally loads all direct contracts for its matching projects, using bounded-memory iteration.
+- Use a stable final tie-breaker to preserve the same order in HTML and spreadsheet results.
+- Log unexpected search failures, but do not log contract scope text or raw archive-root paths.
 
 Before release, measure:
 
 - exact normalized project-number lookup;
 - common project-name searches;
-- CAAN relationship filters;
 - contract-field searches;
 - status and archive-root filters; and
 - duplicate-number searches.
 
 ## Security and data handling
 
-- Escape project, CAAN, contract, notes, and archive-root values in templates.
+- `GET /project_search` and `GET /project_search/export` are public and do not require an active user. The deferred JSON API remains separately authenticated.
+- Escape project, contract, notes, and archive-root values in templates.
 - Do not render raw search snippets from notes or contract scope as trusted HTML.
 - Do not expose FileMaker primary IDs in normal result rows.
 - Do not expose full notes or financial fields in the search result list.
-- Preserve the existing project-information access policy unless a separate authorization decision is made.
+- The public workbook may include the user-facing archive location and the specified contract-detail fields, but never raw database archive-root paths, project notes, or FileMaker IDs.
 - Do not perform SMB access or filesystem existence checks in the search route.
 
 ## Validation plan
@@ -492,12 +485,19 @@ Test:
 - case and outer-whitespace normalization;
 - duplicate project-number results;
 - project-name and multi-term searches;
-- CAAN relationship matches;
 - contract relationship matches;
+- a term found only in project notes or a raw archive-root path does not produce a Project Search match;
+- CAAN-only metadata does not produce a Project Search match;
+- a `caan` query parameter is rejected as unknown;
 - status, drawings, and archive-root filters;
 - null and blank archive-root handling;
-- stable ordering and pagination;
-- match-source labeling; and
+- blank `query` with default filters renders the empty form, while blank `query` with an active filter searches;
+- top-300 limit detection and consistent project ordering between HTML and spreadsheet output;
+- public export authorization, active-criteria enforcement, and absence of an export control on blank or no-results pages;
+- project-contract row expansion, including one blank-contract row for a project with no contracts and inclusion of non-matching linked contracts;
+- user-facing archive-location conversion and prevention of raw database-path disclosure;
+- match-source labeling;
+- spreadsheet formula-injection neutralization; and
 - HTML escaping of database values.
 
 ### Database checks
@@ -507,11 +507,10 @@ Run `EXPLAIN (ANALYZE, BUFFERS)` for:
 - normalized exact project-number lookup;
 - prefix project-number lookup;
 - common project-name search;
-- CAAN-to-project filter;
 - contract-field relationship search; and
 - a duplicate project-number query.
 
-Verify that the normalized number and reverse relationship indexes are used where expected. Decide separately whether full-text or trigram indexes are justified.
+Verify that the normalized-number index is used for exact lookup. Decide separately whether full-text or trigram indexes are justified for project and contract text.
 
 ### Manual acceptance checks
 
@@ -519,21 +518,24 @@ Verify that the normalized number and reverse relationship indexes are used wher
 2. A project-number query returns matching projects and links each row to its project ID URL.
 3. A deliberately duplicated project number returns every matching project row.
 4. A project-name query returns relevant projects with stable ordering.
-5. CAAN and contract relationship matches do not duplicate project rows.
-6. Status, drawings, CAAN, and archive-root filters work independently and together.
-7. A project with no recorded root is labelled as missing a recorded root; no path is inferred.
-8. Long names, notes, scopes, and path values remain escaped and wrapped.
-9. Pagination does not repeat or skip rows when scores tie.
-10. Project search does not query SMB, enqueue work, or write database rows.
-11. A project-to-file handoff, when implemented, uses a project ID and does not silently resolve a duplicate number.
-12. Python compilation, Jinja parsing, focused tests, and `git diff --check` pass.
+5. Contract relationship matches do not duplicate project rows, and one-contract matches rank above distributed contract matches.
+6. Status, drawings, and archive-root filters work independently and together.
+7. A CAAN name or description that is absent from the project and its contracts does not produce a project result.
+8. A project with no recorded root is labelled as missing a recorded root; no path is inferred.
+9. Long names, notes, scopes, and path values remain escaped and wrapped.
+10. The HTML page shows no more than 300 rows, accurately signals truncation, and its non-empty result state offers a public Download all results control.
+11. The workbook expands every matching project into its linked-contract rows in project-ranking order, preserves a row for a project with no contracts, and never emits a raw database archive-root path.
+12. Spreadsheet cell text cannot be interpreted as a formula.
+13. Project search does not query SMB, enqueue work, or write database rows.
+14. A project-to-file handoff, when implemented, uses a project ID and does not silently resolve a duplicate number.
+15. Python compilation, Jinja parsing, focused tests, and `git diff --check` pass.
 
 ## Recommended implementation phases
 
 ### Phase 0: Query and data preflight
 
 - Confirm duplicate project-number frequency.
-- Profile project, CAAN, and contract search fields.
+- Profile project and contract search fields.
 - Run baseline query plans.
 - Confirm the desired result columns with project managers and archivists.
 
@@ -542,30 +544,28 @@ Verify that the normalized number and reverse relationship indexes are used wher
 - Add the request parser and project search service.
 - Add the `/project_search` route and template.
 - Add canonical project-information links.
-- Add bounded pagination and core filters.
+- Add top-300 ranked HTML display and on-demand complete spreadsheet export.
+- Add core filters; defer the campus-client filter until a controlled vocabulary is profiled and approved.
 - Preserve `/caan_search` unchanged.
 
-### Phase 2: Baseline database indexes
+### Phase 2: Baseline-index verification
 
-- Add the normalized project-number index.
-- Add the reverse `project_caans(caan_id, project_id)` index.
-- Validate query plans after migration.
+- Verify the deployed normalized project-number index is used for exact lookup.
+- Validate query plans for the project-and-contract search implementation.
 
 ### Phase 3: Search quality and integration
 
 - Add expression GIN or trigram indexes only when justified by measured queries.
-- Add project-ID-based Archive Search handoff.
+- Add a Project Information-page project-ID-based Archive Search handoff.
 - Align project scope resolution with the canonical project resolver.
 
 ### Phase 4: Optional API
 
-- Add authenticated `/api/project_search` only after the HTML semantics and pagination contract are stable.
+- Add authenticated `/api/project_search` only after the HTML semantics and result-limit contract are stable.
 
 ## Deferred decisions
 
-- Whether CAAN Search should eventually reuse the project-search service implementation internally.
-- Whether project notes should be included in the default searchable fields or placed behind an advanced option.
-- Whether contract scope should be searched by default or only through an advanced mode.
+- Whether a controlled campus-client vocabulary justifies adding a campus-client filter.
 - Whether `pg_trgm` is necessary for partial and typo-tolerant matching.
 - Whether the project search page should offer autocomplete.
 - Whether a future global launcher should link to project, CAAN, and archive searches without combining their results.
