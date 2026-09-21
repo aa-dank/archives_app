@@ -374,6 +374,40 @@ The HTML result table remains compact and does not display the user-facing archi
 
 The same migration also provides the reverse `project_caans (caan_id, project_id)` index for the separate CAAN workflows. Project Search does not use CAAN data in its first release.
 
+### Phase 0 measured preflight (2026-09-21)
+
+The following evidence was collected from the live `business_services_db` with read-only transactions and `EXPLAIN (ANALYZE, BUFFERS)`. The server was PostgreSQL 17.11. PostgreSQL statistics for `projects` and `contracts` had been auto-analyzed on 2026-09-20.
+
+#### Data and filter distributions
+
+- `projects`: 10,059 rows; `contracts`: 5,713 rows. `contracts(project_id)` has 5,710 linked rows covering 5,396 projects; the largest project has 34 contracts.
+- There are 10,030 distinct normalized project numbers. Twenty-five normalized numbers are duplicated, covering 54 project rows; the largest duplicate group has four rows. Project-ID result identity remains required.
+- Status is strongly skewed: 9,691 closed (96.34%) and 368 open (3.66%); no `closed` value is null.
+- Drawings distribution is 4,628 yes (46.01%), 3,157 no (31.38%), and 2,274 unknown (22.61%). Archive-root state is 8,257 recorded (82.08%), 1,800 null (17.90%), and 2 blank (0.02%).
+- Search-field completeness matters more than raw table size: `campus_client` is blank/null for 9,840 projects (97.82%) and `inspector_name` for 8,187 (81.39%); `project_manager_name` is blank/null for 2,312 (22.98%). On contracts, `executive_design_org_name` is blank/null for all 5,713 rows, while `scope_description` is blank/null for 1,768 (30.95%) and `funding_number` for 570 (9.98%). Do not add an index for an all-blank field.
+
+#### Observed index and plan results
+
+The live catalog confirms `ix_projects_number_normalized` on `lower(btrim(number))` and `idx_contracts_project_id` on `(project_id)`; neither table has a project/contract text-search index, and `pg_trgm` is not installed. The normalized-number index had 18 cumulative scans when observed; `idx_contracts_project_id` had 2,542. These counters are contextual only; the query plans below establish use for the tested shapes.
+
+All cases selected IDs, used the stable normalized-number/project-ID order, and used the 301-row HTML bound where applicable:
+
+| Query shape and representative live term | Plan / index use | Execution time | Buffer result |
+|---|---|---:|---|
+| Normalized exact number (`1200`) | `Index Scan` on `ix_projects_number_normalized` | 1.446 ms | 4 hit, 2 read |
+| Duplicate normalized number (`3301-041`, four rows) | `Bitmap Index Scan` then `Bitmap Heap Scan` on `ix_projects_number_normalized` | 0.793 ms | 3 hit, 1 read |
+| Normalized-number prefix (`1200%`, 136 rows) | `Seq Scan` on `projects`; the existing B-tree was not used for `LIKE` | 10.021 ms | 491 hit |
+| Project-local literal substring (`hahn`, 186 rows) | `Seq Scan` on `projects` | 39.858 ms | 488 hit |
+| Contract literal substring through `EXISTS` (`construction`, 1,715 contracts / 1,669 projects) | `Nested Loop Semi Join`; `Index Scan` on both `ix_projects_number_normalized` for ordered project traversal and `idx_contracts_project_id` for the relationship predicate | 21.604 ms | 7,305 hit, 17 read |
+| Contract-match result with the planned contract-count/cost aggregate | `Seq Scan`/`HashAggregate` of `contracts`, `Hash Join`, and top-N sort | 53.769 ms | 1,497 hit |
+| Two-term AND semantics (`hahn` and `construction`), permitting project/contract distribution | Two contract `Seq Scan` hashed subplans; normalized-number index supplied final order only | 118.754 ms | 6,570 hit, 54 read |
+
+#### Query-plan decision before implementation
+
+Do **not** add a new project-search index before the first implementation. Exact normalized-number lookup is already well supported, and the measured substring/relationship cases remain synchronous and bounded at the current live data size, including the 301-row aggregate result shape and a two-term distributed-match case.
+
+Do not add the proposed `simple`-configuration full-text GIN indexes as a substitute for this release's literal `ILIKE '%term%'` contract: full-text token matching would change the specified substring behavior. Do not introduce `pg_trgm` or broad trigram indexes yet: the extension is absent, the measured worst representative case was 118.754 ms, and broad indexes across every project and contract text field lack plan evidence at this size. Reassess after the implemented query has production latency telemetry or materially larger tables; first rerun the same plans, including result aggregates and multi-term cases. If a future measured need is specifically number/name substring or typo matching, evaluate narrowly scoped trigram indexes through a controlled `business_services_db` migration.
+
 ### Full-text index option
 
 For the first implementation, use the current row counts and `EXPLAIN (ANALYZE, BUFFERS)` results to determine whether expression GIN indexes are needed immediately.
