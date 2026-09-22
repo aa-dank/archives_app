@@ -33,6 +33,7 @@ def app():
         first = ProjectModel(
             id=1, number="1000", name="=Formula project", closed=False, drawings=True,
             file_server_location="1000/Formula", project_manager_name="Alice",
+            campus_client="Campus-only search value",
         )
         duplicate = ProjectModel(
             id=2, number="1000", name="Library remodel", closed=True, drawings=False,
@@ -98,7 +99,24 @@ def test_filter_only_search_and_blank_root_handling(client):
     response = client.get("/project_search?status=closed&has_archive_location=no")
     assert response.status_code == 200
     assert b"Library remodel" in response.data
+    assert b"File server location" in response.data
+    assert b"Archive root" not in response.data
     assert b"Not recorded" in response.data
+
+
+def test_drawings_yes_or_unknown_filter_includes_both_states(client):
+    response = client.get("/project_search?drawings=yes_or_unknown")
+    assert response.status_code == 200
+    assert b"=Formula project" in response.data
+    assert b"Library project" in response.data
+    assert b"Library remodel" not in response.data
+    assert client.get("/project_search?drawings=unknown").status_code == 400
+
+
+def test_campus_client_is_not_a_searchable_project_field(client):
+    response = client.get("/project_search?query=Campus-only")
+    assert response.status_code == 200
+    assert b"No matching project records were found" in response.data
 
 
 def test_html_result_limit_is_applied_after_stable_ranking(app):
