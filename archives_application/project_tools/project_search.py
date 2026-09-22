@@ -22,13 +22,12 @@ HTML_RESULT_LIMIT = 300
 SEARCH_PARAMETERS = frozenset({"query", "status", "drawings", "has_archive_location"})
 FILTER_VALUES = {
     "status": frozenset({"any", "open", "closed", "unknown"}),
-    "drawings": frozenset({"any", "yes", "no", "unknown"}),
+    "drawings": frozenset({"any", "yes", "no", "yes_or_unknown"}),
     "has_archive_location": frozenset({"any", "yes", "no"}),
 }
 PROJECT_FIELDS = (
     ProjectModel.number,
     ProjectModel.name,
-    ProjectModel.campus_client,
     ProjectModel.project_manager_name,
     ProjectModel.inspector_name,
 )
@@ -81,13 +80,16 @@ class ProjectSearchState:
         labels = {
             "status": "Status",
             "drawings": "Drawings",
-            "has_archive_location": "Archive location",
+            "has_archive_location": "File server location",
+        }
+        display_values = {
+            "yes_or_unknown": "Yes or Unknown",
         }
         values = []
         for name in ("status", "drawings", "has_archive_location"):
             value = getattr(self, name)
             if value != "any":
-                values.append((labels[name], value.title()))
+                values.append((labels[name], display_values.get(value, value.title())))
         return values
 
 
@@ -260,8 +262,8 @@ def _ranked_query(state: ProjectSearchState):
         query = query.filter(ProjectModel.drawings.is_(True))
     elif state.drawings == "no":
         query = query.filter(ProjectModel.drawings.is_(False))
-    elif state.drawings == "unknown":
-        query = query.filter(ProjectModel.drawings.is_(None))
+    elif state.drawings == "yes_or_unknown":
+        query = query.filter(or_(ProjectModel.drawings.is_(True), ProjectModel.drawings.is_(None)))
 
     trimmed_archive_root = func.btrim(ProjectModel.file_server_location, " \t\r\n")
     root_is_recorded = and_(
@@ -439,7 +441,7 @@ def build_export_workbook(state: ProjectSearchState, user_archives_location: str
     information_sheet.append(("Query", _safe_cell(state.query)))
     information_sheet.append(("Status", state.status))
     information_sheet.append(("Drawings", state.drawings))
-    information_sheet.append(("Archive location", state.has_archive_location))
+    information_sheet.append(("File server location", state.has_archive_location))
     information_sheet.append(("Export timestamp (UTC)", datetime.now(timezone.utc).isoformat()))
     information_sheet.append(("Total matched projects", project_count))
     information_sheet.append(("Total exported rows", export_row_count))

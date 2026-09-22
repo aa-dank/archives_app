@@ -1160,3 +1160,26 @@ tests; Python compilation; Jinja parsing; PostgreSQL query-shape compilation;
 and `git diff --check`. Follow-on: measure the specified production PostgreSQL
 query plans and revisit indexes only if observed latency justifies a controlled
 database-repository migration.
+
+---
+
+## Entry 037 - Compact Project Search results table and filters
+**Date:** 2026-09-21
+**Author:** OpenAI Codex (GPT-5)
+
+Removed the Archive root status column and missing-root explanation from the
+public Project Search HTML results table to make its ranked navigation view
+more compact. The file-server-location filter and export-only user-facing
+location remain available.
+
+The Drawings filter now replaces its standalone Unknown option with Yes or
+Unknown, which includes projects that generated architectural diagrams and
+projects without a recorded drawings value. Yes and No remain exact filters.
+The visible file-server-location filter uses Any, Known, and Unknown states;
+its underlying request values continue to describe stored-location state without
+implying a live filesystem check. Campus/client remains an export context field
+but is no longer searched.
+
+Affected runtime components: Project Search presentation, filter construction,
+feature specification, and focused tests. Verification: focused Project Search
+tests and template parsing. No operational follow-on work is required.

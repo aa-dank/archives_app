@@ -24,15 +24,15 @@
         <div class="form-group col-md-4">
           <label for="drawings">Drawings</label>
           <select class="form-control" id="drawings" name="drawings">
-            {% for value, label in [('any', 'Any drawings state'), ('yes', 'Yes'), ('no', 'No'), ('unknown', 'Unknown')] %}
+            {% for value, label in [('any', 'Any drawings state'), ('yes_or_unknown', 'Yes or Unknown'), ('yes', 'Yes'), ('no', 'No')] %}
               <option value="{{ value }}"{% if state.drawings == value %} selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </div>
         <div class="form-group col-md-4">
-          <label for="has_archive_location">Archive root</label>
+          <label for="has_archive_location">File server location</label>
           <select class="form-control" id="has_archive_location" name="has_archive_location">
-            {% for value, label in [('any', 'Any archive-root state'), ('yes', 'Recorded'), ('no', 'Not recorded')] %}
+            {% for value, label in [('any', 'Any'), ('yes', 'Recorded'), ('no', 'Not recorded')] %}
               <option value="{{ value }}"{% if state.has_archive_location == value %} selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
@@ -58,7 +58,7 @@
         <thead class="thead-light">
           <tr>
             <th>Project number</th><th>Project name</th><th>Status</th><th>Drawings</th>
-            <th>Initial contract value</th><th>Archive root</th><th>Matched in</th>
+            <th>Initial contract value</th><th>Matched in</th>
           </tr>
         </thead>
         <tbody>
@@ -69,7 +69,6 @@
             <td>{{ 'Closed' if row.project.closed else 'Open' if row.project.closed is not none else 'Unknown' }}</td>
             <td>{{ 'Yes' if row.project.drawings else 'No' if row.project.drawings is not none else 'Unknown' }}</td>
             <td>{{ row.initial_contract_value }}</td>
-            <td>{{ 'Recorded' if row.project.file_server_location and row.project.file_server_location.strip() else 'Not recorded' }}</td>
             <td>{{ row.matched_in }}</td>
           </tr>
           {% endfor %}
@@ -80,7 +79,6 @@
   {% else %}
     <p>No matching project records were found. This does not establish whether a project or its files exist elsewhere.</p>
   {% endif %}
-  <p class="text-muted">A missing archive location means no recorded project root, not proof that the project has no files.</p>
 </div>
 {% endif %}
 <script>
