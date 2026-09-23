@@ -3,12 +3,12 @@
 {% block content %}
 <div class="content-section">
   <h2>Project Search</h2>
-  <p>Find construction project records by project metadata and linked contract metadata. File and document searching is available through <a href="{{ url_for('archiver.archives_search') }}">Archive Search</a>.</p>
+  <p>Find construction project records by project metadata, linked contract metadata, or an exact linked CAAN value. File and document searching is available through <a href="{{ url_for('archiver.archives_search') }}">Archive Search</a>.</p>
   <form method="get" action="{{ url_for('project_tools.project_search') }}" id="project-search-form">
     <div class="form-group">
       <label class="form-control-label" for="query"><strong>Search projects</strong></label>
       <input class="form-control form-control-lg" id="query" name="query" type="search" maxlength="200" value="{{ state.query }}" placeholder="Project number, name, manager, contractor, or scope term">
-      <small class="form-text text-muted">Terms are matched case-insensitively with AND logic. Exact project-number matches rank first; duplicate project numbers can produce multiple rows.</small>
+      <small class="form-text text-muted">Terms are matched case-insensitively with AND logic. Exact project-number and linked-CAAN-value matches rank first; duplicate project numbers can produce multiple rows.</small>
     </div>
     <details class="mb-3">
       <summary>Advanced filters</summary>
@@ -32,7 +32,7 @@
         <div class="form-group col-md-4">
           <label for="has_archive_location">File server location</label>
           <select class="form-control" id="has_archive_location" name="has_archive_location">
-            {% for value, label in [('any', 'Any'), ('yes', 'Recorded'), ('no', 'Not recorded')] %}
+            {% for value, label in [('any', 'Any'), ('yes', 'Known'), ('no', 'Unknown')] %}
               <option value="{{ value }}"{% if state.has_archive_location == value %} selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
@@ -58,7 +58,7 @@
         <thead class="thead-light">
           <tr>
             <th>Project number</th><th>Project name</th><th>Status</th><th>Drawings</th>
-            <th>Initial contract value</th><th>Matched in</th>
+            <th>Initial contract value</th>
           </tr>
         </thead>
         <tbody>
@@ -69,7 +69,6 @@
             <td>{{ 'Closed' if row.project.closed else 'Open' if row.project.closed is not none else 'Unknown' }}</td>
             <td>{{ 'Yes' if row.project.drawings else 'No' if row.project.drawings is not none else 'Unknown' }}</td>
             <td>{{ row.initial_contract_value }}</td>
-            <td>{{ row.matched_in }}</td>
           </tr>
           {% endfor %}
         </tbody>

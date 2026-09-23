@@ -1183,3 +1183,60 @@ but is no longer searched.
 Affected runtime components: Project Search presentation, filter construction,
 feature specification, and focused tests. Verification: focused Project Search
 tests and template parsing. No operational follow-on work is required.
+
+The Match in source label is export-only; it was removed from the HTML results
+table because its separate-data-source distinctions are not needed for the
+primary navigation workflow.
+
+---
+
+## Entry 038 - Exact linked-CAAN lookup in Project Search
+**Date:** 2026-09-21
+**Author:** OpenAI Codex (GPT-5)
+
+Project Search accepts a case-insensitive exact CAAN-value match for each
+individual query term against a project's direct CAAN relationships. It does
+not perform partial CAAN-value, CAAN-name, or CAAN-description matching, and it
+still returns only project rows. CAAN terms can be combined with project and
+contract terms; a single exact linked-CAAN query ranks immediately after an
+exact project number and CAAN contributions appear in the export match-source
+label.
+
+Affected runtime components: Project Search query construction, result
+presentation, feature specification, and focused tests. Verification: focused
+exact-match and partial-rejection coverage. No schema change is required; the
+existing CAAN relationship index supports this lookup.
+
+---
+
+## Entry 039 - Identifier-style funding-number matching
+**Date:** 2026-09-22
+**Author:** OpenAI Codex (GPT-5)
+
+Changed Project Search funding-number matching from a broad substring check to
+a case-insensitive exact token check. Funding values with multiple codes split
+across spaces or line breaks remain searchable by each complete code; partial
+codes no longer match. This aligns funding identifiers with exact CAAN-value
+matching while retaining broad text matching for contract descriptive fields.
+
+Affected runtime components: Project Search query construction, feature
+specification, and focused tests. Verification: exact funding-code and
+partial-code-rejection coverage. No schema change or operational follow-on is
+required.
+
+---
+
+## Entry 040 - Project Search workbook navigation columns
+**Date:** 2026-09-22
+**Author:** OpenAI Codex (GPT-5)
+
+Reordered the public Project Search workbook so Project Information URL is the
+fourth column and uses an absolute URL. Ranking band and the renamed `database
+index` project identifier now follow all contract columns. The Search
+information sheet includes the canonical full Project Search results URL for
+the exported criteria.
+
+Affected runtime components: project-search workbook preparation, feature
+specification, and focused export tests. Verification: workbook-column order,
+absolute-URL, and search-results-URL coverage. No operational follow-on is
+required.
