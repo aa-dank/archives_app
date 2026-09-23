@@ -15,7 +15,7 @@ from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from sqlalchemy import and_, case, exists, false, func, literal, or_
 
 from archives_application import db, utils
-from archives_application.models import ContractModel, ProjectModel
+from archives_application.models import CAANModel, ContractModel, ProjectModel
 
 
 HTML_RESULT_LIMIT = 300
@@ -35,7 +35,6 @@ CONTRACT_FIELDS = (
     ContractModel.contract_number,
     ContractModel.contractor_org_name,
     ContractModel.executive_design_org_name,
-    ContractModel.funding_number,
     ContractModel.scope_description,
 )
 
@@ -84,12 +83,18 @@ class ProjectSearchState:
         }
         display_values = {
             "yes_or_unknown": "Yes or Unknown",
+            "has_archive_location:yes": "Known",
+            "has_archive_location:no": "Unknown",
         }
         values = []
         for name in ("status", "drawings", "has_archive_location"):
             value = getattr(self, name)
             if value != "any":
-                values.append((labels[name], display_values.get(value, value.title())))
+                display_key = f"{name}:{value}"
+                values.append((
+                    labels[name],
+                    display_values.get(display_key, display_values.get(value, value.title())),
+                ))
         return values
 
 
@@ -104,17 +109,19 @@ class ProjectSearchResult:
     ranking_score: int
     matched_project: bool
     matched_contract: bool
+    matched_caan: bool
 
     @property
     def ranking_band(self) -> str:
         return {
             1: "Exact project number",
-            2: "Project-number prefix",
-            3: "Exact project name",
-            4: "Project metadata",
-            5: "One linked contract",
-            6: "Distributed metadata match",
-            7: "Filter-only result",
+            2: "Exact linked CAAN",
+            3: "Project-number prefix",
+            4: "Exact project name",
+            5: "Project metadata",
+            6: "One linked contract",
+            7: "Distributed metadata match",
+            8: "Filter-only result",
         }[self.ranking_score]
 
     @property
@@ -124,6 +131,8 @@ class ProjectSearchResult:
             labels.append("Project")
         if self.matched_contract:
             labels.append("Contract")
+        if self.matched_caan:
+            labels.append("CAAN")
         return ", ".join(labels) if labels else "—"
 
     @property
@@ -172,12 +181,27 @@ def parse_request(query_args) -> ProjectSearchState:
 
 def _like_pattern(value: str, suffix: bool = True) -> str:
     """Escape a literal ILIKE value while retaining PostgreSQL's backslash escape."""
-    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    escaped = _escape_like_value(value)
     return f"%{escaped}%" if suffix else f"{escaped}%"
+
+
+def _escape_like_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _field_match(fields, term: str):
     return or_(*(field.ilike(_like_pattern(term), escape="\\") for field in fields))
+
+
+def _funding_number_token_match(term: str):
+    """Match one whole funding identifier, including values stored across lines."""
+    normalized_funding = func.lower(func.coalesce(ContractModel.funding_number, ""))
+    for whitespace_character in ("\n", "\r", "\t"):
+        normalized_funding = func.replace(
+            normalized_funding, whitespace_character, " "
+        )
+    padded_funding = literal(" ") + normalized_funding + literal(" ")
+    return padded_funding.like(f"% {_escape_like_value(term)} %", escape="\\")
 
 
 def _contract_exists(predicate):
@@ -203,20 +227,39 @@ def _ranked_query(state: ProjectSearchState):
     summary = _contract_summary_subquery()
     normalized_number = func.lower(func.btrim(ProjectModel.number))
     normalized_name = func.lower(func.btrim(ProjectModel.name))
+    normalized_caan = func.lower(func.btrim(CAANModel.caan))
 
     if state.terms:
         local_terms = [_field_match(PROJECT_FIELDS, term) for term in state.terms]
-        contract_terms = [_field_match(CONTRACT_FIELDS, term) for term in state.terms]
+        contract_terms = [
+            or_(
+                _field_match(CONTRACT_FIELDS, term),
+                _funding_number_token_match(term),
+            )
+            for term in state.terms
+        ]
         contract_term_exists = [_contract_exists(predicate) for predicate in contract_terms]
+        caan_term_exists = [
+            ProjectModel.caans.any(normalized_caan == term)
+            for term in state.terms
+        ]
         all_local = and_(*local_terms)
         one_contract_matches_all = _contract_exists(and_(*contract_terms))
         matched_project = or_(*local_terms)
         matched_contract = or_(*contract_term_exists)
+        matched_caan = or_(*caan_term_exists)
+        # CAAN discovery is identifier-only. Each term can match a direct CAAN
+        # code exactly, and terms may be supplied by different linked records.
+        exact_linked_caan = ProjectModel.caans.any(
+            normalized_caan == state.query.lower()
+        )
         # A term may be supplied by project metadata or any direct contract.
         # Each EXISTS is intentionally independent so terms may be distributed.
         match_predicates = [
-            or_(local_match, contract_match)
-            for local_match, contract_match in zip(local_terms, contract_term_exists)
+            or_(local_match, contract_match, caan_match)
+            for local_match, contract_match, caan_match in zip(
+                local_terms, contract_term_exists, caan_term_exists
+            )
         ]
         normalized_query = state.query.lower()
         exact_number = normalized_number == normalized_query
@@ -224,17 +267,20 @@ def _ranked_query(state: ProjectSearchState):
         exact_name = normalized_name == normalized_query
         ranking_score = case(
             (exact_number, 1),
-            (number_prefix, 2),
-            (exact_name, 3),
-            (all_local, 4),
-            (one_contract_matches_all, 5),
-            else_=6,
+            (exact_linked_caan, 2),
+            (number_prefix, 3),
+            (exact_name, 4),
+            (all_local, 5),
+            (one_contract_matches_all, 6),
+            else_=7,
         )
     else:
         match_predicates = []
         matched_project = false()
         matched_contract = false()
-        ranking_score = literal(7)
+        matched_caan = false()
+        exact_linked_caan = false()
+        ranking_score = literal(8)
 
     query = (
         db.session.query(
@@ -245,11 +291,12 @@ def _ranked_query(state: ProjectSearchState):
             ranking_score.label("ranking_score"),
             matched_project.label("matched_project"),
             matched_contract.label("matched_contract"),
+            matched_caan.label("matched_caan"),
         )
         .outerjoin(summary, summary.c.project_id == ProjectModel.id)
     )
     if match_predicates:
-        query = query.filter(and_(*match_predicates))
+        query = query.filter(or_(and_(*match_predicates), exact_linked_caan))
 
     if state.status == "open":
         query = query.filter(ProjectModel.closed.is_(False))
@@ -287,6 +334,7 @@ def _result_from_db_row(row) -> ProjectSearchResult:
         ranking_score=int(row[4]),
         matched_project=bool(row[5]),
         matched_contract=bool(row[6]),
+        matched_caan=bool(row[7]),
     )
 
 
@@ -343,12 +391,13 @@ def _safe_cell(value):
 
 
 PROJECT_EXPORT_HEADERS = (
-    "Result rank", "Ranking band", "Project ID", "Project Information URL",
-    "Project number", "Project name", "Status", "Drawings", "Campus client",
+    "Result rank", "Project number", "Project name", "Project Information URL",
+    "Status", "Drawings", "Campus client",
     "Project manager", "Inspector", "Archive location", "Archive root status",
     "Initial contract value", "Contracts with recorded initial cost", "Linked contracts",
     "Matched in",
 )
+TRAILING_PROJECT_EXPORT_HEADERS = ("Ranking band", "database index")
 CONTRACT_EXPORT_HEADERS = (
     "Contract number", "Contractor", "Executive design organization", "Scope description",
     "Cost estimate", "Original contract cost", "Change-order total",
@@ -373,11 +422,11 @@ def _project_export_values(result: ProjectSearchResult, rank: int, user_archives
     archive_location, archive_status = _archive_location(project, user_archives_location)
     return (
         rank,
-        result.ranking_band,
-        project.id,
-        flask.url_for("project_tools.project_info", project_id=project.id),
         project.number,
         project.name,
+        flask.url_for(
+            "project_tools.project_info", project_id=project.id, _external=True
+        ),
         _status(project.closed, "Closed", "Open"),
         _status(project.drawings, "Yes", "No"),
         project.campus_client or "",
@@ -390,6 +439,10 @@ def _project_export_values(result: ProjectSearchResult, rank: int, user_archives
         result.contract_count,
         result.matched_in,
     )
+
+
+def _trailing_project_export_values(result: ProjectSearchResult):
+    return result.ranking_band, result.project.id
 
 
 def _contract_export_values(contract: ContractModel | None):
@@ -410,7 +463,11 @@ def build_export_workbook(state: ProjectSearchState, user_archives_location: str
 
     workbook = Workbook(write_only=True)
     projects_sheet = workbook.create_sheet("Projects and contracts")
-    projects_sheet.append(PROJECT_EXPORT_HEADERS + CONTRACT_EXPORT_HEADERS)
+    projects_sheet.append(
+        PROJECT_EXPORT_HEADERS
+        + CONTRACT_EXPORT_HEADERS
+        + TRAILING_PROJECT_EXPORT_HEADERS
+    )
     export_row_count = 0
     project_count = 0
 
@@ -432,16 +489,29 @@ def build_export_workbook(state: ProjectSearchState, user_archives_location: str
             contracts_for_project = contracts_by_project[result.project.id] or [None]
             for contract in contracts_for_project:
                 projects_sheet.append(tuple(_safe_cell(value) for value in (
-                    project_values + _contract_export_values(contract)
+                    project_values
+                    + _contract_export_values(contract)
+                    + _trailing_project_export_values(result)
                 )))
                 export_row_count += 1
 
     information_sheet = workbook.create_sheet("Search information")
     information_sheet.append(("Search information", "Value"))
     information_sheet.append(("Query", _safe_cell(state.query)))
+    information_sheet.append((
+        "Search results URL",
+        flask.url_for(
+            "project_tools.project_search",
+            _external=True,
+            **state.export_parameters(),
+        ),
+    ))
     information_sheet.append(("Status", state.status))
     information_sheet.append(("Drawings", state.drawings))
-    information_sheet.append(("File server location", state.has_archive_location))
+    information_sheet.append((
+        "File server location",
+        {"any": "Any", "yes": "Known", "no": "Unknown"}[state.has_archive_location],
+    ))
     information_sheet.append(("Export timestamp (UTC)", datetime.now(timezone.utc).isoformat()))
     information_sheet.append(("Total matched projects", project_count))
     information_sheet.append(("Total exported rows", export_row_count))

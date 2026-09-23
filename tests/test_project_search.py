@@ -5,7 +5,7 @@ from openpyxl import load_workbook
 import pytest
 
 from archives_application import create_app, db
-from archives_application.models import ContractModel, ProjectModel
+from archives_application.models import CAANModel, ContractModel, ProjectCaanModel, ProjectModel
 
 
 class TestConfig:
@@ -28,6 +28,8 @@ def app():
             deterministic=True,
         )
         ProjectModel.__table__.create(db.engine)
+        CAANModel.__table__.create(db.engine)
+        ProjectCaanModel.__table__.create(db.engine)
         ContractModel.__table__.create(db.engine)
 
         first = ProjectModel(
@@ -44,13 +46,22 @@ def app():
         )
         db.session.add_all((first, duplicate, distributed))
         db.session.add_all((
+            CAANModel(id=1, caan="70A"),
+            CAANModel(id=2, caan="7110"),
+        ))
+        db.session.add_all((
+            ProjectCaanModel(project_id=1, caan_id=1),
+            ProjectCaanModel(project_id=3, caan_id=2),
+        ))
+        db.session.add_all((
             ContractModel(
                 id=1, project_id=2, contract_number="A-10",
                 scope_description="Library construction", original_contract_cost=Decimal("10.00"),
             ),
             ContractModel(
                 id=2, project_id=3, contract_number="A-10",
-                scope_description="Construction", original_contract_cost=Decimal("20.00"),
+                scope_description="Windows Construction", original_contract_cost=Decimal("20.00"),
+                funding_number="18319\nWO00423905",
             ),
             ContractModel(
                 id=3, project_id=3, contract_number="A-2", original_contract_cost=None),
@@ -59,6 +70,8 @@ def app():
         yield app
         db.session.remove()
         ContractModel.__table__.drop(db.engine)
+        ProjectCaanModel.__table__.drop(db.engine)
+        CAANModel.__table__.drop(db.engine)
         ProjectModel.__table__.drop(db.engine)
 
 
@@ -101,7 +114,8 @@ def test_filter_only_search_and_blank_root_handling(client):
     assert b"Library remodel" in response.data
     assert b"File server location" in response.data
     assert b"Archive root" not in response.data
-    assert b"Not recorded" in response.data
+    assert b"File server location: Unknown" in response.data
+    assert b"Matched in</th>" not in response.data
 
 
 def test_drawings_yes_or_unknown_filter_includes_both_states(client):
@@ -117,6 +131,34 @@ def test_campus_client_is_not_a_searchable_project_field(client):
     response = client.get("/project_search?query=Campus-only")
     assert response.status_code == 200
     assert b"No matching project records were found" in response.data
+
+
+def test_exact_linked_caan_code_matches_without_partial_code_matches(app):
+    with app.app_context():
+        from werkzeug.datastructures import MultiDict
+        from archives_application.project_tools.project_search import parse_request, search_html
+
+        exact_results, _ = search_html(parse_request(MultiDict([("query", "  70a  ")])) )
+        partial_results, _ = search_html(parse_request(MultiDict([("query", "70")])) )
+        assert [result.project.id for result in exact_results] == [1]
+        assert exact_results[0].ranking_band == "Exact linked CAAN"
+        assert exact_results[0].matched_in == "CAAN"
+        assert partial_results == []
+
+        mixed_results, _ = search_html(parse_request(MultiDict([("query", "7110 Windows")])) )
+        assert [result.project.id for result in mixed_results] == [3]
+        assert mixed_results[0].matched_in == "Contract, CAAN"
+
+
+def test_funding_numbers_match_exact_whitespace_delimited_tokens(app):
+    with app.app_context():
+        from werkzeug.datastructures import MultiDict
+        from archives_application.project_tools.project_search import parse_request, search_html
+
+        exact_results, _ = search_html(parse_request(MultiDict([("query", "wo00423905")])) )
+        partial_results, _ = search_html(parse_request(MultiDict([("query", "WO004")])) )
+        assert [result.project.id for result in exact_results] == [3]
+        assert partial_results == []
 
 
 def test_html_result_limit_is_applied_after_stable_ranking(app):
@@ -148,10 +190,16 @@ def test_export_flattens_contracts_and_neutralizes_formula_text(client):
     assert workbook.sheetnames == ["Projects and contracts", "Search information"]
     rows = list(workbook["Projects and contracts"].iter_rows(values_only=True))
     assert len(rows) == 3  # Header plus one row for each duplicate project.
-    assert rows[1][2] == 1 and rows[1][4] == "1000"
-    assert rows[1][5] == "'=Formula project"
-    assert rows[1][17] is None  # A project with no contracts still has one blank row.
-    assert rows[2][2] == 2 and rows[2][17] == "A-10"
+    assert rows[0][3] == "Project Information URL"
+    assert rows[0][-2:] == ("Ranking band", "database index")
+    assert rows[1][1] == "1000"
+    assert rows[1][3].startswith("http://")
+    assert rows[1][3].endswith("/project_info?project_id=1")
+    assert rows[1][2] == "'=Formula project"
+    assert rows[1][15] is None  # A project with no contracts still has one blank row.
+    assert rows[1][-1] == 1
+    assert rows[2][15] == "A-10" and rows[2][-1] == 2
     info = dict(workbook["Search information"].iter_rows(min_row=2, values_only=True))
+    assert info["Search results URL"].endswith("/project_search?query=1000")
     assert info["Total matched projects"] == 2
     assert info["Total exported rows"] == 2
