@@ -1121,3 +1121,12 @@ Affected: `archives_application/archiver/routes.py`, `archives_application/templ
 Changed the inbox duplicate notice to keep potentially long location lists collapsed by default. Its native HTML disclosure control states the number of exact indexed locations and expands to the existing user-facing archive paths on demand.
 
 Affected: `archives_application/templates/inbox_item.html` and `research/development_journal.md`. Verification: Jinja parsing and `git diff --check`.
+
+---
+
+## Entry 035 - Inbox archiving workflow visual refinement
+**Date:** 2026-09-24<br>
+
+Refined the inbox archiving page to make its workflow easier to scan: guide links are compact actions, the current file and bounded preview are presented as a distinct panel, and optional document details and archive-destination fields are separated into clearly headed sections. The archive action is now visually primary, long filenames and indexed archive paths wrap safely, and preview images are constrained to the viewport rather than expanding the page indefinitely. No archive form behavior or duplicate-detection logic changed.
+
+Affected: `archives_application/templates/inbox_item.html`, `archives_application/static/main.css`, and `research/development_journal.md`. Verification: Jinja parsing and `git diff --check`.
