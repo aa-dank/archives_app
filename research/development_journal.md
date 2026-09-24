@@ -1094,3 +1094,10 @@ The database reconciliation for directory renames updates every affected `FileLo
 
 - `.venv/bin/python -m pytest tests/test_server_edit_timeouts.py -q` passed after the fix.
 - The regression covers the single-file floor case and the 33,298-file production-scale directory rename case.
+
+## Entry 032 - Propagate file size and extension index
+**Date:** 2026-09-24<br>
+
+Propagated the canonical non-unique B-tree index on `files.size` and `lower(files.extension)` to the `File` models in archives_app, archives_scraper, and desktop_archives_scraper. Bumped each dependent project patch version and regenerated its lockfile; no dependency changes were intended.
+
+Affected: `archives_application/models.py`, `pyproject.toml`, `uv.lock`, and this journal in archives_app; `db/models.py`, `pyproject.toml`, and `uv.lock` in archives_scraper; and `desktop_archives_scraper/db/models.py`, `pyproject.toml`, and `uv.lock` in desktop_archives_scraper. Verification: `uv lock` completed in all three repositories, and each `File` model imported successfully with PostgreSQL DDL compilation showing `(size, lower(extension))`.

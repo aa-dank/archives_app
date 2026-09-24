@@ -76,6 +76,9 @@ class TimekeeperEventModel(db.Model):
 
 class FileModel(db.Model):
     __tablename__ = "files"
+    __table_args__ = (
+        db.Index("ix_files_size_lower_extension", "size", text("lower(extension)")),
+    )
     id = db.Column(db.Integer, primary_key=True)
     hash = db.Column(db.String, unique=True, index=True, nullable=False)
     size = db.Column(db.BigInteger, nullable=False)
