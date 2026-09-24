@@ -1,17 +1,21 @@
 {% extends "layout.html" %}
 {% block content %}
-    <div class="content-section">
+    <div class="content-section inbox-archive-page">
         <form method="POST" action="" enctype="multipart/form-data" id="archive-form-main">
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Inbox Item to Archive</legend>
-                <p><a href="https://docs.google.com/document/d/1Xub4G7-STdRrQsmfLbzuJsgFqC9Zu42qeYVMNM87JXM/edit?usp=sharing">Large Format Archiving Documentation.</a></p>
-                <p><a href="https://docs.google.com/document/d/1Bu4T71ge-00dWURt_oQHZJZhrLer9Q_bJ-m4xdXcJtI/edit?usp=sharing">Small Format Archiving Documentation.</a></p>
-                <div class="form-group">
-                    <h4>File to archive:</h4>
-                    <p>{{item_filename}}</p>
+                <div class="inbox-guide-links mb-4" aria-label="Archiving documentation">
+                    <span class="text-muted">Archiving guides:</span>
+                    <a class="btn btn-outline-secondary btn-sm" href="https://docs.google.com/document/d/1Xub4G7-STdRrQsmfLbzuJsgFqC9Zu42qeYVMNM87JXM/edit?usp=sharing">Large format</a>
+                    <a class="btn btn-outline-secondary btn-sm" href="https://docs.google.com/document/d/1Bu4T71ge-00dWURt_oQHZJZhrLer9Q_bJ-m4xdXcJtI/edit?usp=sharing">Small format</a>
+                </div>
+
+                <section class="inbox-current-file mb-4" aria-labelledby="inbox-current-file-heading">
+                    <h2 class="h5" id="inbox-current-file-heading">File to archive</h2>
+                    <p class="inbox-file-name"><code>{{ item_filename }}</code></p>
                     {% if indexed_archive_locations %}
-                    <section class="alert alert-warning" aria-labelledby="indexed-archive-locations-heading">
+                    <section class="alert alert-warning inbox-indexed-locations" aria-labelledby="indexed-archive-locations-heading">
                         <h5 id="indexed-archive-locations-heading">Already indexed in the archives</h5>
                         <p>This exact file is already indexed. Archive it again only if an additional copy is intentional.</p>
                         <details>
@@ -24,13 +28,17 @@
                         </details>
                     </section>
                     {% endif %}
-                    <img style="height: 100%; width: 100%; object-fit: contain" src="{{ preview_image }}">
-                    {{ form.download_item(class="btn btn-outline-info") }}
-                </div>
-                <hr>
-                <hr>
+
+                    <div class="inbox-preview-frame">
+                        <img class="inbox-preview" src="{{ preview_image }}" alt="Preview of {{ item_filename }}">
+                    </div>
+                    {{ form.download_item(class="btn btn-outline-info mt-3") }}
+                </section>
+
+                <section class="inbox-form-section" aria-labelledby="inbox-document-details-heading">
+                    <h2 class="h5" id="inbox-document-details-heading">Document details <span class="text-muted font-weight-normal">(optional)</span></h2>
                 <div class="form-group">
-                    <h5>{{ form.new_filename.label(class="form-control-label") }} (Optional)</h5>
+                    {{ form.new_filename.label(class="form-control-label") }}
                     {% if form.new_filename.errors %}
                         {{ form.new_filename(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -43,8 +51,8 @@
                     {% endif %}
                 </div>
                 <div class="form-group">
-                    <h5>{{ form.notes.label(class="form-control-label") }} (Optional)</h5>
-                    <p>Notes are good for documenting issues with the file.</p>
+                    {{ form.notes.label(class="form-control-label") }}
+                    <p class="form-text text-muted">Use notes to document file issues or archiving context.</p>
                     {% if form.notes.errors %}
                         {{ form.notes(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -56,11 +64,13 @@
                         {{ form.notes(class="form-control form-control-lg") }}
                     {% endif %}
                 </div>
-                <hr>
-                <hr>
-                <h6>Either enter a...</h6>
+                </section>
+
+                <section class="inbox-form-section" aria-labelledby="inbox-destination-heading">
+                <h2 class="h5" id="inbox-destination-heading">Archive destination</h2>
+                <p class="text-muted">Enter a project number and filing code, or use a complete destination path instead.</p>
                 <div class="form-group">
-                    <h5>{{ form.project_number.label(class="form-control-label") }}</h5>
+                    {{ form.project_number.label(class="form-control-label") }}
                     {% if form.project_number.errors %}
                         {{ form.project_number(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -72,10 +82,11 @@
                         {{ form.project_number(class="form-control form-control-lg") }}
                     {% endif %}
                 </div>
-                <h6>..and choose a...</h6>
                 <div class="form-group">
-                    <h5>{{ form.destination_directory.label(class="form-control-label") }} (ie "Filing Code")</h5>
-                    <a href="https://docs.google.com/document/d/1d_jiqWVc1ySuVxibfX-QCRPOzY6DB71GAZFrNqBisVo/edit?usp=sharing">Filing Code Documentation</a>
+                    <div class="d-flex justify-content-between align-items-baseline flex-wrap">
+                        {{ form.destination_directory.label(class="form-control-label") }}
+                        <a class="small" href="https://docs.google.com/document/d/1d_jiqWVc1ySuVxibfX-QCRPOzY6DB71GAZFrNqBisVo/edit?usp=sharing">Filing code guide</a>
+                    </div>
                     {% if form.destination_directory.errors %}
                         {{ form.destination_directory(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -87,10 +98,9 @@
                         {{ form.destination_directory(class="form-control form-control-lg") }}
                     {% endif %}
                 </div>
-                <h6>...or, alternatively, enter path to archiving destination directory:</h6>
                 <div class="form-group">
-                    <h5>{{ form.destination_path.label(class="form-control-label") }}</h5>
-                    <p>Useful for archiving a file that doesn't have a corresponding project or that needs to be archived in a custom directory.</p>
+                    {{ form.destination_path.label(class="form-control-label") }}
+                    <p class="form-text text-muted">Use a complete user-facing path for non-project files or a custom folder structure.</p>
                     {% if form.destination_path.errors %}
                         {{ form.destination_path(class="form-control form-control-lg is-invalid") }}
                         <div class="invalid-feedback">
@@ -102,9 +112,10 @@
                         {{ form.destination_path(class="form-control form-control-lg") }}
                     {% endif %}
                 </div>
+                </section>
             </fieldset>
             <div class="form-group">
-                {{ form.submit(class="btn btn-outline-info", id="archive-button") }}
+                {{ form.submit(class="btn btn-info", id="archive-button") }}
             </div>
         </form>
     </div>
