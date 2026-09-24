@@ -296,6 +296,32 @@ def cleanse_locations_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df['filepath'] = df.apply(lambda row: (row['file_server_directories'] + "/" + row['filename']), axis=1)
     return df[['filepath']]
 
+
+def find_indexed_file_by_path(filepath: str):
+    """Return the exact indexed file matching ``filepath``, if any.
+
+    The size and case-insensitive extension lookup uses the
+    ``ix_files_size_lower_extension`` index to avoid reading and hashing files
+    that cannot already be indexed. A full content hash remains the final,
+    exact comparison whenever that inexpensive precheck finds a candidate.
+
+    Extension extraction deliberately mirrors the existing file-indexing
+    behavior. Normalizing extensionless-file handling is a separate change.
+    """
+    filename = utils.FileServerUtils.split_path(filepath)[-1]
+    file_size = os.path.getsize(filepath)
+    file_extension = filename.split('.')[-1].lower()
+
+    size_and_extension_match = db.session.query(FileModel.id).filter(
+        FileModel.size == file_size,
+        func.lower(FileModel.extension) == file_extension,
+    ).first()
+    if not size_and_extension_match:
+        return None
+
+    file_hash = utils.FilesUtils.get_hash(filepath=filepath)
+    return db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
+
 def get_current_user_inbox_files(include_enqueued=False):
     """
     Returns a list of files in the inbox directory to be processed.
@@ -1620,7 +1646,8 @@ def inbox_item():
     Returns:
         Response:
             - On GET request:
-                - Renders 'inbox_item.html' template displaying the file, preview image, and metadata form.
+                - Renders 'inbox_item.html' with the file, preview image, metadata form, and any
+                  exact indexed duplicate locations.
                 - If the inbox is empty, flashes a message and redirects to the home page.
             - On POST request:
                 - If the 'download_item' button is pressed, initiates a file download of the current item.
@@ -1756,6 +1783,25 @@ def inbox_item():
             shutil.copy2(arch_file_path, preview_path)
             preview_image_url = flask.url_for(r"static", filename="temp_files/" + utils.FileServerUtils.split_path(preview_path)[-1])
             preview_generated = True
+
+        matching_indexed_file = find_indexed_file_by_path(arch_file_path)
+        indexed_archive_locations = []
+        if matching_indexed_file:
+            matching_locations = db.session.query(FileLocationModel).filter(
+                FileLocationModel.file_id == matching_indexed_file.id
+            ).order_by(
+                FileLocationModel.file_server_directories,
+                FileLocationModel.filename,
+                FileLocationModel.id,
+            ).all()
+            indexed_archive_locations = [
+                utils.FileServerUtils.user_path_from_db_data(
+                    file_server_directories=location.file_server_directories,
+                    user_archives_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION'),
+                    filename=location.filename,
+                )
+                for location in matching_locations
+            ]
         
         # If we made a preview image, record the path in the session so it can be removed upon logout
         if preview_generated:
@@ -1903,7 +1949,8 @@ def inbox_item():
                 )
 
         return flask.render_template('inbox_item.html', title='Inbox', form=form, item_filename=arch_file_filename,
-                                     preview_image=preview_image_url)
+                                     preview_image=preview_image_url,
+                                     indexed_archive_locations=indexed_archive_locations)
 
     except Exception as e:
         return utils.FlaskAppUtils.web_exception_subroutine(
@@ -2062,10 +2109,9 @@ def archived_or_not_api():
     API endpoint to determine if the uploaded file via the form exists in the app database.
     
     This function requires a POST request with a file part and 'user' and
-    'password' as query parameters for authentication. It processes the uploaded file,
-    calculates its hash, and checks against the database to see if the file with the
-    same hash is already archived. If authenticated and found, it returns the locations
-    of the archived file in JSON format.
+    'password' as query parameters for authentication. It checks size and extension
+    first, then calculates a hash only when there is a candidate. If an exact match is
+    found, it returns the archived file locations in JSON format.
 
     Returns:
         flask.Response: A JSON response containing the locations if the file is found,
@@ -2086,7 +2132,8 @@ def archived_or_not_api():
     
     if not request_authenticated:
         return flask.Response("Unauthorized", status=401)
-    
+
+    temp_path = None
     try:
         if 'file' not in flask.request.files:
             return flask.Response("No file in request", status=400)
@@ -2099,10 +2146,8 @@ def archived_or_not_api():
         filename = uploaded_file.filename
         temp_path = utils.FlaskAppUtils.create_temp_filepath(filename)
         uploaded_file.save(temp_path)
-        
-        file_hash = utils.FilesUtils.get_hash(filepath=temp_path)
-        os.remove(temp_path)
-        matching_file = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
+
+        matching_file = find_indexed_file_by_path(temp_path)
         if not matching_file:
             return flask.Response("File not found in database.", status=404)
         
@@ -2117,6 +2162,9 @@ def archived_or_not_api():
     except Exception as e:
         return utils.FlaskAppUtils.api_exception_subroutine(response_message="Error processing request: ",
                                         thrown_exception=e)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 @archiver.route("/archived_or_not", methods=['GET', 'POST'])
@@ -2125,9 +2173,10 @@ def archived_or_not():
     Web endpoint for checking if a file is archived, intended for form submissions.
 
     GET requests render an upload form where users can submit a file to check if it's archived.
-    POST requests take the submitted file, save it temporarily, calculate its hash, and query
-    the database to check for its existence. If the file is found, an HTML table with file
-    locations is returned. Otherwise, a flash message is displayed and the user is redirected.
+    POST requests save the file temporarily, use size and extension to identify possible
+    matches, then hash only when necessary for an exact result. If the file is found, an
+    HTML table with file locations is returned. Otherwise, a flash message is displayed and
+    the user is redirected.
 
     Returns:
         flask.Response: A rendered template of the upload form on GET,
@@ -2146,18 +2195,17 @@ def archived_or_not():
             filename = form.upload.data.filename
             temp_path = utils.FlaskAppUtils.create_temp_filepath(filename)
             form.upload.data.save(temp_path)
-            file_hash = utils.FilesUtils.get_hash(filepath=temp_path)
 
-            matching_file = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
+            matching_file = find_indexed_file_by_path(temp_path)
             if not matching_file:
-                flask.flash(f"No file found with hash {file_hash}", 'info')
+                flask.flash(f"No matching file found for {filename}", 'info')
                 return flask.redirect(flask.url_for('archiver.archived_or_not'))
             
             # Create html table of all locations that match the hash
             locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == matching_file.id)
             locations_df = utils.FlaskAppUtils.db_query_to_df(locations)
             if locations_df.empty:
-                raise Exception(f"No locations found for file, {filename}, with hash {file_hash}, though file was found in database.")
+                raise Exception(f"No locations found for indexed file, {filename}, though a matching file was found.")
             
             locations_df = cleanse_locations_dataframe(locations_df)
             location_table_html = locations_df.to_html()

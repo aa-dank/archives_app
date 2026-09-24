@@ -1101,3 +1101,14 @@ The database reconciliation for directory renames updates every affected `FileLo
 Propagated the canonical non-unique B-tree index on `files.size` and `lower(files.extension)` to the `File` models in archives_app, archives_scraper, and desktop_archives_scraper. Bumped each dependent project patch version and regenerated its lockfile; no dependency changes were intended.
 
 Affected: `archives_application/models.py`, `pyproject.toml`, `uv.lock`, and this journal in archives_app; `db/models.py`, `pyproject.toml`, and `uv.lock` in archives_scraper; and `desktop_archives_scraper/db/models.py`, `pyproject.toml`, and `uv.lock` in desktop_archives_scraper. Verification: `uv lock` completed in all three repositories, and each `File` model imported successfully with PostgreSQL DDL compilation showing `(size, lower(extension))`.
+
+---
+
+## Entry 033 - Indexed duplicate detection for inbox and archive checks
+**Date:** 2026-09-24<br>
+
+Added a shared `find_indexed_file_by_path` helper for inbox and uploaded-file duplicate checks. It first filters the `files` index by byte size and case-insensitive stored extension, then calculates SHA-1 only when that inexpensive precheck finds a candidate; the hash remains the final exact-content comparison. The inbox item page now warns archivists when an exact duplicate is indexed and lists its user-facing archive locations without preventing intentional additional archiving. Both `archived_or_not` endpoints use the same precheck, and the API now removes temporary uploads even when processing fails.
+
+The extension extraction intentionally matches the current indexing behavior, including its extensionless-file semantics; normalizing that behavior and historic values remains follow-on work.
+
+Affected: `archives_application/archiver/routes.py`, `archives_application/templates/inbox_item.html`, and `research/development_journal.md`. Verification: Python compilation of changed modules, Jinja parsing for the inbox template, and `git diff --check`. Route integration tests remain follow-on work because this repository currently has no checked-in route test suite.
