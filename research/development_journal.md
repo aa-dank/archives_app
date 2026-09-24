@@ -1112,3 +1112,12 @@ Added a shared `find_indexed_file_by_path` helper for inbox and uploaded-file du
 The extension extraction intentionally matches the current indexing behavior, including its extensionless-file semantics; normalizing that behavior and historic values remains follow-on work.
 
 Affected: `archives_application/archiver/routes.py`, `archives_application/templates/inbox_item.html`, and `research/development_journal.md`. Verification: Python compilation of changed modules, Jinja parsing for the inbox template, and `git diff --check`. Route integration tests remain follow-on work because this repository currently has no checked-in route test suite.
+
+---
+
+## Entry 034 - Collapsible inbox duplicate locations
+**Date:** 2026-09-24<br>
+
+Changed the inbox duplicate notice to keep potentially long location lists collapsed by default. Its native HTML disclosure control states the number of exact indexed locations and expands to the existing user-facing archive paths on demand.
+
+Affected: `archives_application/templates/inbox_item.html` and `research/development_journal.md`. Verification: Jinja parsing and `git diff --check`.

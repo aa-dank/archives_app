@@ -13,12 +13,15 @@
                     {% if indexed_archive_locations %}
                     <section class="alert alert-warning" aria-labelledby="indexed-archive-locations-heading">
                         <h5 id="indexed-archive-locations-heading">Already indexed in the archives</h5>
-                        <p>This exact file is already indexed at the following location{{ 's' if indexed_archive_locations|length != 1 else '' }}. Archive it again only if an additional copy is intentional.</p>
-                        <ul class="mb-0">
-                            {% for location in indexed_archive_locations %}
-                            <li><code>{{ location }}</code></li>
-                            {% endfor %}
-                        </ul>
+                        <p>This exact file is already indexed. Archive it again only if an additional copy is intentional.</p>
+                        <details>
+                            <summary>Show {{ indexed_archive_locations|length }} indexed location{{ 's' if indexed_archive_locations|length != 1 else '' }}</summary>
+                            <ul class="mb-0 mt-2">
+                                {% for location in indexed_archive_locations %}
+                                <li><code>{{ location }}</code></li>
+                                {% endfor %}
+                            </ul>
+                        </details>
                     </section>
                     {% endif %}
                     <img style="height: 100%; width: 100%; object-fit: contain" src="{{ preview_image }}">
