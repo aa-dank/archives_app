@@ -1130,3 +1130,131 @@ Affected: `archives_application/templates/inbox_item.html` and `research/develop
 Refined the inbox archiving page to make its workflow easier to scan: guide links are compact actions, the current file and bounded preview are presented as a distinct panel, and optional document details and archive-destination fields are separated into clearly headed sections. The archive action is now visually primary, long filenames and indexed archive paths wrap safely, and preview images are constrained to the viewport rather than expanding the page indefinitely. No archive form behavior or duplicate-detection logic changed.
 
 Affected: `archives_application/templates/inbox_item.html`, `archives_application/static/main.css`, and `research/development_journal.md`. Verification: Jinja parsing and `git diff --check`.
+
+---
+
+## Entry 036 - Public project metadata search and XLSX export
+**Date:** 2026-09-21
+**Author:** OpenAI Codex (GPT-5)
+
+Added public read-only `GET /project_search` and `GET /project_search/export`
+workflows. The HTML page validates its bookmarkable query/filter contract,
+searches approved project and direct-contract metadata with literal,
+case-insensitive AND-term matching, preserves duplicate project numbers as
+separate project-ID rows, ranks results deterministically, and bounds the page
+to the top 300 projects. It adds a distinct Project Search navigation item and
+does not change the dedicated CAAN or Archive Search workflows.
+
+The export applies the same complete ranking and emits a write-only XLSX
+workbook with flattened project-contract rows, a search-information sheet,
+formula-safe database text, aggregate initial-contract-cost state, and only a
+converted user-facing archive location. It never exposes raw stored archive
+paths, project notes, or FileMaker IDs, and it performs no SMB access,
+background work, database writes, or file-location counts.
+
+Affected runtime components: `archives_application/project_tools/project_search.py`,
+`archives_application/project_tools/routes.py`, the Project Search template and
+navigation, and focused tests. Verification: focused SQLite-backed route,
+ranking, filter, duplicate-ID-link, export-expansion, and formula-neutralization
+tests; Python compilation; Jinja parsing; PostgreSQL query-shape compilation;
+and `git diff --check`. Follow-on: measure the specified production PostgreSQL
+query plans and revisit indexes only if observed latency justifies a controlled
+database-repository migration.
+
+---
+
+## Entry 037 - Compact Project Search results table and filters
+**Date:** 2026-09-21
+**Author:** OpenAI Codex (GPT-5)
+
+Removed the Archive root status column and missing-root explanation from the
+public Project Search HTML results table to make its ranked navigation view
+more compact. The file-server-location filter and export-only user-facing
+location remain available.
+
+The Drawings filter now replaces its standalone Unknown option with Yes or
+Unknown, which includes projects that generated architectural diagrams and
+projects without a recorded drawings value. Yes and No remain exact filters.
+The visible file-server-location filter uses Any, Known, and Unknown states;
+its underlying request values continue to describe stored-location state without
+implying a live filesystem check. Campus/client remains an export context field
+but is no longer searched.
+
+Affected runtime components: Project Search presentation, filter construction,
+feature specification, and focused tests. Verification: focused Project Search
+tests and template parsing. No operational follow-on work is required.
+
+The Match in source label is export-only; it was removed from the HTML results
+table because its separate-data-source distinctions are not needed for the
+primary navigation workflow.
+
+---
+
+## Entry 038 - Exact linked-CAAN lookup in Project Search
+**Date:** 2026-09-21
+**Author:** OpenAI Codex (GPT-5)
+
+Project Search accepts a case-insensitive exact CAAN-value match for each
+individual query term against a project's direct CAAN relationships. It does
+not perform partial CAAN-value, CAAN-name, or CAAN-description matching, and it
+still returns only project rows. CAAN terms can be combined with project and
+contract terms; a single exact linked-CAAN query ranks immediately after an
+exact project number and CAAN contributions appear in the export match-source
+label.
+
+Affected runtime components: Project Search query construction, result
+presentation, feature specification, and focused tests. Verification: focused
+exact-match and partial-rejection coverage. No schema change is required; the
+existing CAAN relationship index supports this lookup.
+
+---
+
+## Entry 039 - Identifier-style funding-number matching
+**Date:** 2026-09-22
+**Author:** OpenAI Codex (GPT-5)
+
+Changed Project Search funding-number matching from a broad substring check to
+a case-insensitive exact token check. Funding values with multiple codes split
+across spaces or line breaks remain searchable by each complete code; partial
+codes no longer match. This aligns funding identifiers with exact CAAN-value
+matching while retaining broad text matching for contract descriptive fields.
+
+Affected runtime components: Project Search query construction, feature
+specification, and focused tests. Verification: exact funding-code and
+partial-code-rejection coverage. No schema change or operational follow-on is
+required.
+
+---
+
+## Entry 040 - Project Search workbook navigation columns
+**Date:** 2026-09-22
+**Author:** OpenAI Codex (GPT-5)
+
+Reordered the public Project Search workbook so Project Information URL is the
+fourth column and uses an absolute URL. Ranking band and the renamed `database
+index` project identifier now follow all contract columns. The Search
+information sheet includes the canonical full Project Search results URL for
+the exported criteria.
+
+Affected runtime components: project-search workbook preparation, feature
+specification, and focused export tests. Verification: workbook-column order,
+absolute-URL, and search-results-URL coverage. No operational follow-on is
+required.
+
+---
+
+## Entry 041 - Professional Project Search workbook formatting
+**Date:** 2026-09-25
+**Author:** OpenAI Codex (GPT-5)
+
+Improved the public Project Search XLSX presentation without changing its data
+or row-expansion contract. The project/contract sheet now has section-colored,
+wrapped headers; frozen and filterable headers; tuned widths; banded rows;
+currency and date formats; and clickable Project Information URLs. The Search
+information sheet now has readable key/value styling, widths, and a clickable
+results URL.
+
+Affected runtime components: write-only workbook formatting, feature
+specification, and focused workbook tests. Verification: tested header style,
+freeze panes, filter range, widths, currency format, and hyperlink targets.
+No operational follow-on is required.
