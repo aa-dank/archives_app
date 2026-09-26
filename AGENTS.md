@@ -23,7 +23,19 @@ Recent commits use short, direct subjects such as `fixed issue related to illega
 
 ## Development Journal
 
-`research/development_journal.md` is a required, version-controlled running record of meaningful development work and must remain present. Before beginning a related change, review its most recent entry. When finishing a meaningful feature, operational change, or research/architecture decision, append a concise entry in the same change set: include the date, context, behavior changed, affected files or endpoints, verification performed, and any follow-on operational work. When catching up a neglected journal, review and summarize every commit since the last entry; do not infer behavior from commit subjects alone.
+`research/development_journal.md` is a required, version-controlled record of changes that affect deployed behavior, operations, data, security, or externally relied-on contracts; it must remain present. Before beginning a journal-worthy change, or modifying an area with recent journal history, review the most recent relevant entry.
+
+Append a concise entry in the same change set when a change:
+
+- changes user-visible or API behavior;
+- changes database schema, migrations, synchronization, retention, or filesystem behavior;
+- changes authentication, authorization, security, logging, background-job, deployment, or recovery behavior;
+- records an implemented or adopted architectural decision that materially constrains future development; or
+- fixes a production incident or records an operational investigation with a resulting action.
+
+Do not add an entry for documentation- or specification-only edits, exploratory research, formatting, comments, routine no-behavior refactors, test-only changes, dependency-lock regeneration, or branch merges unless they accompany a journal-worthy change. If an operator, future maintainer, or incident responder would not need the information to understand a deployed system, it probably does not belong in the journal.
+
+Each required entry should include the date, context, behavior or decision, affected runtime components, verification, and follow-on operational work. When catching up a neglected journal, review every commit since the last entry and summarize only the journal-worthy changes; do not infer behavior from commit subjects alone.
 
 ## Agent-Specific Instructions
 

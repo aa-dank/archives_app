@@ -1,0 +1,97 @@
+{% set hide_sidebar = True %}
+{% extends "layout.html" %}
+{% block content %}
+<div class="content-section">
+  <h2>Project Search</h2>
+  <p>Find construction project records by project metadata, linked contract metadata, or an exact linked CAAN value. File and document searching is available through <a href="{{ url_for('archiver.archives_search') }}">Archive Search</a>.</p>
+  <form method="get" action="{{ url_for('project_tools.project_search') }}" id="project-search-form">
+    <div class="form-group">
+      <label class="form-control-label" for="query"><strong>Search projects</strong></label>
+      <input class="form-control form-control-lg" id="query" name="query" type="search" maxlength="200" value="{{ state.query }}" placeholder="Project number, name, manager, contractor, or scope term">
+      <small class="form-text text-muted">Terms are matched case-insensitively with AND logic. Exact project-number and linked-CAAN-value matches rank first; duplicate project numbers can produce multiple rows.</small>
+    </div>
+    <details class="mb-3">
+      <summary>Advanced filters</summary>
+      <div class="form-row mt-3">
+        <div class="form-group col-md-4">
+          <label for="status">Project status</label>
+          <select class="form-control" id="status" name="status">
+            {% for value, label in [('any', 'Any status'), ('open', 'Open'), ('closed', 'Closed'), ('unknown', 'Unknown')] %}
+              <option value="{{ value }}"{% if state.status == value %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group col-md-4">
+          <label for="drawings">Drawings</label>
+          <select class="form-control" id="drawings" name="drawings">
+            {% for value, label in [('any', 'Any drawings state'), ('yes_or_unknown', 'Yes or Unknown'), ('yes', 'Yes'), ('no', 'No')] %}
+              <option value="{{ value }}"{% if state.drawings == value %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group col-md-4">
+          <label for="has_archive_location">File server location</label>
+          <select class="form-control" id="has_archive_location" name="has_archive_location">
+            {% for value, label in [('any', 'Any'), ('yes', 'Known'), ('no', 'Unknown')] %}
+              <option value="{{ value }}"{% if state.has_archive_location == value %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </details>
+    <button class="btn btn-outline-info" id="project-search-button" type="submit">Search projects</button>
+  </form>
+</div>
+
+{% if state.is_active %}
+<div class="content-section">
+  <h3>Results</h3>
+  {% if state.query %}<p>Search terms: <strong>{{ state.query }}</strong></p>{% endif %}
+  {% if state.active_filter_labels() %}
+    <p>Active filters: {% for label, value in state.active_filter_labels() %}<strong>{{ label }}: {{ value }}</strong>{% if not loop.last %}; {% endif %}{% endfor %}</p>
+  {% endif %}
+  {% if results %}
+    <p><a class="btn btn-sm btn-secondary" href="{{ url_for('project_tools.project_search_export', **state.export_parameters()) }}">Download all results (XLSX)</a></p>
+    {% if has_more %}<div class="alert alert-info">Showing the top 300 ranked projects. Download all results to review every matching project.</div>{% endif %}
+    <div class="table-responsive">
+      <table class="table table-sm table-striped table-hover">
+        <thead class="thead-light">
+          <tr>
+            <th>Project number</th><th>Project name</th><th>Status</th><th>Drawings</th>
+            <th>Initial contract value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in results %}
+          <tr>
+            <td><a href="{{ url_for('project_tools.project_info', project_id=row.project.id) }}">{{ row.project.number }}</a></td>
+            <td>{{ row.project.name }}{% if row.project.project_manager_name %}<small class="d-block text-muted">Project manager: {{ row.project.project_manager_name }}</small>{% endif %}</td>
+            <td>{{ 'Closed' if row.project.closed else 'Open' if row.project.closed is not none else 'Unknown' }}</td>
+            <td>{{ 'Yes' if row.project.drawings else 'No' if row.project.drawings is not none else 'Unknown' }}</td>
+            <td>{{ row.initial_contract_value }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-muted">Displaying {{ results|length }} ranked result{{ '' if results|length == 1 else 's' }}.</p>
+  {% else %}
+    <p>No matching project records were found. This does not establish whether a project or its files exist elsewhere.</p>
+  {% endif %}
+</div>
+{% endif %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var form = document.getElementById('project-search-form');
+    if (form) {
+      form.addEventListener('submit', function () {
+        var button = document.getElementById('project-search-button');
+        if (button && !button.disabled) {
+          button.textContent = 'Searching...';
+          setTimeout(function () { button.disabled = true; }, 10);
+        }
+      });
+    }
+  });
+</script>
+{% endblock content %}

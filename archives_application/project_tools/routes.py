@@ -11,6 +11,7 @@ from archives_application import utils
 from archives_application.models import UserModel, ProjectModel, CAANModel, WorkerTaskModel
 from archives_application.project_tools.forms import CAANSearchForm
 from archives_application.project_tools import project_info as project_info_service
+from archives_application.project_tools import project_search as project_search_service
 from sqlalchemy import or_, and_
 
 
@@ -218,6 +219,52 @@ def caan_search():
             )
 
     return flask.render_template('caan_search.html', form=form)
+
+
+@project_tools.route("/project_search", methods=["GET"])
+def project_search():
+    """Render the public, read-only project metadata search page."""
+    try:
+        state = project_search_service.parse_request(flask.request.args)
+        results, has_more = project_search_service.search_html(state)
+        return flask.render_template(
+            "project_search.html",
+            title="Project Search",
+            state=state,
+            results=results,
+            has_more=has_more,
+        )
+    except project_search_service.ProjectSearchValidationError as error:
+        return flask.Response(str(error), status=400)
+    except Exception:
+        flask.current_app.logger.error("Project search request failed", exc_info=True)
+        return flask.Response("Unable to search projects.", status=500)
+
+
+@project_tools.route("/project_search/export", methods=["GET"])
+def project_search_export():
+    """Download all public project-search matches as a flattened XLSX workbook."""
+    try:
+        state = project_search_service.parse_request(flask.request.args)
+        if not state.is_active:
+            raise project_search_service.ProjectSearchValidationError(
+                "Supply a search query or at least one active filter."
+            )
+        workbook = project_search_service.build_export_workbook(
+            state,
+            flask.current_app.config.get("USER_ARCHIVES_LOCATION"),
+        )
+        return flask.send_file(
+            workbook,
+            as_attachment=True,
+            download_name="project_search.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except project_search_service.ProjectSearchValidationError as error:
+        return flask.Response(str(error), status=400)
+    except Exception:
+        flask.current_app.logger.error("Project search export failed", exc_info=True)
+        return flask.Response("Unable to export project search results.", status=500)
 
 
 @project_tools.route("/caan_info/<caan>", methods=['GET'])
