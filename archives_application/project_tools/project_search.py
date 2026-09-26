@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from io import BytesIO
 from itertools import islice
@@ -11,7 +11,10 @@ import re
 
 import flask
 from openpyxl import Workbook
+from openpyxl.cell import WriteOnlyCell
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from sqlalchemy import and_, case, exists, false, func, literal, or_
 
 from archives_application import db, utils
@@ -416,6 +419,112 @@ CONTRACT_EXPORT_FIELDS = (
     "original_project_duration", "change_order_time_total", "change_order_revised_duration",
 )
 
+PROJECT_HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
+CONTRACT_HEADER_FILL = PatternFill("solid", fgColor="476A8A")
+TRAILING_HEADER_FILL = PatternFill("solid", fgColor="5B4B73")
+HEADER_FONT = Font(color="FFFFFF", bold=True)
+HEADER_ALIGNMENT = Alignment(horizontal="center", vertical="center", wrap_text=True)
+DATA_ALIGNMENT = Alignment(vertical="top")
+WRAPPED_DATA_ALIGNMENT = Alignment(vertical="top", wrap_text=True)
+INFO_LABEL_FILL = PatternFill("solid", fgColor="D9EAF7")
+BANDED_ROW_FILL = PatternFill("solid", fgColor="F4F8FC")
+THIN_BOTTOM_BORDER = Border(bottom=Side(style="thin", color="D9E2F3"))
+URL_FONT = Font(color="0563C1", underline="single")
+CURRENCY_HEADERS = frozenset({
+    "Cost estimate",
+    "Original contract cost",
+    "Change-order total",
+    "Revised total including change orders",
+})
+DATE_HEADERS = frozenset({
+    "Bid date",
+    "Contract date",
+    "Notice-to-proceed date",
+    "Beneficial occupancy date",
+    "Substantial completion date",
+    "Certificate of occupancy date",
+    "Notice of completion date",
+    "Notice of completion recorded date",
+    "Termination date",
+    "Current expected end date",
+})
+WRAPPED_HEADERS = frozenset({
+    "Project name",
+    "Project Information URL",
+    "Archive location",
+    "Scope description",
+    "Funding number",
+})
+PROJECT_EXPORT_COLUMN_WIDTHS = (
+    12, 16, 46, 58, 12, 12, 28, 24, 24, 52, 18, 22, 15, 15, 16,
+    18, 30, 34, 60, 17, 18, 18, 22, 22, 16, 16, 18, 21, 23, 26,
+    26, 26, 26, 26, 26, 26, 18, 20, 16,
+)
+
+
+def _header_cell(worksheet, value: str, column_index: int):
+    cell = WriteOnlyCell(worksheet, value=value)
+    if column_index < len(PROJECT_EXPORT_HEADERS):
+        cell.fill = PROJECT_HEADER_FILL
+    elif column_index < len(PROJECT_EXPORT_HEADERS) + len(CONTRACT_EXPORT_HEADERS):
+        cell.fill = CONTRACT_HEADER_FILL
+    else:
+        cell.fill = TRAILING_HEADER_FILL
+    cell.font = HEADER_FONT
+    cell.alignment = HEADER_ALIGNMENT
+    cell.border = THIN_BOTTOM_BORDER
+    return cell
+
+
+def _data_cell(worksheet, value, header: str, is_banded_row: bool):
+    """Prepare one bounded-memory, presentation-formatted workbook cell."""
+    cell = WriteOnlyCell(worksheet, value=_safe_cell(value))
+    cell.alignment = WRAPPED_DATA_ALIGNMENT if header in WRAPPED_HEADERS else DATA_ALIGNMENT
+    cell.border = THIN_BOTTOM_BORDER
+    if is_banded_row:
+        cell.fill = BANDED_ROW_FILL
+    if header in CURRENCY_HEADERS and isinstance(value, Decimal):
+        cell.number_format = '$#,##0.00'
+    elif header in DATE_HEADERS and isinstance(value, (date, datetime)):
+        cell.number_format = "mmm d, yyyy"
+    if header == "Project Information URL" and isinstance(value, str):
+        cell.hyperlink = value
+        cell.font = URL_FONT
+    return cell
+
+
+def _configure_projects_sheet(worksheet, headers: tuple[str, ...]):
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = f"A1:{get_column_letter(len(headers))}1"
+    worksheet.sheet_view.showGridLines = False
+    for column_index, width in enumerate(PROJECT_EXPORT_COLUMN_WIDTHS, start=1):
+        worksheet.column_dimensions[get_column_letter(column_index)].width = width
+    worksheet.row_dimensions[1].height = 36
+
+
+def _information_row(worksheet, label: str, value):
+    label_cell = WriteOnlyCell(worksheet, value=label)
+    label_cell.fill = INFO_LABEL_FILL
+    label_cell.font = Font(bold=True, color="1F1F1F")
+    label_cell.alignment = DATA_ALIGNMENT
+    label_cell.border = THIN_BOTTOM_BORDER
+
+    value_cell = WriteOnlyCell(worksheet, value=_safe_cell(value))
+    value_cell.alignment = WRAPPED_DATA_ALIGNMENT
+    value_cell.border = THIN_BOTTOM_BORDER
+    if label == "Search results URL" and isinstance(value, str):
+        value_cell.hyperlink = value
+        value_cell.font = URL_FONT
+    return label_cell, value_cell
+
+
+def _configure_information_sheet(worksheet):
+    worksheet.freeze_panes = "A2"
+    worksheet.sheet_view.showGridLines = False
+    worksheet.column_dimensions["A"].width = 30
+    worksheet.column_dimensions["B"].width = 100
+    worksheet.row_dimensions[1].height = 24
+
 
 def _project_export_values(result: ProjectSearchResult, rank: int, user_archives_location: str | None):
     project = result.project
@@ -463,11 +572,14 @@ def build_export_workbook(state: ProjectSearchState, user_archives_location: str
 
     workbook = Workbook(write_only=True)
     projects_sheet = workbook.create_sheet("Projects and contracts")
-    projects_sheet.append(
-        PROJECT_EXPORT_HEADERS
-        + CONTRACT_EXPORT_HEADERS
-        + TRAILING_PROJECT_EXPORT_HEADERS
+    all_export_headers = (
+        PROJECT_EXPORT_HEADERS + CONTRACT_EXPORT_HEADERS + TRAILING_PROJECT_EXPORT_HEADERS
     )
+    _configure_projects_sheet(projects_sheet, all_export_headers)
+    projects_sheet.append(tuple(
+        _header_cell(projects_sheet, header, column_index)
+        for column_index, header in enumerate(all_export_headers)
+    ))
     export_row_count = 0
     project_count = 0
 
@@ -488,33 +600,53 @@ def build_export_workbook(state: ProjectSearchState, user_archives_location: str
             )
             contracts_for_project = contracts_by_project[result.project.id] or [None]
             for contract in contracts_for_project:
-                projects_sheet.append(tuple(_safe_cell(value) for value in (
+                row_values = (
                     project_values
                     + _contract_export_values(contract)
                     + _trailing_project_export_values(result)
-                )))
+                )
+                projects_sheet.append(tuple(
+                    _data_cell(
+                        projects_sheet,
+                        value,
+                        header,
+                        is_banded_row=export_row_count % 2 == 1,
+                    )
+                    for value, header in zip(row_values, all_export_headers)
+                ))
                 export_row_count += 1
 
     information_sheet = workbook.create_sheet("Search information")
-    information_sheet.append(("Search information", "Value"))
-    information_sheet.append(("Query", _safe_cell(state.query)))
+    _configure_information_sheet(information_sheet)
     information_sheet.append((
-        "Search results URL",
-        flask.url_for(
-            "project_tools.project_search",
-            _external=True,
-            **state.export_parameters(),
-        ),
+        _header_cell(information_sheet, "Search information", 0),
+        _header_cell(information_sheet, "Value", 0),
     ))
-    information_sheet.append(("Status", state.status))
-    information_sheet.append(("Drawings", state.drawings))
-    information_sheet.append((
+    information_sheet.append(_information_row(information_sheet, "Query", state.query))
+    search_results_url = flask.url_for(
+        "project_tools.project_search",
+        _external=True,
+        **state.export_parameters(),
+    )
+    information_sheet.append(_information_row(
+        information_sheet, "Search results URL", search_results_url
+    ))
+    information_sheet.append(_information_row(information_sheet, "Status", state.status))
+    information_sheet.append(_information_row(information_sheet, "Drawings", state.drawings))
+    information_sheet.append(_information_row(
+        information_sheet,
         "File server location",
         {"any": "Any", "yes": "Known", "no": "Unknown"}[state.has_archive_location],
     ))
-    information_sheet.append(("Export timestamp (UTC)", datetime.now(timezone.utc).isoformat()))
-    information_sheet.append(("Total matched projects", project_count))
-    information_sheet.append(("Total exported rows", export_row_count))
+    information_sheet.append(_information_row(
+        information_sheet, "Export timestamp (UTC)", datetime.now(timezone.utc).isoformat()
+    ))
+    information_sheet.append(_information_row(
+        information_sheet, "Total matched projects", project_count
+    ))
+    information_sheet.append(_information_row(
+        information_sheet, "Total exported rows", export_row_count
+    ))
 
     output = BytesIO()
     workbook.save(output)
