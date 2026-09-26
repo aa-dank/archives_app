@@ -361,6 +361,12 @@ Add an on-demand, public `GET /project_search/export` route that accepts the sam
 
 Sanitize spreadsheet cell values that could be interpreted as formulas before writing database-backed text to XLSX. The workbook must contain a `Projects and contracts` sheet and a `Search information` sheet. The latter records the query/filter state, canonical full Project Search results URL, export timestamp, total matched-project count, and total exported-row count.
 
+The workbook should be usable as a review tool without reformatting: freeze the
+header row, enable column filtering on the projects-and-contracts sheet, apply
+clear header/section styling and alternating data-row shading, set readable
+column widths, format contract monetary values and dates, and render the
+Project Information and Search results URLs as hyperlinks.
+
 `Projects and contracts` is a flattened table, ordered first by the complete project ranking and then by the existing stable natural contract-number order. Emit one row for every direct project-contract relationship, repeating the project columns for each linked contract. A matching project with no linked contracts must still produce one row with blank contract columns. Include every directly linked contract for each matching project, not only a contract that contributed to the search match.
 
 The leading project columns are result rank, project number, project name, and

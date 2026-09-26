@@ -1240,3 +1240,21 @@ Affected runtime components: project-search workbook preparation, feature
 specification, and focused export tests. Verification: workbook-column order,
 absolute-URL, and search-results-URL coverage. No operational follow-on is
 required.
+
+---
+
+## Entry 041 - Professional Project Search workbook formatting
+**Date:** 2026-09-25
+**Author:** OpenAI Codex (GPT-5)
+
+Improved the public Project Search XLSX presentation without changing its data
+or row-expansion contract. The project/contract sheet now has section-colored,
+wrapped headers; frozen and filterable headers; tuned widths; banded rows;
+currency and date formats; and clickable Project Information URLs. The Search
+information sheet now has readable key/value styling, widths, and a clickable
+results URL.
+
+Affected runtime components: write-only workbook formatting, feature
+specification, and focused workbook tests. Verification: tested header style,
+freeze panes, filter range, widths, currency format, and hyperlink targets.
+No operational follow-on is required.
