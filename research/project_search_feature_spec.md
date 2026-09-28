@@ -375,8 +375,8 @@ after every contract field, are ranking band and `database index` (the canonical
 project ID). Other project columns are:
 
 - status, drawings, campus client, project manager, and inspector;
-- user-facing archive location, produced with `FileServerUtils.user_path_from_db_data(...)` and `USER_ARCHIVES_LOCATION`, plus archive-root status;
-- initial contract value, with the same `No contract data`, `Not recorded`, and `Partial` semantics as the HTML table, plus the number of linked contracts with a recorded original contract cost and the total linked-contract count; and
+- user-facing archive location, produced with `FileServerUtils.user_path_from_db_data(...)` and `USER_ARCHIVES_LOCATION`, plus file-server-location status (`Known` or `Unknown`);
+- Original Project Contracts Costs, with the same `No contract data`, `Not recorded`, and `Partial` semantics as the HTML table's initial contract value, plus the number of linked contracts with a recorded original contract cost and the total linked-contract count; and
 - matched-in labels.
 
 The archive-location column must never reveal the raw database value. When no root is recorded it is blank; when a recorded root cannot be converted because the configured user archive location is unavailable, it is `Unavailable` rather than a raw path.

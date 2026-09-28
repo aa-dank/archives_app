@@ -198,20 +198,25 @@ def test_export_flattens_contracts_and_neutralizes_formula_text(client):
     assert projects_sheet["A1"].fill.fgColor.rgb.endswith("1F4E78")
     assert projects_sheet.column_dimensions["C"].width == 46
     assert rows[0][3] == "Project Information URL"
+    assert rows[0][10] == "File server location"
+    assert rows[0][11] == "Original Project Contracts Costs"
     assert rows[0][-2:] == ("Ranking band", "database index")
     assert rows[1][1] == "1000"
     assert rows[1][3].startswith("http://")
     assert rows[1][3].endswith("/project_info?project_id=1")
     assert projects_sheet["D2"].hyperlink.target.endswith("/project_info?project_id=1")
     assert rows[1][2] == "'=Formula project"
+    assert rows[1][10] == "Known"
     assert rows[1][15] is None  # A project with no contracts still has one blank row.
     assert rows[1][-1] == 1
     assert rows[2][15] == "A-10" and rows[2][-1] == 2
+    assert rows[2][10] == "Unknown"
     assert projects_sheet["U3"].number_format == '$#,##0.00'
     information_sheet = workbook["Search information"]
     assert information_sheet.freeze_panes == "A2"
     assert information_sheet["B3"].hyperlink.target.endswith("/project_search?query=1000")
     info = dict(information_sheet.iter_rows(min_row=2, values_only=True))
     assert info["Search results URL"].endswith("/project_search?query=1000")
+    assert info["File server location"] == "Any"
     assert info["Total matched projects"] == 2
     assert info["Total exported rows"] == 2
