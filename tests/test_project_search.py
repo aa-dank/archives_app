@@ -200,18 +200,19 @@ def test_export_flattens_contracts_and_neutralizes_formula_text(client):
     assert rows[0][3] == "Project Information URL"
     assert rows[0][10] == "File server location"
     assert rows[0][11] == "Original Project Contracts Costs"
-    assert rows[0][-2:] == ("Ranking band", "database index")
+    assert rows[0][-3:] == ("Ranking band", "database index", "Search match location")
+    assert projects_sheet["AM1"].fill.fgColor.rgb.endswith("5B4B73")
     assert rows[1][1] == "1000"
     assert rows[1][3].startswith("http://")
     assert rows[1][3].endswith("/project_info?project_id=1")
     assert projects_sheet["D2"].hyperlink.target.endswith("/project_info?project_id=1")
     assert rows[1][2] == "'=Formula project"
     assert rows[1][10] == "Known"
-    assert rows[1][15] is None  # A project with no contracts still has one blank row.
-    assert rows[1][-1] == 1
-    assert rows[2][15] == "A-10" and rows[2][-1] == 2
+    assert rows[1][14] is None  # A project with no contracts still has one blank row.
+    assert rows[1][-2:] == (1, "Project")
+    assert rows[2][14] == "A-10" and rows[2][-2:] == (2, "Project")
     assert rows[2][10] == "Unknown"
-    assert projects_sheet["U3"].number_format == '$#,##0.00'
+    assert projects_sheet["T3"].number_format == '$#,##0.00'
     information_sheet = workbook["Search information"]
     assert information_sheet.freeze_panes == "A2"
     assert information_sheet["B3"].hyperlink.target.endswith("/project_search?query=1000")
