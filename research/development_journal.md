@@ -1276,3 +1276,26 @@ Affected runtime components: `ServerEdit` source-path validation and the
 the status, JSON body, and absence of a stack trace. API clients should read
 the 404 response body and treat the missing source as a request failure rather
 than retrying it as a server error.
+
+---
+
+## Entry 043 - Clearer labels in Project Search workbook
+**Date:** 2026-09-28
+**Author:** OpenAI Codex
+
+The public Project Search workbook now labels each project's file server
+location status as `Known` or `Unknown`, matching the HTML filter and the
+workbook's Search information sheet. A known stored location remains `Known`
+even if its user-facing path cannot be converted and is shown as `Unavailable`.
+This status describes the recorded database value, not a live filesystem check.
+
+Column L was renamed from `Initial contract value` to
+`Original Project Contracts Costs`. Its value remains the sum of
+recorded original costs across a project's linked contracts, repeated on each
+contract row with existing missing-cost and partial-total indicators. Column U
+continues to show each individual contract's original cost.
+
+Affected runtime component: Project Search XLSX export. Verification: focused
+workbook assertions for the updated headings and both file-server-location
+states; all Project Search tests passed. No data migration or operational
+follow-on work is required.

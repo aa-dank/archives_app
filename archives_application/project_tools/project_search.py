@@ -362,19 +362,19 @@ def _archive_location(project: ProjectModel, user_archives_location: str | None)
     """Return public archive path/state without ever falling back to the stored path."""
     root = project.file_server_location.strip() if isinstance(project.file_server_location, str) else None
     if not root:
-        return "", "Not recorded"
+        return "", "Unknown"
     if not user_archives_location:
-        return "Unavailable", "Recorded"
+        return "Unavailable", "Known"
     try:
         return (
             utils.FileServerUtils.user_path_from_db_data(
                 file_server_directories=root,
                 user_archives_location=user_archives_location,
             ),
-            "Recorded",
+            "Known",
         )
     except Exception:
-        return "Unavailable", "Recorded"
+        return "Unavailable", "Known"
 
 
 def _status(value: bool | None, true_label: str, false_label: str) -> str:
@@ -396,8 +396,8 @@ def _safe_cell(value):
 PROJECT_EXPORT_HEADERS = (
     "Result rank", "Project number", "Project name", "Project Information URL",
     "Status", "Drawings", "Campus client",
-    "Project manager", "Inspector", "Archive location", "Archive root status",
-    "Initial contract value", "Contracts with recorded initial cost", "Linked contracts",
+    "Project manager", "Inspector", "Archive location", "File server location",
+    "Original Project Contracts Costs", "Contracts with recorded initial cost", "Linked contracts",
     "Matched in",
 )
 TRAILING_PROJECT_EXPORT_HEADERS = ("Ranking band", "database index")
