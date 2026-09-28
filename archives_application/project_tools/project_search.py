@@ -398,9 +398,8 @@ PROJECT_EXPORT_HEADERS = (
     "Status", "Drawings", "Campus client",
     "Project manager", "Inspector", "Archive location", "File server location",
     "Original Project Contracts Costs", "Contracts with recorded initial cost", "Linked contracts",
-    "Matched in",
 )
-TRAILING_PROJECT_EXPORT_HEADERS = ("Ranking band", "database index")
+TRAILING_PROJECT_EXPORT_HEADERS = ("Ranking band", "database index", "Search match location")
 CONTRACT_EXPORT_HEADERS = (
     "Contract number", "Contractor", "Executive design organization", "Scope description",
     "Cost estimate", "Original contract cost", "Change-order total",
@@ -456,9 +455,9 @@ WRAPPED_HEADERS = frozenset({
     "Funding number",
 })
 PROJECT_EXPORT_COLUMN_WIDTHS = (
-    12, 16, 46, 58, 12, 12, 28, 24, 24, 52, 18, 22, 15, 15, 16,
+    12, 16, 46, 58, 12, 12, 28, 24, 24, 52, 18, 22, 15, 15,
     18, 30, 34, 60, 17, 18, 18, 22, 22, 16, 16, 18, 21, 23, 26,
-    26, 26, 26, 26, 26, 26, 18, 20, 16,
+    26, 26, 26, 26, 26, 26, 18, 20, 16, 24,
 )
 
 
@@ -546,12 +545,11 @@ def _project_export_values(result: ProjectSearchResult, rank: int, user_archives
         result.initial_contract_value,
         result.recorded_cost_count,
         result.contract_count,
-        result.matched_in,
     )
 
 
 def _trailing_project_export_values(result: ProjectSearchResult):
-    return result.ranking_band, result.project.id
+    return result.ranking_band, result.project.id, result.matched_in
 
 
 def _contract_export_values(contract: ContractModel | None):
