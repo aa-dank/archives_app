@@ -1258,3 +1258,21 @@ Affected runtime components: write-only workbook formatting, feature
 specification, and focused workbook tests. Verification: tested header style,
 freeze panes, filter range, widths, currency format, and hyperlink targets.
 No operational follow-on is required.
+
+---
+
+## Entry 042 - Missing source paths in server-change API
+**Date:** 2026-09-28
+**Author:** OpenAI Codex
+
+When an authenticated API server-change request names a source path that does
+not exist, the endpoint now returns HTTP 404 with a concise JSON error and the
+entered path. The web form keeps its existing flashed error behavior, and other
+server-change failures retain their existing handling. This replaces the 500
+response with a stack trace for this validation case.
+
+Affected runtime components: `ServerEdit` source-path validation and the
+`/api/server_change` response. Verification: focused authenticated API test for
+the status, JSON body, and absence of a stack trace. API clients should read
+the 404 response body and treat the missing source as a request failure rather
+than retrying it as a server error.

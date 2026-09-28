@@ -669,11 +669,12 @@ def server_change():
     Raises:
     - **Unauthorized (401)**: If the user is not authenticated or lacks the necessary permissions.
     - **Bad Request (400)**: If the form validation fails or required parameters are missing.
+    - **Not Found (404)**: The source path for an API server change does not exist.
     - **Exception**: Various exceptions may be raised due to issues like invalid paths, access violations, or server errors.
     """
     
     # imported here to avoid circular import
-    from archives_application.archiver.server_edit import ServerEdit
+    from archives_application.archiver.server_edit import ServerEdit, ServerEditPathNotFoundError
 
     def validate_single_change(form):
         """
@@ -819,6 +820,16 @@ def server_change():
             # if this is an API request, we will return 200 and enqueing results
             nq_results = utils.serializable_dict(nq_results)
             return flask.Response(json.dumps(nq_results), status=200)
+
+        except ServerEditPathNotFoundError as e:
+            if form_request:
+                return utils.FlaskAppUtils.web_exception_subroutine(
+                    flash_message="Error processing or executing change: ",
+                    thrown_exception=e,
+                    app_obj=flask.current_app,
+                )
+            flask.current_app.logger.warning("Server change source path does not exist: %s", e.entered_path)
+            return flask.jsonify({"error": "Source path does not exist", "path": e.entered_path}), 404
 
         except Exception as e:
             m = "Error processing or executing change: "

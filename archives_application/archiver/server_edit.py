@@ -37,6 +37,14 @@ def directory_contents_quantities(dir_path: str, server_location: str, db: flask
     return files_effected, data_effected
 
 
+class ServerEditPathNotFoundError(FileNotFoundError):
+    """The source path for a server edit is absent from the file server."""
+
+    def __init__(self, entered_path: str, app_path: str):
+        self.entered_path = entered_path
+        super().__init__(f"Path to asset does not exist: {app_path}\nEntered path: {entered_path}")
+
+
 class ServerEdit:
     """
     This class is used to create a server edit object, which represents a change to the file server.
@@ -65,8 +73,7 @@ class ServerEdit:
             self.old_path = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=old_path,
                                                                       app=flask.current_app)
             if not os.path.exists(self.old_path):
-                e_message = f"Path to asset does not exist: {self.old_path}\nEntered path: {old_path}"
-                raise Exception(e_message)
+                raise ServerEditPathNotFoundError(old_path, self.old_path)
 
             if self.old_path == server_location:
                 raise Exception(f"Server root directory chosen\nold_path: {self.old_path}\nserver_location: {server_location}")
