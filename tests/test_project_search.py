@@ -187,7 +187,7 @@ def test_export_flattens_contracts_and_neutralizes_formula_text(client):
     response = client.get("/project_search/export?query=1000")
     assert response.status_code == 200
     workbook = load_workbook(BytesIO(response.data), data_only=False)
-    assert workbook.sheetnames == ["Projects and contracts", "Search information"]
+    assert workbook.sheetnames == ["Projects and contracts", "Search information", "Column guide"]
     projects_sheet = workbook["Projects and contracts"]
     rows = list(projects_sheet.iter_rows(values_only=True))
     assert len(rows) == 3  # Header plus one row for each duplicate project.
@@ -199,7 +199,7 @@ def test_export_flattens_contracts_and_neutralizes_formula_text(client):
     assert projects_sheet.column_dimensions["C"].width == 46
     assert rows[0][3] == "Project Information URL"
     assert rows[0][10] == "File server location"
-    assert rows[0][11] == "Original Project Contracts Costs"
+    assert rows[0][11] == "Total Original Contract(s) Cost"
     assert rows[0][-3:] == ("Ranking band", "database index", "Search match location")
     assert projects_sheet["AM1"].fill.fgColor.rgb.endswith("5B4B73")
     assert rows[1][1] == "1000"
@@ -221,3 +221,19 @@ def test_export_flattens_contracts_and_neutralizes_formula_text(client):
     assert info["File server location"] == "Any"
     assert info["Total matched projects"] == 2
     assert info["Total exported rows"] == 2
+
+    guide_sheet = workbook["Column guide"]
+    assert guide_sheet.freeze_panes == "A2"
+    assert guide_sheet.auto_filter.ref == "A1:B11"
+    assert guide_sheet["A1"].value == "Column"
+    assert guide_sheet["B1"].value == "Meaning"
+    guide = dict(guide_sheet.iter_rows(min_row=2, values_only=True))
+    for column in (
+        "Result rank", "Archive location", "File server location",
+        "Total Original Contract(s) Cost", "Contracts with recorded initial cost",
+        "Linked contracts", "Original contract cost", "Ranking band",
+        "database index", "Search match location",
+    ):
+        assert column in guide
+    assert "Partial" in guide["Total Original Contract(s) Cost"]
+    assert "CAAN" in guide["Search match location"]

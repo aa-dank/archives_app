@@ -359,7 +359,7 @@ No filesystem calls, `ServerEdit`, RQ tasks, or database writes are permitted in
 
 Add an on-demand, public `GET /project_search/export` route that accepts the same validated search criteria as the HTML route. The **Download all results** control appears only on a non-empty HTML result page and invokes this route with that page's query and filters. It must reject unknown or repeated parameters, require an active query or filter, and create no database or filesystem records beyond the temporary downloadable workbook. The export is a direct download rather than a background job because the current project table contains approximately 10,000 rows and the expected matching sets are substantially smaller. It requires no login and intentionally supports bulk export of the public project and contract data described below. Do not impose a feature-specific result-row cap; apply the deployment's ordinary public-route or proxy rate limits if present.
 
-Sanitize spreadsheet cell values that could be interpreted as formulas before writing database-backed text to XLSX. The workbook must contain a `Projects and contracts` sheet and a `Search information` sheet. The latter records the query/filter state, canonical full Project Search results URL, export timestamp, total matched-project count, and total exported-row count.
+Sanitize spreadsheet cell values that could be interpreted as formulas before writing database-backed text to XLSX. The workbook must contain a `Projects and contracts` sheet, a `Search information` sheet, and a `Column guide` sheet. The Search information sheet records the query/filter state, canonical full Project Search results URL, export timestamp, total matched-project count, and total exported-row count. The Column guide gives short definitions for the ranking and match-source columns, project-level and contract-level costs and counts, and file-server-location fields.
 
 The workbook should be usable as a review tool without reformatting: freeze the
 header row, enable column filtering on the projects-and-contracts sheet, apply
@@ -377,7 +377,7 @@ project columns are:
 
 - status, drawings, campus client, project manager, and inspector;
 - user-facing archive location, produced with `FileServerUtils.user_path_from_db_data(...)` and `USER_ARCHIVES_LOCATION`, plus file-server-location status (`Known` or `Unknown`);
-- Original Project Contracts Costs, with the same `No contract data`, `Not recorded`, and `Partial` semantics as the HTML table's initial contract value, plus the number of linked contracts with a recorded original contract cost and the total linked-contract count.
+- Total Original Contract(s) Cost, with the same `No contract data`, `Not recorded`, and `Partial` semantics as the HTML table's initial contract value, plus the number of linked contracts with a recorded original contract cost and the total linked-contract count.
 
 The archive-location column must never reveal the raw database value. When no root is recorded it is blank; when a recorded root cannot be converted because the configured user archive location is unavailable, it is `Unavailable` rather than a raw path.
 
