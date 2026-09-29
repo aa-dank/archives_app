@@ -397,9 +397,51 @@ PROJECT_EXPORT_HEADERS = (
     "Result rank", "Project number", "Project name", "Project Information URL",
     "Status", "Drawings", "Campus client",
     "Project manager", "Inspector", "Archive location", "File server location",
-    "Original Project Contracts Costs", "Contracts with recorded initial cost", "Linked contracts",
+    "Total Original Contract(s) Cost", "Contracts with recorded initial cost", "Linked contracts",
 )
 TRAILING_PROJECT_EXPORT_HEADERS = ("Ranking band", "database index", "Search match location")
+COLUMN_GUIDE_ENTRIES = (
+    (
+        "Result rank",
+        "Position of the project in this exported search. It repeats on each row when the project has multiple linked contracts.",
+    ),
+    (
+        "Archive location",
+        "User-facing file server path converted from the project's recorded location. Blank means no location is recorded; Unavailable means a recorded path could not be shown.",
+    ),
+    (
+        "File server location",
+        "Known means a nonblank location is recorded for the project; Unknown means none is recorded. This is not a live check of files or server access.",
+    ),
+    (
+        "Total Original Contract(s) Cost",
+        "Sum of recorded original contract costs across all linked contracts, repeated on each project row. No contract data means no linked contracts; Not recorded means none has a cost; Partial means at least one linked contract lacks a cost.",
+    ),
+    (
+        "Contracts with recorded initial cost",
+        "Number of linked contracts with a recorded original contract cost. This can be smaller than the Linked contracts count.",
+    ),
+    (
+        "Linked contracts",
+        "Number of contract records directly linked to the project. The workbook has one row per linked contract, or one project-only row when this count is zero.",
+    ),
+    (
+        "Original contract cost",
+        "Recorded original cost for the individual contract on this row. Blank means that contract has no recorded original cost.",
+    ),
+    (
+        "Ranking band",
+        "The highest-priority matching category used to order this project in the results. Filter-only result means the project matched filters without a search query.",
+    ),
+    (
+        "database index",
+        "Internal database ID of the project. It distinguishes records that share the same project number.",
+    ),
+    (
+        "Search match location",
+        "Shows whether a search term matched project fields, linked contract fields, or an exact linked CAAN value; multiple sources may appear. A dash means the search used filters only.",
+    ),
+)
 CONTRACT_EXPORT_HEADERS = (
     "Contract number", "Contractor", "Executive design organization", "Scope description",
     "Cost estimate", "Original contract cost", "Change-order total",
@@ -525,6 +567,17 @@ def _configure_information_sheet(worksheet):
     worksheet.row_dimensions[1].height = 24
 
 
+def _configure_column_guide_sheet(worksheet):
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = f"A1:B{len(COLUMN_GUIDE_ENTRIES) + 1}"
+    worksheet.sheet_view.showGridLines = False
+    worksheet.column_dimensions["A"].width = 38
+    worksheet.column_dimensions["B"].width = 105
+    worksheet.row_dimensions[1].height = 24
+    for row_number in range(2, len(COLUMN_GUIDE_ENTRIES) + 2):
+        worksheet.row_dimensions[row_number].height = 42
+
+
 def _project_export_values(result: ProjectSearchResult, rank: int, user_archives_location: str | None):
     project = result.project
     archive_location, archive_status = _archive_location(project, user_archives_location)
@@ -645,6 +698,15 @@ def build_export_workbook(state: ProjectSearchState, user_archives_location: str
     information_sheet.append(_information_row(
         information_sheet, "Total exported rows", export_row_count
     ))
+
+    guide_sheet = workbook.create_sheet("Column guide")
+    _configure_column_guide_sheet(guide_sheet)
+    guide_sheet.append((
+        _header_cell(guide_sheet, "Column", 0),
+        _header_cell(guide_sheet, "Meaning", 0),
+    ))
+    for label, description in COLUMN_GUIDE_ENTRIES:
+        guide_sheet.append(_information_row(guide_sheet, label, description))
 
     output = BytesIO()
     workbook.save(output)

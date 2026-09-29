@@ -1290,14 +1290,18 @@ even if its user-facing path cannot be converted and is shown as `Unavailable`.
 This status describes the recorded database value, not a live filesystem check.
 
 Column L was renamed from `Initial contract value` to
-`Original Project Contracts Costs`. Its value remains the sum of
+`Total Original Contract(s) Cost`. Its value remains the sum of
 recorded original costs across a project's linked contracts, repeated on each
 contract row with existing missing-cost and partial-total indicators. The
 individual contract's original cost is now in column T. The export-only match
 source was moved after `database index` and renamed from `Matched in` to
 `Search match location`; its header shares the purple trailing-column style.
 
+A `Column guide` sheet now explains the three trailing search columns, the
+project and contract cost/count fields, and the file-server-location fields.
+Search-specific criteria and totals remain on the `Search information` sheet.
+
 Affected runtime component: Project Search XLSX export. Verification: focused
-workbook assertions for the updated headings, column order and style, and both
-file-server-location states; all Project Search tests passed. No data migration
-or operational follow-on work is required.
+workbook assertions for the updated headings, column order and style, both
+file-server-location states, and the guide sheet; all Project Search tests
+passed. No data migration or operational follow-on work is required.
