@@ -133,92 +133,62 @@ def test_confirm_project_locations():
 
 @project_tools.route("/caan_search", methods=['GET', 'POST'])
 def caan_search():
-    """CAAN search endpoint.
+    """Run a fresh CAAN lookup for each shareable GET search URL."""
+    if flask.request.method == "POST":
+        form = CAANSearchForm()
+        if form.validate_on_submit():
+            if form.enter_caan.data and form.enter_caan.data.strip():
+                return flask.redirect(flask.url_for(
+                    'project_tools.caan_info', caan=form.enter_caan.data.strip()
+                ))
+            query = (form.search_query.data or "").strip()
+            if query:
+                return flask.redirect(flask.url_for(
+                    'project_tools.caan_search', search_query=query
+                ))
+        return flask.render_template('caan_search.html', form=form)
 
-    Provides a web form for users to locate CAAN records (by number, name, or description) and optionally
-    jump directly to the info view for a specific CAAN. The endpoint supports both initial form
-    rendering (GET) and search submission (POST).
+    form = CAANSearchForm(formdata=flask.request.args, meta={"csrf": False})
+    if not flask.request.args:
+        return flask.render_template('caan_search.html', form=form)
+    if (set(flask.request.args) - {"enter_caan", "search_query"}
+            or any(len(flask.request.args.getlist(key)) != 1 for key in flask.request.args)):
+        return flask.Response("Invalid CAAN search parameters.", status=400)
+    exact_caan = (form.enter_caan.data or "").strip()
+    raw_query = (form.search_query.data or "").strip()
+    if len(exact_caan) > 200 or len(raw_query) > 200 or not (exact_caan or raw_query):
+        return flask.Response("Provide a CAAN value or search query of at most 200 characters.", status=400)
+    if exact_caan:
+        return flask.redirect(flask.url_for('project_tools.caan_info', caan=exact_caan))
+    if flask.request.args.to_dict(flat=True) != {"search_query": raw_query}:
+        return flask.redirect(flask.url_for(
+            'project_tools.caan_search', search_query=raw_query
+        ))
 
-    Workflow:
-            1. User visits the page (GET) and is shown a form with two inputs:
-                    - ``enter_caan``: Exact CAAN value. If supplied on submit, user is redirected immediately to
-                        the corresponding ``/caan_info/<caan>`` page without running a broader search.
-                    - ``search_query``: Free‑text terms separated by whitespace. Each term is matched (case‑insensitive)
-                        against CAAN number, name, OR description. All terms must match at least one of the three
-                        fields (logical AND across terms; logical OR across fields per term).
-                2. If only ``search_query`` is supplied, a filtered result set is produced and rendered in
-                    ``caan_search_results.html``. Each CAAN in the results links to its info page.
-            3. If no matches are found, the form is re-rendered with an informational flash message.
-
-    Form Fields (``CAANSearchForm``):
-            enter_caan (StringField): Optional direct navigation shortcut.
-            search_query (StringField): Space‑delimited search terms; required unless ``enter_caan`` provided.
-            submit (SubmitField): Triggers search or redirect.
-
-    Returns:
-            - GET: Renders ``caan_search.html`` with empty form.
-            - POST (exact CAAN provided): Redirect to ``project_tools.caan_info``.
-            - POST (search terms): Renders ``caan_search_results.html`` with ``table_list`` (list of dicts:
-                ``caan``, ``name``, ``description``) and original ``query`` string.
-            - POST (no results): Re-renders ``caan_search.html`` with flash message.
-            - On exception: Redirect via ``web_exception_subroutine`` with an error flash.
-
-    Notes:
-            - A safety result limit could be added in future if the CAAN table grows large.
-            - For more advanced relevance ranking, consider migrating to full‑text search (e.g., PostgreSQL
-                ``to_tsvector``) if performance becomes an issue.
-    """
-    form = CAANSearchForm()
-    if form.validate_on_submit():
-        try:
-            # direct navigation if an exact CAAN provided
-            if form.enter_caan.data:
-                return flask.redirect(flask.url_for('project_tools.caan_info', caan=form.enter_caan.data.strip()))
-
-            if not form.search_query.data:
-                raise ValueError("Missing search query")
-
-            raw_query = form.search_query.data.strip()
-            terms = [t for t in raw_query.split() if t]
-
-            base_query = CAANModel.query
-            if terms:
-                term_filters = []
-                for term in terms:
-                    pattern = f"%{term}%"
-                    term_filters.append(
-                        or_(
-                            CAANModel.caan.ilike(pattern),
-                            CAANModel.name.ilike(pattern),
-                            CAANModel.description.ilike(pattern)
-                        )
-                    )
-                base_query = base_query.filter(and_(*term_filters))
-
-            results = (base_query
-                       .order_by(CAANModel.caan.asc())
-                       .all())
-
-            if not results:
-                flask.flash("No results found", "info")
-                return flask.render_template('caan_search.html', form=form)
-
-            table_list = [
-                {
-                    'caan': r.caan,
-                    'name': r.name or '',
-                    'description': r.description or ''
-                } for r in results
-            ]
-            return flask.render_template('caan_search_results.html', form=form, table_list=table_list, query=raw_query)
-        except Exception as e:
-            return utils.FlaskAppUtils.web_exception_subroutine(
-                flash_message="CAAN Search Failed",
-                thrown_exception=e,
-                app_obj=flask.current_app
-            )
-
-    return flask.render_template('caan_search.html', form=form)
+    try:
+        terms = raw_query.split()
+        base_query = CAANModel.query
+        for term in terms:
+            pattern = f"%{term}%"
+            base_query = base_query.filter(or_(
+                CAANModel.caan.ilike(pattern),
+                CAANModel.name.ilike(pattern),
+                CAANModel.description.ilike(pattern),
+            ))
+        results = base_query.order_by(CAANModel.caan.asc()).all()
+        table_list = [
+            {'caan': row.caan, 'name': row.name or '', 'description': row.description or ''}
+            for row in results
+        ]
+        return flask.render_template(
+            'caan_search_results.html', form=form, table_list=table_list, query=raw_query
+        )
+    except Exception as error:
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="CAAN Search Failed",
+            thrown_exception=error,
+            app_obj=flask.current_app,
+        )
 
 
 @project_tools.route("/project_search", methods=["GET"])
