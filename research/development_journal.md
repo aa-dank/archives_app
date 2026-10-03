@@ -1331,3 +1331,19 @@ Search workbook links, and search templates. Verification: focused route tests
 for fresh results, scoped URL round-trips, invalid parameters, legacy POST
 redirects, and workbook download, plus the existing Project Search tests.
 No migration or operational follow-on work is required.
+
+## Entry 045 - CAAN UUID and coordinate schema alignment
+**Date:** 2026-10-03
+
+Updated `CAANModel` to match the canonical database schema.
+`fmp_id_primary` now uses PostgreSQL UUID values, with nullable latitude
+and longitude fields and named coordinate-pair and range constraints.
+The pre-existing patch rollover to 1.19.2 was retained without another
+increment.
+
+Affected files: `archives_application/models.py` and
+`research/development_journal.md`; `pyproject.toml` and `uv.lock` retain
+the existing version rollover. Verification: model import and metadata
+assertions for the UUID mapping, nullable coordinate fields, and all
+three named check constraints. No operational follow-on work is
+required.

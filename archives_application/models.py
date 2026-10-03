@@ -4,8 +4,8 @@ from archives_application import db, login_manager
 from datetime import datetime
 from flask_login import UserMixin
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import func, CheckConstraint, UniqueConstraint, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Double, func, CheckConstraint, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 
 
 @login_manager.user_loader
@@ -284,11 +284,27 @@ class ProjectModel(db.Model):
 
 class CAANModel(db.Model):
     __tablename__ = "caans"
+    __table_args__ = (
+        CheckConstraint(
+            "(latitude IS NULL) = (longitude IS NULL)",
+            name="ck_caans_coordinates_both_or_neither",
+        ),
+        CheckConstraint(
+            "latitude BETWEEN -90 AND 90",
+            name="ck_caans_latitude_range",
+        ),
+        CheckConstraint(
+            "longitude BETWEEN -180 AND 180",
+            name="ck_caans_longitude_range",
+        ),
+    )
     id = db.Column(db.Integer, primary_key=True)
     caan = db.Column(db.String, nullable=False, unique=True)
     name = db.Column(db.String)
     description = db.Column(db.String)
-    fmp_id_primary = db.Column(db.Integer, unique=True)
+    fmp_id_primary = db.Column(PGUUID(as_uuid=True), unique=True)
+    latitude = db.Column(Double)
+    longitude = db.Column(Double)
     address_street = db.Column(db.String)
     address_city = db.Column(db.String)
     address_zip = db.Column(db.String)
