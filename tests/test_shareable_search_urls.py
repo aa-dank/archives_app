@@ -1,4 +1,5 @@
 from urllib.parse import parse_qs, urlsplit
+from datetime import datetime
 
 import flask
 import pandas as pd
@@ -7,6 +8,7 @@ import pytest
 from archives_application import create_app, db
 from archives_application.models import CAANModel
 from archives_application.archiver import routes as archive_routes
+from archives_application.archiver import archive_search as archive_search_service
 
 
 class TestConfig:
@@ -159,3 +161,26 @@ def test_get_forms_work_with_site_csrf_enabled(app, client):
     app.config["WTF_CSRF_ENABLED"] = True
     assert client.get("/caan_search?search_query=Windows").status_code == 200
     assert client.get("/archives_search").status_code == 200
+
+
+def test_archive_workbook_failure_preserves_page_results(app, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        archive_search_service, "build_archive_search_workbook",
+        lambda **kwargs: (pd.DataFrame(), pd.DataFrame(), pd.DataFrame()),
+    )
+    monkeypatch.setattr(
+        archive_search_service.utils.FlaskAppUtils, "create_temp_filepath",
+        lambda filename, **kwargs: str(tmp_path / filename),
+    )
+
+    def fail_excel_writer(*args, **kwargs):
+        raise OSError("Workbook unavailable")
+
+    monkeypatch.setattr(archive_search_service.pd, "ExcelWriter", fail_excel_writer)
+    search_data = {"warnings": []}
+    with app.app_context():
+        timestamp = archive_search_service.write_archive_search_workbook(
+            search_data, datetime(2026, 9, 29), app
+        )
+    assert timestamp is None
+    assert "Excel export was unavailable" in search_data["warnings"][0]

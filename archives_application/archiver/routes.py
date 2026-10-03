@@ -3033,6 +3033,47 @@ def _archive_search_url_parameters(form):
     return parameters
 
 
+def _download_archive_search_workbook(query_args):
+    """Serve a temporary workbook identified by its validated run timestamp."""
+    try:
+        utils.FlaskAppUtils.validate_unique_query_parameters(query_args, {"timestamp"})
+    except utils.RequestParameterValidationError:
+        return flask.Response("Invalid archive search workbook timestamp.", status=400)
+    timestamp = query_args["timestamp"]
+    if (len(timestamp) not in (14, 20)
+            or not timestamp.isascii()
+            or not timestamp.isdigit()):
+        return flask.Response("Invalid archive search workbook timestamp.", status=400)
+    try:
+        xlsx_filepath = utils.FlaskAppUtils.create_temp_filepath(
+            filename=f"{archive_search_service.WORKBOOK_FILENAME_PREFIX}{timestamp}.xlsx",
+            unique_filepath=False,
+        )
+        if os.path.exists(xlsx_filepath):
+            return flask.send_file(
+                xlsx_filepath,
+                as_attachment=True,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+        source_format = (
+            archive_search_service.WORKBOOK_TIMESTAMP_FORMAT
+            if len(timestamp) == 20 else '%Y%m%d%H%M%S'
+        )
+        readable_timestamp = datetime.strptime(timestamp, source_format).strftime(
+            '%Y-%m-%d %H:%M:%S'
+        )
+        raise FileNotFoundError(
+            f"Archive search results from {readable_timestamp} not found. "
+            f"Expected file at {xlsx_filepath}"
+        )
+    except Exception as error:
+        return utils.FlaskAppUtils.web_exception_subroutine(
+            flash_message="Error retrieving archive search results",
+            thrown_exception=error,
+            app_obj=flask.current_app,
+        )
+
+
 @archiver.route("/file_search", methods=['GET', 'POST'])
 @archiver.route("/archives_search", methods=['GET', 'POST'])
 def archives_search():
@@ -3047,45 +3088,11 @@ def archives_search():
         archiver_forms.ArchiveSearchForm(formdata=flask.request.args, meta={"csrf": False})
         if is_get else archiver_forms.ArchiveSearchForm()
     )
-    spreadsheet_filename_prefix = "archive_search_results_"
-    timestamp_format = r'%Y%m%d%H%M%S%f'
     html_file_limit = int(flask.current_app.config.get("ARCHIVE_SEARCH_HTML_LIMIT", 300))
     excel_file_limit = int(flask.current_app.config.get("ARCHIVE_SEARCH_EXCEL_LIMIT", 3000))
 
     if is_get and 'timestamp' in flask.request.args:
-        if (set(flask.request.args) != {'timestamp'}
-                or len(flask.request.args.getlist('timestamp')) != 1
-                or len(flask.request.args['timestamp']) not in (14, 20)
-                or not flask.request.args['timestamp'].isascii()
-                or not flask.request.args['timestamp'].isdigit()):
-            return flask.Response("Invalid archive search workbook timestamp.", status=400)
-        try:
-            timestamp = flask.request.args['timestamp']
-            xlsx_filepath = utils.FlaskAppUtils.create_temp_filepath(
-                filename=f'{spreadsheet_filename_prefix}{timestamp}.xlsx',
-                unique_filepath=False
-            )
-
-            if os.path.exists(xlsx_filepath):
-                return flask.send_file(
-                    xlsx_filepath,
-                    as_attachment=True,
-                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                )
-
-            source_format = timestamp_format if len(timestamp) == 20 else r'%Y%m%d%H%M%S'
-            readable_timestamp = datetime.strftime(
-                datetime.strptime(timestamp, source_format), r'%Y-%m-%d %H:%M:%S'
-            )
-            raise FileNotFoundError(
-                f"Archive search results from {readable_timestamp} not found. Expected file at {xlsx_filepath}"
-            )
-        except Exception as e:
-            return utils.FlaskAppUtils.web_exception_subroutine(
-                flash_message="Error retrieving archive search results",
-                thrown_exception=e,
-                app_obj=flask.current_app
-            )
+        return _download_archive_search_workbook(flask.request.args)
 
     if not is_get:
         if form.validate_on_submit():
@@ -3102,8 +3109,11 @@ def archives_search():
             "archive_search.html", form=form,
             html_file_limit=html_file_limit, excel_file_limit=excel_file_limit,
         )
-    if (set(flask.request.args) - ARCHIVE_SEARCH_URL_PARAMETERS
-            or any(len(flask.request.args.getlist(key)) != 1 for key in flask.request.args)):
+    try:
+        utils.FlaskAppUtils.validate_unique_query_parameters(
+            flask.request.args, ARCHIVE_SEARCH_URL_PARAMETERS
+        )
+    except utils.RequestParameterValidationError:
         return flask.Response("Invalid archive search parameters.", status=400)
     if (len(flask.request.args.get('search_term', '')) > 1000
             or len(flask.request.args.get('file_extension', '')) > 500
@@ -3122,56 +3132,21 @@ def archives_search():
         ))
 
     try:
-        generated_at = datetime.now()
-        timestamp = generated_at.strftime(timestamp_format)
         search_request = archive_search_service.ArchiveSearchRequest.from_form(form)
-        search_run = archive_search_service.ArchiveSearchRun(
+        page = archive_search_service.prepare_archive_search_page(
             search_request=search_request,
             app=flask.current_app,
-            file_limit=excel_file_limit,
+            html_file_limit=html_file_limit,
+            excel_file_limit=excel_file_limit,
             user_id=current_user.id if current_user.is_authenticated else None,
         )
-        search_data = search_run.execute()
-        results_df, locations_df, coverage_df = archive_search_service.build_archive_search_workbook(
-            search_data=search_data,
-            generated_at=generated_at
-        )
-        spreadsheet_filepath = utils.FlaskAppUtils.create_temp_filepath(
-            filename=f'{spreadsheet_filename_prefix}{timestamp}.xlsx'
-        )
-        export_available = True
-        try:
-            with pd.ExcelWriter(spreadsheet_filepath, engine='openpyxl') as writer:
-                results_df.to_excel(writer, index=False, sheet_name='Results')
-                locations_df.to_excel(writer, index=False, sheet_name='Locations')
-                coverage_df.to_excel(writer, index=False, sheet_name='Coverage')
-        except Exception:
-            export_available = False
-            timestamp = None
-            search_data["warnings"].append(
-                "Excel export was unavailable for this search run. The on-page results are still available."
-            )
-            flask.current_app.logger.error(
-                "Archive search workbook export failed",
-                exc_info=True,
-            )
-
-        html_result_count = min(len(search_data["results"]), html_file_limit)
-        html_search_data = dict(search_data)
-        html_search_data["results"] = search_data["results"][:html_file_limit]
-        html_search_data["html_limit_hit"] = len(search_data["results"]) > html_file_limit
-        html_search_data["export_limit_hit"] = search_data["limit_hit"]
-        html_search_data["html_file_limit"] = html_file_limit
-        html_search_data["excel_file_limit"] = excel_file_limit
-        html_search_data["html_result_count"] = html_result_count
-
         return flask.render_template(
             "archive_search_results.html",
             form=form,
-            search=html_search_data,
-            timestamp=timestamp,
-            export_available=export_available,
-            generated_at=generated_at,
+            search=page.search,
+            timestamp=page.timestamp,
+            export_available=page.export_available,
+            generated_at=page.generated_at,
             hide_sidebar=True
         )
     except Exception as e:

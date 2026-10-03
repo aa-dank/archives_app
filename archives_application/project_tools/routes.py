@@ -10,9 +10,9 @@ from archives_application import db, bcrypt
 from archives_application import utils
 from archives_application.models import UserModel, ProjectModel, CAANModel, WorkerTaskModel
 from archives_application.project_tools.forms import CAANSearchForm
+from archives_application.project_tools import caan_search as caan_search_service
 from archives_application.project_tools import project_info as project_info_service
 from archives_application.project_tools import project_search as project_search_service
-from sqlalchemy import or_, and_
 
 
 DEFAULT_TASK_TIMEOUT_SECONDS = 18000 # 5 hours
@@ -151,8 +151,11 @@ def caan_search():
     form = CAANSearchForm(formdata=flask.request.args, meta={"csrf": False})
     if not flask.request.args:
         return flask.render_template('caan_search.html', form=form)
-    if (set(flask.request.args) - {"enter_caan", "search_query"}
-            or any(len(flask.request.args.getlist(key)) != 1 for key in flask.request.args)):
+    try:
+        utils.FlaskAppUtils.validate_unique_query_parameters(
+            flask.request.args, {"enter_caan", "search_query"}
+        )
+    except utils.RequestParameterValidationError:
         return flask.Response("Invalid CAAN search parameters.", status=400)
     exact_caan = (form.enter_caan.data or "").strip()
     raw_query = (form.search_query.data or "").strip()
@@ -166,20 +169,7 @@ def caan_search():
         ))
 
     try:
-        terms = raw_query.split()
-        base_query = CAANModel.query
-        for term in terms:
-            pattern = f"%{term}%"
-            base_query = base_query.filter(or_(
-                CAANModel.caan.ilike(pattern),
-                CAANModel.name.ilike(pattern),
-                CAANModel.description.ilike(pattern),
-            ))
-        results = base_query.order_by(CAANModel.caan.asc()).all()
-        table_list = [
-            {'caan': row.caan, 'name': row.name or '', 'description': row.description or ''}
-            for row in results
-        ]
+        table_list = caan_search_service.search_caans(raw_query)
         return flask.render_template(
             'caan_search_results.html', form=form, table_list=table_list, query=raw_query
         )
