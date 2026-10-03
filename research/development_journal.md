@@ -1305,3 +1305,29 @@ Affected runtime component: Project Search XLSX export. Verification: focused
 workbook assertions for the updated headings, column order and style, both
 file-server-location states, and the guide sheet; all Project Search tests
 passed. No data migration or operational follow-on work is required.
+
+---
+
+## Entry 044 - Shareable CAAN and Archive Search URLs
+**Date:** 2026-09-29
+**Author:** OpenAI Codex
+
+CAAN Search and Archive Search now submit read-only searches with GET query
+parameters. Opening or refreshing a search URL runs the search against current
+application data; no result snapshot is stored in the URL. Valid legacy POST
+form submissions redirect to the equivalent GET URL. Exact CAAN navigation
+continues to redirect to the CAAN information page. Invalid or repeated GET
+parameters are rejected, and Archive Search retains its scope and extension
+validation. Location-scope URLs may contain user-entered file-server paths.
+
+Archive Search still records each executed search in its existing telemetry
+table and creates a workbook for that run. Workbook links remain temporary
+download links, separate from repeatable search URLs. New workbook names use
+microsecond timestamps to reduce collisions when a URL is opened repeatedly in
+quick succession; existing second-resolution workbook links remain readable.
+
+Affected runtime components: CAAN and Archive Search routes and HTML forms, Archive
+Search workbook links, and search templates. Verification: focused route tests
+for fresh results, scoped URL round-trips, invalid parameters, legacy POST
+redirects, and workbook download, plus the existing Project Search tests.
+No migration or operational follow-on work is required.

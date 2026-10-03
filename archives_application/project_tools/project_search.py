@@ -150,15 +150,12 @@ class ProjectSearchResult:
 
 def parse_request(query_args) -> ProjectSearchState:
     """Validate public query parameters without treating a query as a selector."""
-    supplied_keys = set(query_args.keys())
-    unknown_keys = supplied_keys - SEARCH_PARAMETERS
-    if unknown_keys:
-        raise ProjectSearchValidationError(
-            "Unknown query parameter(s): " + ", ".join(sorted(unknown_keys))
+    try:
+        utils.FlaskAppUtils.validate_unique_query_parameters(
+            query_args, SEARCH_PARAMETERS
         )
-    for name in supplied_keys:
-        if len(query_args.getlist(name)) > 1:
-            raise ProjectSearchValidationError(f"{name} must be supplied only once.")
+    except utils.RequestParameterValidationError as error:
+        raise ProjectSearchValidationError(str(error)) from error
 
     raw_query = query_args.get("query", "")
     query = raw_query.strip()
