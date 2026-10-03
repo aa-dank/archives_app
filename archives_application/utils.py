@@ -632,6 +632,21 @@ class FlaskAppUtils:
     """
 
     @staticmethod
+    def validate_unique_query_parameters(query_args, allowed_parameters):
+        """Reject unsupported or repeated URL parameters before interpreting them."""
+        supplied = set(query_args.keys())
+        unknown = supplied - set(allowed_parameters)
+        if unknown:
+            raise RequestParameterValidationError(
+                "Unknown query parameter(s): " + ", ".join(sorted(unknown))
+            )
+        for name in supplied:
+            if len(query_args.getlist(name)) > 1:
+                raise RequestParameterValidationError(
+                    f"{name} must be supplied only once."
+                )
+
+    @staticmethod
     def roles_required(roles: list[str]):
         """
         This function is a Flask decorator that restricts access to a route to only users with certain roles. The roles

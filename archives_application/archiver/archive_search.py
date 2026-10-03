@@ -1246,3 +1246,73 @@ def build_archive_search_workbook(search_data: dict, generated_at: datetime) -> 
         _sanitize_excel_dataframe(pd.DataFrame(location_rows)),
         _sanitize_excel_dataframe(pd.DataFrame(coverage_rows)),
     )
+
+
+WORKBOOK_FILENAME_PREFIX = "archive_search_results_"
+WORKBOOK_TIMESTAMP_FORMAT = "%Y%m%d%H%M%S%f"
+
+
+@dataclass(frozen=True)
+class ArchiveSearchPage:
+    """Results and download state prepared for one HTML search response."""
+
+    search: dict
+    generated_at: datetime
+    timestamp: str | None
+    export_available: bool
+
+
+def write_archive_search_workbook(search_data: dict, generated_at: datetime, app) -> str | None:
+    """Write this search run's workbook and return its download identifier."""
+    timestamp = generated_at.strftime(WORKBOOK_TIMESTAMP_FORMAT)
+    results_df, locations_df, coverage_df = build_archive_search_workbook(
+        search_data=search_data, generated_at=generated_at
+    )
+    spreadsheet_filepath = utils.FlaskAppUtils.create_temp_filepath(
+        filename=f"{WORKBOOK_FILENAME_PREFIX}{timestamp}.xlsx"
+    )
+    try:
+        with pd.ExcelWriter(spreadsheet_filepath, engine="openpyxl") as writer:
+            results_df.to_excel(writer, index=False, sheet_name="Results")
+            locations_df.to_excel(writer, index=False, sheet_name="Locations")
+            coverage_df.to_excel(writer, index=False, sheet_name="Coverage")
+    except Exception:
+        search_data["warnings"].append(
+            "Excel export was unavailable for this search run. The on-page results are still available."
+        )
+        app.logger.error("Archive search workbook export failed", exc_info=True)
+        return None
+    return timestamp
+
+
+def prepare_archive_search_page(
+    search_request: ArchiveSearchRequest,
+    app,
+    html_file_limit: int,
+    excel_file_limit: int,
+    user_id: int | None,
+) -> ArchiveSearchPage:
+    """Run a fresh search and prepare its bounded HTML view and workbook."""
+    generated_at = datetime.now()
+    search_run = ArchiveSearchRun(
+        search_request=search_request,
+        app=app,
+        file_limit=excel_file_limit,
+        user_id=user_id,
+    )
+    search_data = search_run.execute()
+    timestamp = write_archive_search_workbook(search_data, generated_at, app)
+
+    html_search_data = dict(search_data)
+    html_search_data["results"] = search_data["results"][:html_file_limit]
+    html_search_data["html_limit_hit"] = len(search_data["results"]) > html_file_limit
+    html_search_data["export_limit_hit"] = search_data["limit_hit"]
+    html_search_data["html_file_limit"] = html_file_limit
+    html_search_data["excel_file_limit"] = excel_file_limit
+    html_search_data["html_result_count"] = min(len(search_data["results"]), html_file_limit)
+    return ArchiveSearchPage(
+        search=html_search_data,
+        generated_at=generated_at,
+        timestamp=timestamp,
+        export_available=timestamp is not None,
+    )
