@@ -2,8 +2,7 @@
 {% extends "layout.html" %}
 {% block content %}
 <div class="content-section">
-	<form method="POST" action="" id="caan-search-form">
-		{{ form.hidden_tag() }}
+	<form method="GET" action="{{ url_for('project_tools.caan_search') }}" id="caan-search-form">
 		<fieldset class="form-group">
 			<legend class="border-bottom mb-4">CAAN Search</legend>
 			<p>Search for CAAN entries by number, name, or description. Entering an exact CAAN number will jump directly to its CAAN info page.</p>
@@ -33,7 +32,7 @@
 			</div>
 		</fieldset>
 		<div class="form-group">
-			{{ form.submit(class="btn btn-outline-info", id="caan-search-button") }}
+			<button class="btn btn-outline-info" id="caan-search-button" type="submit">Search</button>
 		</div>
 	</form>
 </div>
@@ -44,7 +43,7 @@
 			form.addEventListener('submit', function (e) {
 				var btn = document.getElementById('caan-search-button');
 				if (btn && !btn.disabled) {
-					btn.value = 'Searching...';
+					btn.textContent = 'Searching...';
 					setTimeout(function(){ btn.disabled = true; }, 10);
 				}
 			});
