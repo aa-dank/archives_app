@@ -1365,3 +1365,20 @@ Affected runtime components: Archive Search HTML route and its URL test.
 Verification: focused tests cover direct form-style GET execution, repeated
 searches, workbook download, and legacy POST behavior. No migration or
 operational follow-on is required.
+
+---
+
+## Entry 047 - Remove legacy project-location API
+**Date:** 2026-10-05
+**Author:** OpenAI Codex
+
+Removed the obsolete `project_location` handler and its GET/POST
+`/api/project_location` route because `GET /api/project_info` provides project
+and archive-location information. Requests to the removed URL now return 404.
+
+Affected runtime component: Project Tools API routes. Verification: Python
+compilation and minimal Flask blueprint registration confirmed the handler and
+route are absent, GET and POST requests return 404, and `project_info_api`
+remains registered. Existing clients of the removed endpoint must migrate to
+`/api/project_info`; request `include_user_path=true` when a display path is
+needed. No database migration or filesystem work is required.
