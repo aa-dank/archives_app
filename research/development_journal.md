@@ -1347,3 +1347,21 @@ the existing version rollover. Verification: model import and metadata
 assertions for the UUID mapping, nullable coordinate fields, and all
 three named check constraints. No operational follow-on work is
 required.
+
+---
+
+## Entry 046 - Remove Archive Search form redirect
+**Date:** 2026-10-05
+**Author:** OpenAI Codex
+
+Archive Search GET requests now execute immediately after validation, including
+URLs submitted by the HTML form with empty or default-valued fields. This
+removes the extra canonical-URL redirect and its network round trip. The
+resulting URL remains shareable and reopening it runs a fresh search. Legacy
+POST submissions still redirect to GET; temporary workbook downloads and
+search-run telemetry are unchanged.
+
+Affected runtime components: Archive Search HTML route and its URL test.
+Verification: focused tests cover direct form-style GET execution, repeated
+searches, workbook download, and legacy POST behavior. No migration or
+operational follow-on is required.
