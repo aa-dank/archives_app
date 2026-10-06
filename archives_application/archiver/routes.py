@@ -3125,12 +3125,6 @@ def archives_search():
             "archive_search.html", form=form,
             html_file_limit=html_file_limit, excel_file_limit=excel_file_limit,
         ), 400
-    canonical_parameters = _archive_search_url_parameters(form)
-    if flask.request.args.to_dict(flat=True) != canonical_parameters:
-        return flask.redirect(flask.url_for(
-            'archiver.archives_search', **canonical_parameters
-        ))
-
     try:
         search_request = archive_search_service.ArchiveSearchRequest.from_form(form)
         page = archive_search_service.prepare_archive_search_page(

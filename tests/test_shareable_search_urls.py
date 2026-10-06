@@ -128,8 +128,9 @@ def test_archive_url_reruns_search_with_location_scope(app, client, monkeypatch,
     form_submission = client.get("/archives_search", query_string={
         **parameters, "project_number": "", "caan": "",
     })
-    assert form_submission.status_code == 302
-    assert parse_qs(urlsplit(form_submission.location).query) == redirect_parameters
+    assert form_submission.status_code == 200
+    assert form_submission.data == b"fresh run 3"
+    assert len(calls) == 3
 
 
 @pytest.mark.parametrize("url", [
