@@ -33,6 +33,18 @@ h1, h2, h3, h4, h5, h6 {
   overflow-x: auto;
 }
 
+.caan-map {
+  margin-bottom: 1rem;
+}
+
+.caan-map iframe {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  height: 300px;
+  border: 0;
+}
+
 /* Inbox archiving workflow */
 .inbox-guide-links {
   display: flex;

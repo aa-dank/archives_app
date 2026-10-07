@@ -3,7 +3,9 @@
 import html
 import flask
 import json
+import math
 import re
+from urllib.parse import urlencode
 import pandas as pd
 from flask_login import current_user
 from archives_application import db, bcrypt
@@ -28,6 +30,32 @@ def project_directory_summary_link(location):
         f'<a href="{html.escape(summary_url, quote=True)}">'
         f'{location_display}</a>'
     )
+
+
+def caan_map_embed_url(caan, api_key):
+    """Return a Google Maps Embed URL for a CAAN with usable coordinates."""
+    if not isinstance(api_key, str) or not api_key.strip():
+        return None
+    if caan.latitude is None or caan.longitude is None:
+        return None
+
+    try:
+        latitude = float(caan.latitude)
+        longitude = float(caan.longitude)
+    except (TypeError, ValueError):
+        return None
+
+    if not (math.isfinite(latitude) and math.isfinite(longitude)):
+        return None
+    if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+        return None
+
+    return "https://www.google.com/maps/embed/v1/place?" + urlencode({
+        "key": api_key.strip(),
+        "q": f"{latitude},{longitude}",
+        "zoom": 18,
+        "maptype": "satellite",
+    })
 
 def admin_request_user():
     """Return the authenticated admin and supplied password, if applicable.
@@ -339,6 +367,10 @@ def caan_info(caan):
         
         # retrieve caan data
         caan = CAANModel.query.filter(CAANModel.caan == caan).first()
+        map_embed_url = caan_map_embed_url(
+            caan,
+            flask.current_app.config.get('GOOGLE_MAPS_EMBED_API_KEY'),
+        )
 
         return flask.render_template(
             'caan_info.html',
@@ -349,6 +381,7 @@ def caan_info(caan):
             caan_address_city=caan.address_city,
             caan_address_zip=caan.address_zip,
             caan_area=caan.area,
+            map_embed_url=map_embed_url,
             projects_table=projects_html
         )
     except Exception as e:

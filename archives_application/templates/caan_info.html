@@ -5,7 +5,10 @@
         <h2>CAAN {{ caan }}: {{ caan_name }}</h2>
         <div>
             <p>
-                <strong>Description:</strong>
+                This page lists CAAN details and associated projects with their respective root locations on the archives server.<br>
+            </p>
+            <p>
+                <strong>CAAN Description:</strong>
                 {% if caan_description %}
                     {{ caan_description }}
                 {% else %}
@@ -23,11 +26,17 @@
                 <strong>Area:</strong> {{ caan_area }}
             </p>
             {% endif %}
-            <p>
-                This page lists CAAN details and associated projects with their respective root locations on the archives server.<br>
-                Project locations are maintained from the archives file server.<br>
-                Copy and paste values from the location column into a web or file browser address bar.
-            </p>
+            {% if map_embed_url %}
+            <div class="caan-map">
+                <p><strong>Approximate CAAN center:</strong></p>
+                <iframe
+                    title="Map showing the approximate center of CAAN {{ caan }}"
+                    src="{{ map_embed_url }}"
+                    loading="lazy"
+                    referrerpolicy="strict-origin-when-cross-origin"
+                    allowfullscreen></iframe>
+            </div>
+            {% endif %}
             <p><strong>Drawings? legend:</strong></p>
             <ul>
                 <li><strong>Yes</strong>: The project record indicates drawings exist.</li>
@@ -39,6 +48,11 @@
         <div>
             {% if projects_table %}
                 <div class="table-responsive">
+                    <p><strong>Associated Projects:</strong><br>
+                    Copy and paste values from the location column into a web or file browser address bar to navigate to the project file server location.<br>
+                    Clicking the location takes you to a directory summary page for the project file server location.
+                    Project locations are maintained from the archives file server.
+                    </p>
                     {{ projects_table | safe }}
                 </div>
             {% else %}
