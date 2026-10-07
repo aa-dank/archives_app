@@ -22,13 +22,14 @@ DEFAULT_TASK_TIMEOUT_SECONDS = 18000 # 5 hours
 project_tools = flask.Blueprint('project_tools', __name__)
 
 
-def project_directory_summary_link(location):
-    """Build a safely escaped directory-summary link for a user-visible path."""
+def project_directory_summary_cell(location):
+    """Show a selectable user path above its directory-summary link."""
     summary_url = flask.url_for('archiver.dir_contents_summary', path=location)
-    location_display = html.escape(location).replace(' ', '&nbsp;')
+    location_display = html.escape(location)
     return (
-        f'<a href="{html.escape(summary_url, quote=True)}">'
-        f'{location_display}</a>'
+        f'<span class="caan-project-path">{location_display}</span>'
+        f'<a class="caan-summary-link" href="{html.escape(summary_url, quote=True)}">'
+        'View summary</a>'
     )
 
 
@@ -312,7 +313,7 @@ def caan_info(caan):
         if location == "Not recorded in database":
             return location
 
-        return project_directory_summary_link(location)
+        return project_directory_summary_cell(location)
 
     def project_info_link(project_id, project_number):
         """Build a canonical project-detail link without trusting table content."""
@@ -340,7 +341,19 @@ def caan_info(caan):
             project_location=row["file_server_location"],
             network_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION')
         )
-        html_col_widths = {"Number": "10%", "Name": "33%", "Drawings?": "12%", "Location": "45%"}
+        drawings_explanation = (
+            "Yes: The project record indicates drawings exist. "
+            "UNKNOWN: The project record has no drawings value. "
+            "No: The project record indicates drawings do not exist."
+        )
+        drawings_heading = (
+            '<span class="caan-drawings-help" tabindex="0" data-toggle="tooltip" '
+            'data-container="body" data-trigger="hover focus" '
+            f'aria-label="Drawings? {drawings_explanation}" '
+            f'title="{drawings_explanation}">'
+            'Drawings? <span aria-hidden="true">ⓘ</span></span>'
+        )
+        html_col_widths = {"Number": "10%", "Name": "33%", drawings_heading: "12%", "Location": "45%"}
 
         caan_projects_df["Drawings?"] = caan_projects_df["drawings"].apply(drawings_label)
         caan_projects_df["_drawings_rank"] = caan_projects_df["Drawings?"].map({"Yes": 0, "UNKNOWN": 1, "No": 2})
@@ -359,6 +372,7 @@ def caan_info(caan):
             projects_table_df[column] = projects_table_df[column].apply(
                 lambda value: html.escape(str(value))
             )
+        projects_table_df.rename(columns={"Drawings?": drawings_heading}, inplace=True)
         projects_html = utils.html_table_from_df(
             df=projects_table_df,
             html_columns=["Number", "Location"],

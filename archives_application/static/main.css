@@ -45,6 +45,22 @@ h1, h2, h3, h4, h5, h6 {
   border: 0;
 }
 
+.caan-project-path {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.caan-summary-link {
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.caan-drawings-help {
+  cursor: help;
+  text-decoration: underline dotted;
+}
+
 /* Inbox archiving workflow */
 .inbox-guide-links {
   display: flex;
