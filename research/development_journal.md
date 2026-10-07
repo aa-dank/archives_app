@@ -1405,8 +1405,11 @@ their text fallbacks. The Drawings? table heading now has a keyboard-focusable
 tooltip explaining Yes, UNKNOWN, and No in place of the separate legend. A
 Back to CAAN Search link appears above the CAAN heading.
 
-Affected runtime components: CAAN information route, template, and CSS. No
-database migration or filesystem behavior change is required. Verification:
+The application version advances to 1.19.4 for this CAAN page release.
+
+Affected runtime components: CAAN information route, template, CSS, and version
+display. No database migration or filesystem behavior change is required.
+Verification:
 map URL checks covered zero, missing, nonfinite, and out-of-range coordinates;
 template rendering covered map and no-map states and the search return link;
 focused HTML and URL checks confirmed path text and link escaping; a
