@@ -1382,3 +1382,24 @@ route are absent, GET and POST requests return 404, and `project_info_api`
 remains registered. Existing clients of the removed endpoint must migrate to
 `/api/project_info`; request `include_user_path=true` when a display path is
 needed. No database migration or filesystem work is required.
+
+---
+
+## Entry 048 - CAAN centroid map embeds
+**Date:** 2026-10-07
+**Author:** OpenAI Codex
+
+The CAAN information page now shows a Google Maps Embed iframe centered on a
+CAAN's recorded latitude and longitude when both coordinates are valid and a
+`GOOGLE_MAPS_EMBED_API_KEY` is configured. The map opens in satellite view at
+zoom 14 and is labeled as an approximate CAAN center. Pages without a usable
+coordinate pair or configured key omit the map. The key is read from the existing
+JSON app configuration; the operator should restrict it to the Maps Embed API
+and allowed website referrers.
+
+Affected runtime components: CAAN information route, template, and CSS. No
+database migration or filesystem behavior change is required. Verification:
+map URL checks covered zero, missing, nonfinite, and out-of-range coordinates;
+template rendering checks covered the map and no-map states. Follow-on:
+verify an embedded map in a deployed browser using the configured key and
+allowed website referrer.
