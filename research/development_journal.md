@@ -1385,7 +1385,7 @@ needed. No database migration or filesystem work is required.
 
 ---
 
-## Entry 048 - CAAN centroid map embeds
+## Entry 048 - CAAN information page improvements
 **Date:** 2026-10-07
 **Author:** OpenAI Codex
 
@@ -1397,9 +1397,19 @@ coordinate pair or configured key omit the map. The key is read from the existin
 JSON app configuration; the operator should restrict it to the Maps Embed API
 and allowed website referrers.
 
+The Location column now displays each recorded project root as selectable plain
+text, with a View summary link below it in the same cell. The link retains the
+directory-summary URL, and the path remains converted to the user-facing
+archive location. Missing paths and missing archive-mount configuration retain
+their text fallbacks. The Drawings? table heading now has a keyboard-focusable
+tooltip explaining Yes, UNKNOWN, and No in place of the separate legend. A
+Back to CAAN Search link appears above the CAAN heading.
+
 Affected runtime components: CAAN information route, template, and CSS. No
 database migration or filesystem behavior change is required. Verification:
 map URL checks covered zero, missing, nonfinite, and out-of-range coordinates;
-template rendering checks covered the map and no-map states. Follow-on:
-verify an embedded map in a deployed browser using the configured key and
-allowed website referrer.
+template rendering covered map and no-map states and the search return link;
+focused HTML and URL checks confirmed path text and link escaping; a
+SQLite-backed page request confirmed the Drawings? tooltip and values; and
+`git diff --check` passed. Follow-on: verify an embedded map in a deployed
+browser using the configured key and allowed website referrer.
