@@ -2,10 +2,14 @@
 {% extends "layout.html" %}
 {% block content %}
     <div class="content-section">
+        <a class="btn btn-outline-secondary btn-sm mb-3" href="{{ url_for('project_tools.caan_search') }}">Back to CAAN Search</a>
         <h2>CAAN {{ caan }}: {{ caan_name }}</h2>
         <div>
             <p>
-                <strong>Description:</strong>
+                This page lists CAAN details and associated projects with their respective root locations on the archives server.<br>
+            </p>
+            <p>
+                <strong>CAAN Description:</strong>
                 {% if caan_description %}
                     {{ caan_description }}
                 {% else %}
@@ -23,22 +27,26 @@
                 <strong>Area:</strong> {{ caan_area }}
             </p>
             {% endif %}
-            <p>
-                This page lists CAAN details and associated projects with their respective root locations on the archives server.<br>
-                Project locations are maintained from the archives file server.<br>
-                Copy and paste values from the location column into a web or file browser address bar.
-            </p>
-            <p><strong>Drawings? legend:</strong></p>
-            <ul>
-                <li><strong>Yes</strong>: The project record indicates drawings exist.</li>
-                <li><strong>UNKNOWN</strong>: The project record has no drawings value.</li>
-                <li><strong>No</strong>: The project record indicates drawings do not exist.</li>
-            </ul>
+            {% if map_embed_url %}
+            <div class="caan-map">
+                <p><strong>Approximate CAAN center:</strong></p>
+                <iframe
+                    title="Map showing the approximate center of CAAN {{ caan }}"
+                    src="{{ map_embed_url }}"
+                    loading="lazy"
+                    referrerpolicy="strict-origin-when-cross-origin"
+                    allowfullscreen></iframe>
+            </div>
+            {% endif %}
         </div>
 
         <div>
             {% if projects_table %}
                 <div class="table-responsive">
+                    <p><strong>Associated Projects:</strong><br>
+                    Copy and paste the location path into a web or file browser to navigate there. Choose "View summary" to see directory metadata.<br>
+                    Project locations are maintained from the archives file server.
+                    </p>
                     {{ projects_table | safe }}
                 </div>
             {% else %}
@@ -46,4 +54,11 @@
             {% endif %}
         </div>
     </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.jQuery && jQuery.fn.tooltip) {
+                jQuery('.caan-drawings-help').tooltip();
+            }
+        });
+    </script>
 {% endblock content %}
