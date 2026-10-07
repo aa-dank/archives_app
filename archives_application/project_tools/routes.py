@@ -3,7 +3,9 @@
 import html
 import flask
 import json
+import math
 import re
+from urllib.parse import urlencode
 import pandas as pd
 from flask_login import current_user
 from archives_application import db, bcrypt
@@ -20,14 +22,41 @@ DEFAULT_TASK_TIMEOUT_SECONDS = 18000 # 5 hours
 project_tools = flask.Blueprint('project_tools', __name__)
 
 
-def project_directory_summary_link(location):
-    """Build a safely escaped directory-summary link for a user-visible path."""
+def project_directory_summary_cell(location):
+    """Show a selectable user path above its directory-summary link."""
     summary_url = flask.url_for('archiver.dir_contents_summary', path=location)
-    location_display = html.escape(location).replace(' ', '&nbsp;')
+    location_display = html.escape(location)
     return (
-        f'<a href="{html.escape(summary_url, quote=True)}">'
-        f'{location_display}</a>'
+        f'<span class="caan-project-path">{location_display}</span>'
+        f'<a class="caan-summary-link" href="{html.escape(summary_url, quote=True)}">'
+        'View summary</a>'
     )
+
+
+def caan_map_embed_url(caan, api_key):
+    """Return a Google Maps Embed URL for a CAAN with usable coordinates."""
+    if not isinstance(api_key, str) or not api_key.strip():
+        return None
+    if caan.latitude is None or caan.longitude is None:
+        return None
+
+    try:
+        latitude = float(caan.latitude)
+        longitude = float(caan.longitude)
+    except (TypeError, ValueError):
+        return None
+
+    if not (math.isfinite(latitude) and math.isfinite(longitude)):
+        return None
+    if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+        return None
+
+    return "https://www.google.com/maps/embed/v1/place?" + urlencode({
+        "key": api_key.strip(),
+        "q": f"{latitude},{longitude}",
+        "zoom": 18,
+        "maptype": "satellite",
+    })
 
 def admin_request_user():
     """Return the authenticated admin and supplied password, if applicable.
@@ -284,7 +313,7 @@ def caan_info(caan):
         if location == "Not recorded in database":
             return location
 
-        return project_directory_summary_link(location)
+        return project_directory_summary_cell(location)
 
     def project_info_link(project_id, project_number):
         """Build a canonical project-detail link without trusting table content."""
@@ -312,7 +341,19 @@ def caan_info(caan):
             project_location=row["file_server_location"],
             network_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION')
         )
-        html_col_widths = {"Number": "10%", "Name": "33%", "Drawings?": "12%", "Location": "45%"}
+        drawings_explanation = (
+            "Yes: The project record indicates drawings exist. "
+            "UNKNOWN: The project record has no drawings value. "
+            "No: The project record indicates drawings do not exist."
+        )
+        drawings_heading = (
+            '<span class="caan-drawings-help" tabindex="0" data-toggle="tooltip" '
+            'data-container="body" data-trigger="hover focus" '
+            f'aria-label="Drawings? {drawings_explanation}" '
+            f'title="{drawings_explanation}">'
+            'Drawings? <span aria-hidden="true">ⓘ</span></span>'
+        )
+        html_col_widths = {"Number": "10%", "Name": "33%", drawings_heading: "12%", "Location": "45%"}
 
         caan_projects_df["Drawings?"] = caan_projects_df["drawings"].apply(drawings_label)
         caan_projects_df["_drawings_rank"] = caan_projects_df["Drawings?"].map({"Yes": 0, "UNKNOWN": 1, "No": 2})
@@ -331,6 +372,7 @@ def caan_info(caan):
             projects_table_df[column] = projects_table_df[column].apply(
                 lambda value: html.escape(str(value))
             )
+        projects_table_df.rename(columns={"Drawings?": drawings_heading}, inplace=True)
         projects_html = utils.html_table_from_df(
             df=projects_table_df,
             html_columns=["Number", "Location"],
@@ -339,6 +381,10 @@ def caan_info(caan):
         
         # retrieve caan data
         caan = CAANModel.query.filter(CAANModel.caan == caan).first()
+        map_embed_url = caan_map_embed_url(
+            caan,
+            flask.current_app.config.get('GOOGLE_MAPS_EMBED_API_KEY'),
+        )
 
         return flask.render_template(
             'caan_info.html',
@@ -349,6 +395,7 @@ def caan_info(caan):
             caan_address_city=caan.address_city,
             caan_address_zip=caan.address_zip,
             caan_area=caan.area,
+            map_embed_url=map_embed_url,
             projects_table=projects_html
         )
     except Exception as e:

@@ -1382,3 +1382,37 @@ route are absent, GET and POST requests return 404, and `project_info_api`
 remains registered. Existing clients of the removed endpoint must migrate to
 `/api/project_info`; request `include_user_path=true` when a display path is
 needed. No database migration or filesystem work is required.
+
+---
+
+## Entry 048 - CAAN information page improvements
+**Date:** 2026-10-07
+**Author:** OpenAI Codex
+
+The CAAN information page now shows a Google Maps Embed iframe centered on a
+CAAN's recorded latitude and longitude when both coordinates are valid and a
+`GOOGLE_MAPS_EMBED_API_KEY` is configured. The map opens in satellite view at
+zoom 14 and is labeled as an approximate CAAN center. Pages without a usable
+coordinate pair or configured key omit the map. The key is read from the existing
+JSON app configuration; the operator should restrict it to the Maps Embed API
+and allowed website referrers.
+
+The Location column now displays each recorded project root as selectable plain
+text, with a View summary link below it in the same cell. The link retains the
+directory-summary URL, and the path remains converted to the user-facing
+archive location. Missing paths and missing archive-mount configuration retain
+their text fallbacks. The Drawings? table heading now has a keyboard-focusable
+tooltip explaining Yes, UNKNOWN, and No in place of the separate legend. A
+Back to CAAN Search link appears above the CAAN heading.
+
+The application version advances to 1.19.4 for this CAAN page release.
+
+Affected runtime components: CAAN information route, template, CSS, and version
+display. No database migration or filesystem behavior change is required.
+Verification:
+map URL checks covered zero, missing, nonfinite, and out-of-range coordinates;
+template rendering covered map and no-map states and the search return link;
+focused HTML and URL checks confirmed path text and link escaping; a
+SQLite-backed page request confirmed the Drawings? tooltip and values; and
+`git diff --check` passed. Follow-on: verify an embedded map in a deployed
+browser using the configured key and allowed website referrer.
