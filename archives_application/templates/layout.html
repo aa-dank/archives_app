@@ -50,7 +50,7 @@
             {% if messages %}
               {% for category, message in messages %}
                 <div class="alert alert-{{ category }}">
-                  {{ message }}
+                  <span class="file-server-path">{{ message }}</span>
                 </div>
               {% endfor %}
             {% endif %}

@@ -111,7 +111,14 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .inbox-indexed-locations code {
-  white-space: normal;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.file-server-path,
+.directory-summary-names td:first-child,
+.file-location-results td {
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
