@@ -1416,3 +1416,35 @@ focused HTML and URL checks confirmed path text and link escaping; a
 SQLite-backed page request confirmed the Drawings? tooltip and values; and
 `git diff --check` passed. Follow-on: verify an embedded map in a deployed
 browser using the configured key and allowed website referrer.
+
+---
+
+## Entry 049 - Preserve spaces across archive path displays
+**Date:** 2026-10-08
+**Author:** OpenAI Codex
+
+The file-information Locations table now preserves repeated spaces in displayed
+paths with `white-space: pre-wrap`, while retaining wrapping for long paths.
+Removed template indentation inside path cells so it does not become visible
+whitespace. This fixes directory names such as `13xx   Original Ranch Buildings`
+appearing with only one space.
+
+Audited template path displays and API path serialization after the file-info
+spacing fix. Inbox duplicate paths, archived-file location results, batch-move
+source paths and item labels, directory-summary child/file names, and flashed
+messages now preserve repeated spaces and wrap long values. File-info,
+archive-search, inbox, and archived-location filenames also preserve spaces.
+Existing project, CAAN, archive-search path displays and the directory-summary
+current path already preserved spaces.
+
+Affected runtime components: shared CSS and the corresponding HTML templates.
+API path construction and JSON serialization retain repeated internal spaces;
+no API, database, or filesystem changes were needed.
+Verification: all Jinja templates parsed; a rendered file-info location-cell
+check confirmed three spaces, HTML escaping, and no added indentation;
+actual user-path conversion and
+file-info location serialization retained triple spaces through a Flask JSON
+round trip; rendered location-table escaping and existing table-helper space
+preservation checks passed; `git diff --check` passed.
+Follow-on: visually confirm these displays and long-value wrapping in a deployed
+browser.

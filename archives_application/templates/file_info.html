@@ -2,7 +2,7 @@
 {% block content %}
     <div class="content-section file-info-section">
         <h2>File Information</h2>
-        <h4>{{ file_info.display_filename }}</h4>
+        <h4 class="file-server-path">{{ file_info.display_filename }}</h4>
         {% if file_info.multiple_filenames %}
             <p class="text-muted">This identical file is indexed under more than one filename.</p>
         {% endif %}
@@ -33,9 +33,7 @@
                     <tbody>
                         {% for location in file_info.locations %}
                             <tr>
-                                <td class="file-info-path">
-                                    {{ location.user_path }}
-                                </td>
+                                <td class="file-info-path">{{ location.user_path }}</td>
                                 <td>
                                     {% if location.existence_confirmed %}
                                         {{ location.existence_confirmed.strftime("%Y-%m-%d %H:%M:%S") }}
@@ -194,6 +192,7 @@
             margin-bottom: 0.5rem;
         }
         .file-info-path {
+            white-space: pre-wrap;
             overflow-wrap: anywhere;
         }
         .file-info-extracted-text {

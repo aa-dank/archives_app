@@ -13,7 +13,7 @@
 
                 <section class="inbox-current-file mb-4" aria-labelledby="inbox-current-file-heading">
                     <h2 class="h5" id="inbox-current-file-heading">File to archive</h2>
-                    <p class="inbox-file-name"><code>{{ item_filename }}</code></p>
+                    <p class="inbox-file-name"><code class="file-server-path">{{ item_filename }}</code></p>
                     {% if indexed_archive_locations %}
                     <section class="alert alert-warning inbox-indexed-locations" aria-labelledby="indexed-archive-locations-heading">
                         <h5 id="indexed-archive-locations-heading">Already indexed in the archives</h5>
