@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This is a Flask application for managing a Windows/SMB-backed archives file server. The app factory is `archives_application.create_app()`, with entry points in `run.py` and `worker.py`. Core modules live under `archives_application/`: blueprints are split into `main`, `archiver`, `project_tools`, `users`, and `timekeeper`; shared models and helpers are in `models.py` and `utils.py`. HTML templates are in `archives_application/templates/`, CSS and generated static files are in `archives_application/static/`, and design/research notes are in `research/`. Configuration is JSON-driven through `test_config*.json` and `app_config.py`.
+This is a Flask application for managing a Windows/SMB-backed archives file server. The app factory is `archives_application.create_app()`, with entry points in `run.py` and `worker.py`. Core modules live under `archives_application/`: blueprints are split into `main`, `archiver`, `project_tools`, `users`, and `timekeeper`; shared models and helpers are in `models.py` and `utils.py`. HTML templates are in `archives_application/templates/`, CSS and generated static files are in `archives_application/static/`, and system references, specifications, and historical research are in `reference/`. Configuration is JSON-driven through `test_config*.json` and `app_config.py`.
 
 ## Build, Test, and Development Commands
 
@@ -23,7 +23,7 @@ Recent commits use short, direct subjects such as `fixed issue related to illega
 
 ## Development Journal
 
-`research/development_journal.md` is a required, version-controlled record of changes that affect deployed behavior, operations, data, security, or externally relied-on contracts; it must remain present. Before beginning a journal-worthy change, or modifying an area with recent journal history, review the most recent relevant entry.
+`reference/development_journal.md` is a required, version-controlled record of changes that affect deployed behavior, operations, data, security, or externally relied-on contracts; it must remain present. Before beginning a journal-worthy change, or modifying an area with recent journal history, review the most recent relevant entry.
 
 Append a concise entry in the same change set when a change:
 
