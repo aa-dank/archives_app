@@ -77,8 +77,8 @@ Reference material:
 
 - `C:\Users\adankert\projects\business_services_db\reference\ARCHIVES_DB_AND_FILE_SERVER_REFERENCE.md`
 - `C:\Users\adankert\projects\business_services_db\reference\business_services_db_schema_20260916.md`
-- `research/project_info_feature_spec.md`
-- `research/user_search_feature_spec.md`
+- `reference/project_info_feature_spec.md`
+- `reference/user_search_feature_spec.md`
 
 ## Goals
 

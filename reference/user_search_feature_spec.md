@@ -12,7 +12,7 @@ This specification is implementation-oriented but does not prescribe final code 
 
 Primary research memo:
 
-- `/home/projects/archives_app/research/user_search_feats_research.md`
+- `/home/projects/archives_app/reference/user_search_feats_research.md`
 
 Reference and implementation context:
 

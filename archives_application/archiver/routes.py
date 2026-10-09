@@ -286,14 +286,25 @@ def exclude_filenames(f_path, excluded_names=EXCLUDED_FILENAMES):
     filename = utils.FileServerUtils.split_path(f_path)[-1].lower()
     return any([filename == name.lower() for name in excluded_names])
 
-def cleanse_locations_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+def generate_filepaths_dataframe(df: pd.DataFrame, user_archives_location: str | None = None) -> pd.DataFrame:
     """
-    Sub-function used in the archived_or_not endpoint functions
+    Build location paths for archived-file results, optionally using the user mount.
     """
     # New df is only the columns we want, 'file_server_directories' and 'filename'
-    df = df[['file_server_directories', 'filename']]
+    df = df[['file_server_directories', 'filename']].copy()
     # New row  'filepath' which joins the directories and the filename
-    df['filepath'] = df.apply(lambda row: (row['file_server_directories'] + "/" + row['filename']), axis=1)
+    if user_archives_location:
+        df['filepath'] = df.apply(
+            lambda row: utils.FileServerUtils.user_path_from_db_data(
+                file_server_directories=row['file_server_directories'] or '',
+                user_archives_location=user_archives_location,
+                user_location_networked=user_archives_location.startswith('\\\\'),
+                filename=row['filename'],
+            ),
+            axis=1,
+        )
+    else:
+        df['filepath'] = df.apply(lambda row: (row['file_server_directories'] + "/" + row['filename']), axis=1)
     return df[['filepath']]
 
 
@@ -2167,7 +2178,7 @@ def archived_or_not_api():
         if locations_df.empty:
             return flask.Response("No locations found in database for file.", status=404)
         
-        locations_df = cleanse_locations_dataframe(locations_df)
+        locations_df = generate_filepaths_dataframe(locations_df)
         return flask.jsonify(locations_df['filepath'].to_list())
 
     except Exception as e:
@@ -2218,7 +2229,10 @@ def archived_or_not():
             if locations_df.empty:
                 raise Exception(f"No locations found for indexed file, {filename}, though a matching file was found.")
             
-            locations_df = cleanse_locations_dataframe(locations_df)
+            locations_df = generate_filepaths_dataframe(
+                locations_df,
+                user_archives_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION'),
+            )
             location_table_html = locations_df.to_html()
             return flask.render_template('locations_tables.html', title='Archived Locations',
                                          file_locations_list=[{"filename":filename, "locations_html":location_table_html}])

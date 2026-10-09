@@ -1448,3 +1448,24 @@ round trip; rendered location-table escaping and existing table-helper space
 preservation checks passed; `git diff --check` passed.
 Follow-on: visually confirm these displays and long-value wrapping in a deployed
 browser.
+
+---
+
+## Entry 050 - Full user-facing paths in archived-file location results
+**Date:** 2026-10-08
+**Author:** OpenAI Codex
+
+The Archived or Not HTML results table (`locations_tables.html`) now builds full
+Windows paths from each indexed directory and filename using
+`FileServerUtils.user_path_from_db_data` and `USER_ARCHIVES_LOCATION`.
+The shared location-dataframe helper accepts an optional user mount; its default
+retains relative paths for the existing API. If no user mount is configured,
+the HTML table also retains relative paths.
+
+Affected runtime components: Archived or Not HTML route and its dataframe helper.
+Verification: drive and UNC mount conversion, archive-root files, repeated
+spaces, HTML escaping, unchanged relative API output, and input-dataframe
+immutability checks passed; the results template loaded successfully and
+`git diff --check` passed. No database or filesystem changes are required.
+Follow-on: confirm the configured user mount opens the displayed paths from a
+Windows client.
