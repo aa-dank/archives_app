@@ -1469,3 +1469,26 @@ immutability checks passed; the results template loaded successfully and
 `git diff --check` passed. No database or filesystem changes are required.
 Follow-on: confirm the configured user mount opens the displayed paths from a
 Windows client.
+
+---
+
+## Entry 051 - Ariolimax favicon
+**Date:** 2026-10-12
+**Author:** OpenAI Codex
+
+Added a transparent SVG favicon based on the supplied Ariolimax archivist
+reference: a smiling, curled banana slug holding a folder with a building
+emblem. Gold shading uses the app's amber, with teal outlines, a steel blue
+folder, and light neutral paper and highlights. The asset consists of native
+vector paths and gradients. The shared page layout advertises the scalable
+icon, giving pages a consistent browser-tab identity.
+
+Affected runtime components: shared HTML layout and static favicon asset.
+Verification: parsed the SVG and its local references, rendered the shared
+template, and confirmed an isolated Flask static request returns the exact
+asset with the SVG content type. Rendered with librsvg and visually checked
+previews at 16, 24, 32, 64, and 96 pixels on light and dark backgrounds, plus
+the full-size artwork; confirmed transparent corners and no embedded raster
+content. `git diff --check` passed.
+No migration or operational follow-on work is required; browsers may need a
+refresh to replace a cached favicon after deployment.
