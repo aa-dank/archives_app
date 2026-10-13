@@ -72,12 +72,19 @@ def test_archive_url_reruns_search_with_location_scope(app, client, monkeypatch,
     calls = []
     workbook_ids = []
 
-    class FakeRun:
+    class FakeRun(archive_search_service.ArchiveSearchRun):
         def __init__(self, search_request, **kwargs):
+            super().__init__(search_request=search_request, **kwargs)
             calls.append(search_request)
 
-        def execute(self):
+        def _execute_search(self):
             return {"results": [], "limit_hit": False, "warnings": []}
+
+        def _create_incomplete_record(self):
+            pass
+
+        def _persist_final_state(self):
+            pass
 
     original_render = flask.render_template
 

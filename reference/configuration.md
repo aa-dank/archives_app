@@ -78,6 +78,79 @@ Add these using the same nested `VALUE` format when overriding defaults:
 | `FILE_INFO_TEXT_WINDOW_CHARS` | `10000` | Extracted-text window on the HTML file-information page. |
 | `FILE_INFO_DATE_MENTION_LIMIT` | `50` | Maximum date-mention rows on the file-information page. |
 
+### Archive Search cache and workbook retention
+
+Browser result caching is opt-in. Missing settings receive the defaults below
+at app creation; no existing deployment JSON or credentials need to change for
+fresh searches. The API remains fresh. These are the only new settings; the
+queue's `REDIS_*` settings and connection are unchanged.
+
+| Setting | Default | Validation and behavior |
+| --- | --- | --- |
+| `ARCHIVE_SEARCH_CACHE_ENABLED` | `false` | Real JSON boolean. Enables browser result and workbook-reference caching. Strings such as `"False"` are invalid. |
+| `ARCHIVE_SEARCH_CACHE_TTL_SECONDS` | `432000` | Positive JSON integer seconds. Five days from successful search completion. Each generation receives an explicit lifetime; a server-side operation can override it. Reads never renew it. |
+| `ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS` | `518400` | Positive JSON integer seconds. Separate six-day cleanup threshold, also used when result caching is disabled. Must exceed the effective result lifetime, including overrides. |
+| `CACHE_URL` | Unset | Required when enabled. `redis://` or `rediss://` endpoint with optional authentication/TLS client options. Use database zero (omitted or `/0`); namespace keys provide environment/dataset separation. No fallback to `REDIS_URL`. |
+| `CACHE_NAMESPACE` | Unset | Required nonempty string when enabled. Choose a distinct prefix for each environment and dataset, for example `archives:development:dataset1`. Change it after dataset restoration/replacement or to invalidate all results. |
+| `CACHE_TIMEOUT_SECONDS` | `0.5` | Positive finite JSON number. Applies to connection and read timeouts, with no connection retries. URL query options cannot override these limits or byte decoding. |
+| `CACHE_MAX_ENTRY_BYTES` | `5242880` | Positive JSON integer bytes. Five MiB per encoded entry; checked before writes and before decoding reads. Oversized results stay complete and run fresh. |
+
+Use the existing configuration editor's `VALUE`/`DESCRIPTION` format. Merge
+these optional entries into the selected JSON file; replace the illustrative
+endpoint/prefix before explicitly enabling the feature:
+
+```json
+{
+  "ARCHIVE_SEARCH_CACHE_ENABLED": {
+    "VALUE": false,
+    "DESCRIPTION": "Opt in to Archive Search browser result and workbook-reference caching; API searches remain fresh."
+  },
+  "ARCHIVE_SEARCH_CACHE_TTL_SECONDS": {
+    "VALUE": 432000,
+    "DESCRIPTION": "Positive integer result lifetime in seconds from search completion; reads do not renew it."
+  },
+  "ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS": {
+    "VALUE": 518400,
+    "DESCRIPTION": "Positive integer Archive Search workbook cleanup age in seconds, greater than every effective result lifetime."
+  },
+  "CACHE_URL": {
+    "VALUE": "redis://localhost:6379/0",
+    "DESCRIPTION": "Explicit independent cache endpoint; supports redis/rediss authentication and TLS options."
+  },
+  "CACHE_NAMESPACE": {
+    "VALUE": "archives:development:dataset1",
+    "DESCRIPTION": "Distinct environment/dataset key prefix; change to invalidate application cache entries."
+  },
+  "CACHE_TIMEOUT_SECONDS": {
+    "VALUE": 0.5,
+    "DESCRIPTION": "Positive finite cache connection/read timeout in seconds; no retries."
+  },
+  "CACHE_MAX_ENTRY_BYTES": {
+    "VALUE": 5242880,
+    "DESCRIPTION": "Positive integer maximum encoded cache-entry size in bytes; oversized results stay usable."
+  }
+}
+```
+
+Booleans, strings, fractions, zero, and negatives are invalid for integer
+lifetimes and size. Invalid configuration logs the setting/policy error and
+disables caching while preserving fresh searches. Invalid workbook retention
+defers deletion of Archive Search workbooks; other cleanup continues. An invalid
+result/retention pairing disables caching but a valid workbook retention still
+applies to cleanup. A longer result lifetime requires a longer retention value.
+The storage adapter has no global TTL; every write receives its entry's
+remaining lifetime. There is no `CACHE_TTL_SECONDS` setting.
+
+Startup logs record the effective enabled/disabled state. One separate cache
+connection pool is registered in `app.extensions["cache"]` per application
+instance/process, without requiring an RQ worker or a startup connection.
+The initial adapter supports a standalone Redis-compatible service; cluster
+topologies require a future adapter change. Cache entries are shared across
+browser viewers, so successful refresh updates subsequent matching searches.
+
+For rollout sizing, storage layout, backend verification, and operational
+invalidation, see [Archive Search caching in Operations](operations.md#archive-search-caching).
+
 Configuration changes take effect when processes reload their settings. Restart the web app and workers after editing JSON directly. Older environment files may contain `FILEMAKER_*` settings; the current app does not perform FileMaker synchronization itself.
 
 See [Operations](operations.md) for process and storage requirements, or return to the [reference index](README.md).

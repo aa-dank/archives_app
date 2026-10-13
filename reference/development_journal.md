@@ -1469,3 +1469,69 @@ immutability checks passed; the results template loaded successfully and
 `git diff --check` passed. No database or filesystem changes are required.
 Follow-on: confirm the configured user mount opens the displayed paths from a
 Windows client.
+
+---
+
+## Entry 051 - Opt-in Archive Search caching and workbook retention
+**Date:** 2026-10-13
+**Author:** OpenAI Codex
+
+Implemented the Archive Search cache specification on `feature/search-cache`.
+When explicitly enabled, matching `/archives_search` and `/file_search` requests
+share successful bounded results for five days from search completion. This
+changes the always-fresh browser URL contract in entries 044 and 046. The API
+remains fresh. Each validated request retains its own current-viewer telemetry,
+including hits. Result pages show source generation time in UTC, cached-result
+expiration, a freshness explanation, and a Run fresh search link preserving
+active options. `refresh=1` bypasses lookup; failed refresh preserves the prior
+entry for normal requests. Result HTML uses `Cache-Control: private, no-store`.
+
+Added an independent byte-cache adapter and application extension using ordinary
+Redis GET/SET-with-expiration/DEL, namespaced keys, bounded connection/read
+timeouts, and no retries. Search-specific identity and strict versioned JSON
+include effective per-generation policy and data-target settings without
+credentials or viewer state. Malformed, expired, incompatible, oversized, or
+unavailable cache data falls back to fresh searches. Writes use only remaining
+lifetime. Structured cache logs record outcomes and resource information without
+raw queries, paths, credentials, or payloads. No database schema/migration or RQ
+connection/eviction changes are required.
+
+Workbooks are separate generation references, reused while present and
+regenerated from cached data after file/reference loss. Export warnings are
+response-local. Files publish through same-directory staging and atomic rename
+with collision-safe timestamp download IDs; Coverage retains the source UTC
+generation time. Temporary-file maintenance now retains valid legacy/current
+Archive Search workbooks for six days from completed publication/last write;
+ordinary temporary files retain their existing three-day policy. Downloads and
+hits never renew file age or result expiry. Invalid workbook retention defers
+workbook deletion while other cleanup continues.
+
+Configuration: caching defaults to disabled; result TTL is 432000 seconds,
+workbook retention 518400 seconds, cache timeout 0.5 seconds, and entry cap
+5242880 bytes. Enabling requires explicit `CACHE_URL` and `CACHE_NAMESPACE`.
+Integer lifetimes must be positive and retention must exceed the effective TTL,
+including server-side overrides. Invalid settings disable caching with a
+configuration error while fresh searches remain usable. All seven new settings,
+types, defaults, JSON VALUE/DESCRIPTION examples, restart requirements, namespace
+invalidation, and rollout sizing are documented in Configuration/Operations.
+Existing deployment/test JSON and credentials were not modified.
+
+Affected runtime components: application initialization/configuration, cache
+adapter, Archive Search execution/page service, browser route/template, workbook
+publication, and queued temporary-file cleanup. Verification: 105 regression
+tests passed; the opt-in backend test skips in the default suite and passed
+separately against a disposable local Redis service for TTLs and atomic
+publication. Coverage includes query-stage/Excel skipping on warm hits, aliases,
+API isolation, refresh, malformed/outage/oversize fallback, JSON/datetime/space
+preservation, current-user telemetry, expiration, workbook loss and concurrent
+publication, and separate maintenance policies. Python compilation, all 35
+Jinja template parses, and `git diff --check` passed. Existing pandas dtype
+deprecation warnings remain.
+
+Follow-on: verify the contract against the selected deployment endpoint and
+TLS/auth/network settings, shared workbook-volume access, and resource/eviction
+capacity before explicitly enabling. Operations records the traffic/cache/disk
+planning allowances and warm-hit rollout checks. Capture fresh/cached notices
+and the fresh-search control in a deployed browser for the implementation PR,
+then refine limits from actual cache logs and disk use. Namespace changes are
+the initial whole-cache invalidation mechanism; do not flush a shared RQ service.
