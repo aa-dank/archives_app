@@ -7,8 +7,17 @@
             Showing {{ search.html_result_count }} file-level result{% if search.html_result_count != 1 %}s{% endif %}.
         </p>
 
+        <p class="archive-search-freshness">
+            Results generated at {{ generated_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}.
+            {% if cache_hit %}
+                Cached results; expires at {{ expires_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}.
+            {% endif %}
+            Cached results can omit recent archive or index changes.
+        </p>
+
         <div class="archive-results-actions">
             <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('archiver.archives_search') }}">Back to search</a>
+            <a class="btn btn-outline-primary btn-sm" href="{{ fresh_search_url }}">Run fresh search</a>
             {% if export_available %}
                 <a class="btn btn-outline-info btn-sm" href="{{ url_for('archiver.archives_search', timestamp=timestamp) }}">Download Excel workbook</a>
             {% else %}

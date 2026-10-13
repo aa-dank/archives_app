@@ -3024,6 +3024,7 @@ def archives_search_api():
 ARCHIVE_SEARCH_URL_PARAMETERS = frozenset({
     "search_term", "search_mode", "scope_type", "location_scope",
     "project_number", "caan", "file_extension",
+    "refresh",
 })
 
 
@@ -3054,15 +3055,10 @@ def _download_archive_search_workbook(query_args):
     except utils.RequestParameterValidationError:
         return flask.Response("Invalid archive search workbook timestamp.", status=400)
     timestamp = query_args["timestamp"]
-    if (len(timestamp) not in (14, 20)
-            or not timestamp.isascii()
-            or not timestamp.isdigit()):
+    if not archive_search_service.valid_workbook_timestamp(timestamp):
         return flask.Response("Invalid archive search workbook timestamp.", status=400)
     try:
-        xlsx_filepath = utils.FlaskAppUtils.create_temp_filepath(
-            filename=f"{archive_search_service.WORKBOOK_FILENAME_PREFIX}{timestamp}.xlsx",
-            unique_filepath=False,
-        )
+        xlsx_filepath = archive_search_service.archive_search_workbook_path(timestamp)
         if os.path.exists(xlsx_filepath):
             return flask.send_file(
                 xlsx_filepath,
@@ -3129,6 +3125,8 @@ def archives_search():
         )
     except utils.RequestParameterValidationError:
         return flask.Response("Invalid archive search parameters.", status=400)
+    if 'refresh' in flask.request.args and flask.request.args['refresh'] != '1':
+        return flask.Response("Invalid archive search refresh value.", status=400)
     if (len(flask.request.args.get('search_term', '')) > 1000
             or len(flask.request.args.get('file_extension', '')) > 500
             or any(len(flask.request.args.get(key, '')) > 2048
@@ -3147,16 +3145,24 @@ def archives_search():
             html_file_limit=html_file_limit,
             excel_file_limit=excel_file_limit,
             user_id=current_user.id if current_user.is_authenticated else None,
+            refresh=flask.request.args.get('refresh') == '1',
         )
-        return flask.render_template(
+        response = flask.make_response(flask.render_template(
             "archive_search_results.html",
             form=form,
             search=page.search,
             timestamp=page.timestamp,
             export_available=page.export_available,
             generated_at=page.generated_at,
+            expires_at=page.expires_at,
+            cache_hit=page.cache_hit,
+            fresh_search_url=flask.url_for(
+                'archiver.archives_search', **_archive_search_url_parameters(form), refresh='1'
+            ),
             hide_sidebar=True
-        )
+        ))
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
     except Exception as e:
         return utils.FlaskAppUtils.web_exception_subroutine(
             flash_message="Error processing archive search",

@@ -8,7 +8,7 @@ The existing regression suite requires the import-time configuration files descr
 uv run pytest
 ```
 
-The tests cover project metadata search and workbook exports, shareable CAAN/archive search URLs, and missing-path server-change responses. They use SQLite fixtures, temporary directories, and mocked search execution; they do not validate PostgreSQL full-text search, live SMB operations, OAuth, or an end-to-end worker deployment. Tests still need the configuration/OAuth files because importing the app loads its default configuration first.
+The tests cover project metadata search and workbook exports, shareable CAAN/archive search URLs, Archive Search caching/refresh/retention, and missing-path server-change responses. They use SQLite fixtures, temporary directories, mocked search queries, and a deterministic test-only cache with a controllable UTC clock; they do not validate PostgreSQL full-text search, live SMB operations, OAuth, or an end-to-end worker deployment. An opt-in real Redis contract check is documented in [Operations](operations.md#archive-search-caching). Tests still need the configuration/OAuth files because importing the app loads its default configuration first.
 
 For changes affecting those services, verify the relevant workflow in a configured development environment as well. Check formatting before submitting:
 

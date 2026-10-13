@@ -3,8 +3,64 @@
 import flask
 import json
 import logging
+import math
 import pathlib
 import tomllib
+
+from archives_application.cache import RedisCache, positive_integer
+
+
+CACHE_DEFAULTS = {
+    "ARCHIVE_SEARCH_CACHE_ENABLED": False,
+    "ARCHIVE_SEARCH_CACHE_TTL_SECONDS": 432000,
+    "ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS": 518400,
+    "CACHE_URL": None,
+    "CACHE_NAMESPACE": None,
+    "CACHE_TIMEOUT_SECONDS": 0.5,
+    "CACHE_MAX_ENTRY_BYTES": 5242880,
+}
+
+
+def configure_cache(app):
+    """Register one independent pool per app/process without connecting at startup."""
+    for name, default in CACHE_DEFAULTS.items():
+        app.config.setdefault(name, default)
+    app.extensions["cache"] = None
+    enabled = app.config["ARCHIVE_SEARCH_CACHE_ENABLED"]
+    try:
+        if type(enabled) is not bool:
+            raise ValueError("ARCHIVE_SEARCH_CACHE_ENABLED must be a boolean")
+        retention = positive_integer(
+            app.config["ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS"],
+            "ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS",
+        )
+        ttl = positive_integer(app.config["ARCHIVE_SEARCH_CACHE_TTL_SECONDS"],
+                               "ARCHIVE_SEARCH_CACHE_TTL_SECONDS")
+        if retention <= ttl:
+            raise ValueError("ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS must exceed the search lifetime")
+        if not enabled:
+            app.logger.info("archive_search_cache state=disabled")
+            return
+        namespace = app.config["CACHE_NAMESPACE"]
+        if not isinstance(namespace, str) or not namespace.strip():
+            raise ValueError("CACHE_NAMESPACE must be a nonempty environment/dataset prefix")
+        url = app.config["CACHE_URL"]
+        if not isinstance(url, str) or not url.strip():
+            raise ValueError("CACHE_URL is required when caching is enabled")
+        positive_integer(app.config["CACHE_MAX_ENTRY_BYTES"], "CACHE_MAX_ENTRY_BYTES")
+        timeout = app.config["CACHE_TIMEOUT_SECONDS"]
+        if (type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0):
+            raise ValueError("CACHE_TIMEOUT_SECONDS must be a positive finite number")
+        try:
+            app.extensions["cache"] = RedisCache.from_url(url, timeout)
+        except (ValueError, TypeError, OverflowError):
+            # URL parsing errors can contain credentials. Report only the setting.
+            raise ValueError("CACHE_URL is invalid for the Redis-compatible adapter") from None
+    except (ValueError, TypeError, OverflowError) as error:
+        app.logger.error("archive_search_cache state=disabled reason=invalid_configuration detail=%s", error)
+        return
+    app.logger.info("archive_search_cache state=enabled namespace=%s ttl_seconds=%s",
+                    namespace, ttl)
 
 def retrieve_app_version():
     """

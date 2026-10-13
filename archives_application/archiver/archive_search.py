@@ -1,8 +1,11 @@
+import copy
 import html
+import os
 import re
+import tempfile
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import PureWindowsPath
 
 import pandas as pd
@@ -15,6 +18,13 @@ from archives_application.models import (
     CAANModel,
     ProjectCaanModel,
     ProjectModel,
+)
+from archives_application.archiver.archive_search_cache import (
+    ArchiveSearchCache,
+    ArchiveSearchCachePolicy,
+    browser_cache_policy,
+    fresh_generation,
+    utc_now,
 )
 
 
@@ -907,6 +917,7 @@ class ArchiveSearchRun:
         file_limit: int,
         user_id: int | None = None,
         request_source: str = "web",
+        cache_policy: ArchiveSearchCachePolicy | None = None,
     ):
         if request_source not in API_REQUEST_SOURCES:
             raise ValueError(
@@ -917,6 +928,9 @@ class ArchiveSearchRun:
         self.file_limit = file_limit
         self.user_id = user_id
         self.request_source = request_source
+        self.cache_policy = cache_policy or ArchiveSearchCachePolicy()
+        self.cache: ArchiveSearchCache | None = None
+        self.generation = None
 
         self.status = self.STATUS_INCOMPLETE
         self.record_id: int | None = None
@@ -934,7 +948,19 @@ class ArchiveSearchRun:
         started_at = time.perf_counter()
 
         try:
-            self.search_data = self._execute_search()
+            if self.cache_policy.enabled:
+                try:
+                    self.cache = ArchiveSearchCache(self.cache_policy, self.request, self.app, self.file_limit)
+                except (ValueError, TypeError, KeyError):
+                    self.app.logger.error("archive_search_cache state=disabled reason=invalid_identity_or_policy")
+            hit = self.cache.lookup() if self.cache is not None else None
+            if hit is not None:
+                self.search_data, self.generation = hit
+            else:
+                self.search_data = self._execute_search()
+                self.generation = fresh_generation()
+                if self.cache is not None:
+                    self.generation = self.cache.publish(self.search_data, self.generation)
         except Exception:
             self.duration_ms = self._elapsed_ms(started_at)
             self.status = self.STATUS_FAILED
@@ -1225,7 +1251,10 @@ def build_archive_search_workbook(search_data: dict, generated_at: datetime) -> 
         {"field": "caan_found", "value": scope.caan_found},
         {"field": "linked_project_rows", "value": scope.linked_project_count},
         {"field": "roots_with_no_indexed_files", "value": "\n".join(scope.roots_with_no_indexed_files)},
-        {"field": "generated_at", "value": generated_at.strftime("%Y-%m-%d %H:%M:%S")},
+        {"field": "generated_at (UTC)", "value": (
+            generated_at.replace(tzinfo=timezone.utc) if generated_at.tzinfo is None
+            else generated_at.astimezone(timezone.utc)
+        ).strftime("%Y-%m-%d %H:%M:%S UTC")},
         {"field": "limit_hit", "value": search_data["limit_hit"]},
     ]
     coverage_rows.extend(
@@ -1252,6 +1281,31 @@ WORKBOOK_FILENAME_PREFIX = "archive_search_results_"
 WORKBOOK_TIMESTAMP_FORMAT = "%Y%m%d%H%M%S%f"
 
 
+def valid_workbook_timestamp(timestamp) -> bool:
+    """Support both legacy seconds and current microseconds, including calendar validity."""
+    if (not isinstance(timestamp, str) or len(timestamp) not in (14, 20)
+            or not timestamp.isascii() or not timestamp.isdigit()):
+        return False
+    try:
+        datetime.strptime(timestamp, WORKBOOK_TIMESTAMP_FORMAT if len(timestamp) == 20 else "%Y%m%d%H%M%S")
+    except ValueError:
+        return False
+    return True
+
+
+def is_archive_search_workbook(filename: str) -> bool:
+    return (filename.startswith(WORKBOOK_FILENAME_PREFIX) and filename.endswith(".xlsx")
+            and valid_workbook_timestamp(filename[len(WORKBOOK_FILENAME_PREFIX):-5]))
+
+
+def archive_search_workbook_path(timestamp: str) -> str:
+    if not valid_workbook_timestamp(timestamp):
+        raise ValueError("Invalid Archive Search workbook timestamp")
+    return utils.FlaskAppUtils.create_temp_filepath(
+        filename=f"{WORKBOOK_FILENAME_PREFIX}{timestamp}.xlsx", unique_filepath=False,
+    )
+
+
 @dataclass(frozen=True)
 class ArchiveSearchPage:
     """Results and download state prepared for one HTML search response."""
@@ -1260,28 +1314,58 @@ class ArchiveSearchPage:
     generated_at: datetime
     timestamp: str | None
     export_available: bool
+    expires_at: datetime | None
+    cache_hit: bool
 
 
 def write_archive_search_workbook(search_data: dict, generated_at: datetime, app) -> str | None:
-    """Write this search run's workbook and return its download identifier."""
-    timestamp = generated_at.strftime(WORKBOOK_TIMESTAMP_FORMAT)
-    results_df, locations_df, coverage_df = build_archive_search_workbook(
-        search_data=search_data, generated_at=generated_at
-    )
-    spreadsheet_filepath = utils.FlaskAppUtils.create_temp_filepath(
-        filename=f"{WORKBOOK_FILENAME_PREFIX}{timestamp}.xlsx"
-    )
+    """Publish a complete workbook atomically under a collision-safe download ID."""
+    staging_path = reservation_path = None
     try:
-        with pd.ExcelWriter(spreadsheet_filepath, engine="openpyxl") as writer:
+        results_df, locations_df, coverage_df = build_archive_search_workbook(
+            search_data=search_data, generated_at=generated_at
+        )
+        publication_time = utc_now()
+        while True:
+            timestamp = publication_time.strftime(WORKBOOK_TIMESTAMP_FORMAT)
+            spreadsheet_filepath = archive_search_workbook_path(timestamp)
+            candidate = spreadsheet_filepath + ".reserve"
+            try:
+                with open(candidate, "xb"):
+                    pass
+            except FileExistsError:
+                publication_time += timedelta(microseconds=1)
+                continue
+            if os.path.exists(spreadsheet_filepath):
+                os.unlink(candidate)
+                publication_time += timedelta(microseconds=1)
+                continue
+            reservation_path = candidate
+            break
+        with tempfile.NamedTemporaryFile(dir=os.path.dirname(spreadsheet_filepath),
+                                         prefix=".archive-search-", suffix=".xlsx", delete=False) as staging:
+            staging_path = staging.name
+        with pd.ExcelWriter(staging_path, engine="openpyxl") as writer:
             results_df.to_excel(writer, index=False, sheet_name="Results")
             locations_df.to_excel(writer, index=False, sheet_name="Locations")
             coverage_df.to_excel(writer, index=False, sheet_name="Coverage")
+        os.utime(staging_path, None)
+        os.replace(staging_path, spreadsheet_filepath)
     except Exception:
         search_data["warnings"].append(
             "Excel export was unavailable for this search run. The on-page results are still available."
         )
         app.logger.error("Archive search workbook export failed", exc_info=True)
         return None
+    finally:
+        for path in (staging_path, reservation_path):
+            if path is not None:
+                try:
+                    os.unlink(path)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    app.logger.error("Unable to remove an Archive Search workbook staging file")
     return timestamp
 
 
@@ -1291,20 +1375,44 @@ def prepare_archive_search_page(
     html_file_limit: int,
     excel_file_limit: int,
     user_id: int | None,
+    refresh: bool = False,
+    cache_ttl_seconds: int | None = None,
 ) -> ArchiveSearchPage:
-    """Run a fresh search and prepare its bounded HTML view and workbook."""
-    generated_at = datetime.now()
+    """Resolve browser cache policy and prepare an independent HTML/export view."""
     search_run = ArchiveSearchRun(
         search_request=search_request,
         app=app,
         file_limit=excel_file_limit,
         user_id=user_id,
+        cache_policy=browser_cache_policy(app, refresh=refresh, ttl_seconds=cache_ttl_seconds),
     )
     search_data = search_run.execute()
-    timestamp = write_archive_search_workbook(search_data, generated_at, app)
+    generation = search_run.generation
+    cache = search_run.cache
+    # Export failures are response-local, never part of a stored generation.
+    html_search_data = copy.deepcopy(search_data)
+    timestamp = None
+    if cache is not None and generation.expires_at is not None:
+        timestamp = cache.workbook_timestamp(generation)
+        if timestamp is not None:
+            try:
+                if not os.path.isfile(archive_search_workbook_path(timestamp)):
+                    timestamp = None
+            except OSError:
+                cache.log("workbook_storage_unavailable", generation)
+                timestamp = None
+    if timestamp is not None:
+        cache.log("workbook_reuse", generation)
+    else:
+        started = time.perf_counter()
+        timestamp = write_archive_search_workbook(html_search_data, generation.generated_at, app)
+        if cache is not None:
+            cache.log("workbook_regeneration" if timestamp else "workbook_failure", generation,
+                      elapsed_ms=round((time.perf_counter() - started) * 1000, 3))
+            if timestamp is not None and generation.expires_at is not None:
+                cache.publish_workbook(generation, timestamp)
 
-    html_search_data = dict(search_data)
-    html_search_data["results"] = search_data["results"][:html_file_limit]
+    html_search_data["results"] = html_search_data["results"][:html_file_limit]
     html_search_data["html_limit_hit"] = len(search_data["results"]) > html_file_limit
     html_search_data["export_limit_hit"] = search_data["limit_hit"]
     html_search_data["html_file_limit"] = html_file_limit
@@ -1312,7 +1420,9 @@ def prepare_archive_search_page(
     html_search_data["html_result_count"] = min(len(search_data["results"]), html_file_limit)
     return ArchiveSearchPage(
         search=html_search_data,
-        generated_at=generated_at,
+        generated_at=generation.generated_at,
         timestamp=timestamp,
         export_available=timestamp is not None,
+        expires_at=generation.expires_at,
+        cache_hit=generation.cache_hit,
     )
