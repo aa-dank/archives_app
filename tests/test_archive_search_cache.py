@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from flask import Flask
 from openpyxl import load_workbook
 from sqlalchemy import text
 
@@ -23,10 +24,14 @@ from archives_application.models import ArchiveSearchRunModel, UserModel
 
 
 class Clock:
+    """Control source-generation and backend-expiration instants independently of wall time."""
+
     def __init__(self):
+        """Start every test at a fixed aware UTC instant."""
         self.now = datetime(2026, 10, 13, 12, tzinfo=timezone.utc)
 
     def advance(self, seconds):
+        """Advance simulated time without sleeping or renewing stored entries."""
         self.now += timedelta(seconds=seconds)
 
 
@@ -34,6 +39,7 @@ class MemoryCache:
     """Deterministic test backend; never used by the application."""
 
     def __init__(self, clock):
+        """Keep disposable entries, operation histories, and outage state for one test."""
         self.clock = clock
         self.entries = {}
         self.writes = []
@@ -41,6 +47,7 @@ class MemoryCache:
         self.unavailable = False
 
     def get(self, key):
+        """Record lookup and return only entries still valid on the simulated clock."""
         self.reads.append(key)
         if self.unavailable:
             raise CacheUnavailable()
@@ -50,6 +57,7 @@ class MemoryCache:
         return entry[0]
 
     def set(self, key, value, ttl_seconds):
+        """Publish one complete entry with its supplied TTL and record the write."""
         positive_integer(ttl_seconds, "ttl_seconds")
         if self.unavailable:
             raise CacheUnavailable()
@@ -57,10 +65,12 @@ class MemoryCache:
         self.writes.append((key, value, ttl_seconds))
 
     def delete(self, key):
+        """Remove a disposable key without affecting other entries."""
         self.entries.pop(key, None)
 
 
 class TestConfig:
+    """Enable cache policy with SQLite telemetry and a lazy, unused Redis connection."""
     SECRET_KEY = "archive-search-cache-test"
     SQLALCHEMY_DATABASE_URI = "sqlite://"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -68,7 +78,6 @@ class TestConfig:
     REDIS_URL = "redis://localhost:6379/0"
     WTF_CSRF_ENABLED = False
     ARCHIVE_SEARCH_CACHE_ENABLED = True
-    CACHE_URL = "redis://localhost:6379/0"
     CACHE_NAMESPACE = "test:archives"
     ARCHIVES_LOCATION = "/mnt/archives/Records"
     USER_ARCHIVES_LOCATION = r"N:\PPDO\Records"
@@ -76,6 +85,7 @@ class TestConfig:
 
 @pytest.fixture()
 def environment(monkeypatch, tmp_path):
+    """Provide real SQLite telemetry, deterministic cache/time, and counted source-query boundaries."""
     clock = Clock()
     backend = MemoryCache(clock)
     monkeypatch.setattr(caching, "utc_now", lambda: clock.now)
@@ -88,6 +98,7 @@ def environment(monkeypatch, tmp_path):
     calls = Counter()
 
     def resolve(request, app):
+        """Retain complete scope facts and warnings while recording source resolution work."""
         calls["scope"] += 1
         return search.ScopeResolution(
             request.requested_scope_type, request.requested_scope_value or "",
@@ -98,7 +109,9 @@ def environment(monkeypatch, tmp_path):
         )
 
     def counted(name, value):
+        """Build a query stub whose independent results reveal whether warm hits repeat work."""
         def call(*args, **kwargs):
+            """Count one source-query stage and return a fresh copy of its fixture data."""
             calls[name] += 1
             return copy.deepcopy(value)
         return call
@@ -151,16 +164,19 @@ def environment(monkeypatch, tmp_path):
 
 
 def page(env, **options):
+    """Prepare a browser page with standard limits and optional server-side cache controls."""
     return search.prepare_archive_search_page(
         search.ArchiveSearchRequest.from_values("plans"), env.app, 300, 3000, None, **options,
     )
 
 
 def result_entry(env):
+    """Find the sole data generation without confusing its separate workbook reference."""
     return next((key, value) for key, value in env.backend.entries.items() if ":result:" in key)
 
 
 def test_warm_page_skips_all_search_stages_and_excel(environment, monkeypatch):
+    """Verify full source reuse and export reuse while every request still persists new telemetry."""
     env = environment
     with env.app.app_context():
         first = page(env)
@@ -180,6 +196,7 @@ def test_warm_page_skips_all_search_stages_and_excel(environment, monkeypatch):
 
 
 def test_alias_refresh_and_result_headers(environment):
+    """Verify shared alias identity, preserved active refresh options, escaping, and HTTP freshness policy."""
     env = environment
     params = {"search_term": ' "plans"   café! ', "search_mode": "filepath", "scope_type": "location",
               "location_scope": r"N:\PPDO\Records\13xx   Ranch", "file_extension": ".PDF, DOCX",
@@ -215,12 +232,14 @@ def test_alias_refresh_and_result_headers(environment):
     "timestamp=20261013120000&timestamp=20261013120000",
 ])
 def test_invalid_requests_never_reach_cache(environment, query):
+    """Reject ambiguous browser/download controls before source execution or cache access."""
     env = environment
     assert env.client.get("/archives_search?" + query).status_code == 400
     assert not env.calls and not env.backend.reads and not env.backend.writes
 
 
 def test_api_is_fresh_and_metadata_stays_out_of_response(environment, monkeypatch):
+    """Keep authenticated API requests fresh and preserve their transport contract despite a warm browser cache."""
     env = environment
     monkeypatch.setattr(routes, "_archive_search_api_user", lambda payload: SimpleNamespace(id=1))
     assert env.client.get("/archives_search?search_term=plans").status_code == 200
@@ -236,6 +255,7 @@ def test_api_is_fresh_and_metadata_stays_out_of_response(environment, monkeypatc
 
 
 def test_current_viewer_telemetry_and_telemetry_outage_on_hit(environment, monkeypatch):
+    """Attribute each hit to its current viewer and keep telemetry outages nonfatal."""
     env = environment
     with env.app.app_context():
         request = search.ArchiveSearchRequest.from_values("plans")
@@ -248,13 +268,18 @@ def test_current_viewer_telemetry_and_telemetry_outage_on_hit(environment, monke
         rows = db.session.query(ArchiveSearchRunModel).order_by(ArchiveSearchRunModel.id).all()
         assert [row.user_id for row in rows] == [1, 2]
         assert first.record_id != second.record_id
-        monkeypatch.setattr(db.session, "flush", lambda: (_ for _ in ()).throw(RuntimeError("telemetry outage")))
+        def fail_telemetry_flush():
+            """Simulate persistence failure without changing the cached search source."""
+            raise RuntimeError("telemetry outage")
+
+        monkeypatch.setattr(db.session, "flush", fail_telemetry_flush)
         third = search.ArchiveSearchRun(request, env.app, 3000, cache_policy=policy)
         assert third.execute() == second.search_data
         assert third.record_id is None and third.generation.cache_hit
 
 
 def test_expiration_and_missing_workbook_do_not_renew_results(environment):
+    """Regenerate only a missing workbook, preserve source expiry, and retain downloads after result expiration."""
     env = environment
     with env.app.app_context():
         first = page(env)
@@ -278,13 +303,17 @@ def test_expiration_and_missing_workbook_do_not_renew_results(environment):
 
 
 def test_failed_refresh_preserves_old_entry(environment, monkeypatch):
+    """Propagate a refresh failure while leaving the prior generation usable for normal requests."""
     env = environment
     with env.app.app_context():
         first = page(env)
         previous = copy.deepcopy(env.backend.entries)
         original = search.ArchiveSearchRun._execute_search
-        monkeypatch.setattr(search.ArchiveSearchRun, "_execute_search",
-                            lambda self: (_ for _ in ()).throw(RuntimeError("search failed")))
+        def fail_search(self):
+            """Fail explicit refresh before it can publish a replacement generation."""
+            raise RuntimeError("search failed")
+
+        monkeypatch.setattr(search.ArchiveSearchRun, "_execute_search", fail_search)
         with pytest.raises(RuntimeError, match="search failed"):
             page(env, refresh=True)
         assert env.backend.entries == previous
@@ -295,6 +324,7 @@ def test_failed_refresh_preserves_old_entry(environment, monkeypatch):
 
 
 def test_empty_and_warning_results_cache(environment, monkeypatch):
+    """Reuse successful empty/warning results with the same fixed lifetime as populated results."""
     env = environment
     monkeypatch.setattr(search, "_execute_content_search", lambda *args: [])
     monkeypatch.setattr(search, "_execute_filename_search", lambda *args: [])
@@ -307,6 +337,7 @@ def test_empty_and_warning_results_cache(environment, monkeypatch):
 
 
 def test_location_root_resolving_to_all_archives_caches(environment, monkeypatch):
+    """Accept the existing Records-root scope conversion without losing cached coverage warnings."""
     env = environment
     monkeypatch.setattr(search, "resolve_scope", lambda request, app: search.ScopeResolution(
         "all", request.requested_scope_value, warnings=["Location resolves to Records root"],
@@ -322,6 +353,7 @@ def test_location_root_resolving_to_all_archives_caches(environment, monkeypatch
 
 @pytest.mark.parametrize("damage", ["missing", "json", "kind", "timestamp", "extra"])
 def test_invalid_workbook_references_regenerate_only_artifact(environment, damage):
+    """Treat missing or malformed artifact references as export misses without repeating source queries."""
     env = environment
     with env.app.app_context():
         first = page(env)
@@ -345,9 +377,11 @@ def test_invalid_workbook_references_regenerate_only_artifact(environment, damag
 
 @pytest.mark.parametrize("operation", ["result", "reference"])
 def test_failed_writes_preserve_current_fresh_workbook(environment, monkeypatch, operation):
+    """Keep current exports usable when result or artifact-reference storage fails."""
     env = environment
     original_set = env.backend.set
     def fail_selected(key, *args):
+        """Fail only the selected storage layer to isolate data-publication and artifact-publication fallback."""
         if (":result:" if operation == "result" else ":workbook:") in key:
             raise CacheUnavailable()
         original_set(key, *args)
@@ -363,15 +397,18 @@ def test_failed_writes_preserve_current_fresh_workbook(environment, monkeypatch,
 
 
 def test_search_duration_excludes_workbook_and_render_time(environment, monkeypatch):
+    """Ensure telemetry measures source/cache work while expensive export work stays outside the timer."""
     env = environment
     counter = [0.0]
     monkeypatch.setattr(search.time, "perf_counter", lambda: counter[0])
     original_search = search.ArchiveSearchRun._execute_search
     original_writer = search.write_archive_search_workbook
     def timed_search(self):
+        """Charge simulated monotonic time to the source phase measured by telemetry."""
         counter[0] += 2
         return original_search(self)
     def timed_workbook(*args):
+        """Charge a larger export cost that must not appear in search duration."""
         counter[0] += 10
         return original_writer(*args)
     monkeypatch.setattr(search.ArchiveSearchRun, "_execute_search", timed_search)
@@ -384,6 +421,7 @@ def test_search_duration_excludes_workbook_and_render_time(environment, monkeypa
 
 
 def test_cache_logs_omit_query_paths_and_credentials(environment, caplog):
+    """Expose cache outcomes and resource counters without recording sensitive source inputs."""
     env = environment
     caplog.set_level("INFO")
     with env.app.app_context():
@@ -398,6 +436,7 @@ def test_cache_logs_omit_query_paths_and_credentials(environment, caplog):
 
 
 def test_html_limit_slices_independently(environment):
+    """Apply per-response display limits after cache lookup without truncating cached export data."""
     env = environment
     with env.app.app_context():
         first = page(env)
@@ -413,6 +452,7 @@ def test_html_limit_slices_independently(environment):
     ("ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS", 432000), ("CACHE_MAX_ENTRY_BYTES", 10),
 ])
 def test_disabled_invalid_and_oversized_fall_back(environment, setting, value):
+    """Keep complete fresh results available when policy or entry size prevents caching."""
     env = environment
     env.app.config[setting] = value
     with env.app.app_context():
@@ -422,6 +462,7 @@ def test_disabled_invalid_and_oversized_fall_back(environment, setting, value):
 
 
 def test_unavailable_cache_is_bounded_and_fresh(environment):
+    """Pay one failed backend read per request and preserve fresh source/export behavior."""
     env = environment
     env.backend.unavailable = True
     with env.app.app_context():
@@ -432,32 +473,96 @@ def test_unavailable_cache_is_bounded_and_fresh(environment):
     assert not env.backend.writes
 
 
+def test_entry_expiring_during_decode_runs_fresh(environment, monkeypatch):
+    """A pre-decode freshness check cannot authorize a hit after decoding crosses expiry."""
+    env = environment
+    with env.app.app_context():
+        first = page(env)
+        env.clock.advance(432000 - 1)
+        original_decode = caching.decode_search_data
+        delayed_once = False
+
+        def decode_across_expiration(*args):
+            """Let the first hit's full reconstruction cross its source expiration."""
+            nonlocal delayed_once
+            result = original_decode(*args)
+            if not delayed_once:
+                env.clock.advance(2)
+                delayed_once = True
+            return result
+
+        monkeypatch.setattr(caching, "decode_search_data", decode_across_expiration)
+        fresh = page(env)
+        assert not fresh.cache_hit
+        assert fresh.generated_at > first.expires_at
+        assert fresh.export_available and env.calls["scope"] == 2
+
+
+def test_unrepresentable_expiration_preserves_fresh_search(environment):
+    """A positive lifetime beyond datetime range fails only cache publication."""
+    env = environment
+    oversized_lifetime = 10 ** 30
+    env.app.config["ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS"] = oversized_lifetime + 1
+    with env.app.app_context():
+        fresh = page(env, cache_ttl_seconds=oversized_lifetime)
+        assert not fresh.cache_hit and fresh.expires_at is None
+        assert fresh.export_available and len(fresh.search["results"]) == 2
+        assert not env.backend.entries
+        assert db.session.query(ArchiveSearchRunModel).one().status == "successful"
+
+
+@pytest.mark.parametrize("operation", ["get", "set", "delete"])
+def test_backend_connection_option_overflow_is_cache_unavailable(operation):
+    """Overflow in lazy socket/configuration handling stays inside the cache failure boundary."""
+    def overflow(*args, **kwargs):
+        """Simulate an OS timeout conversion outside the representable numeric range."""
+        raise OverflowError("socket timeout cannot be represented")
+
+    adapter = RedisCache(SimpleNamespace(get=overflow, set=overflow, delete=overflow))
+    with pytest.raises(CacheUnavailable):
+        if operation == "set":
+            adapter.set("key", b"value", 1)
+        else:
+            getattr(adapter, operation)("key")
+
+
 @pytest.mark.parametrize("damage", ["json", "version", "identity", "expired", "future", "type", "bounds", "size", "timestamp", "incomplete"])
 def test_invalid_payload_is_a_miss(environment, damage):
+    """Reject incompatible, stale, malformed, and oversized wire data before using it as source results."""
     env = environment
     with env.app.app_context():
         page(env)
         key, (payload, expiry) = result_entry(env)
         wire = json.loads(payload)
-        if damage == "version": wire["schema_version"] = 999
-        if damage == "identity": wire["identity_digest"] = "wrong"
+        if damage == "version":
+            wire["schema_version"] = 999
+        if damage == "identity":
+            wire["identity_digest"] = "wrong"
         if damage == "expired":
             wire["generated_at"] = (env.clock.now - timedelta(days=6)).isoformat()
             wire["expires_at"] = (env.clock.now - timedelta(days=1)).isoformat()
-        if damage == "future": wire["generated_at"] = (env.clock.now + timedelta(days=1)).isoformat()
-        if damage == "type": wire["search_data"]["coverage"]["files_in_scope"] = True
-        if damage == "bounds": wire["search_data"]["results"] *= 1501
-        if damage == "timestamp": wire["generated_at"] = "2026-10-13T12:00:00"
-        if damage == "incomplete": del wire["search_data"]["scope"]["prefixes"]
+        if damage == "future":
+            wire["generated_at"] = (env.clock.now + timedelta(days=1)).isoformat()
+        if damage == "type":
+            wire["search_data"]["coverage"]["files_in_scope"] = True
+        if damage == "bounds":
+            wire["search_data"]["results"] *= 1501
+        if damage == "timestamp":
+            wire["generated_at"] = "2026-10-13T12:00:00"
+        if damage == "incomplete":
+            del wire["search_data"]["scope"]["prefixes"]
         broken = json.dumps(wire).encode()
-        if damage == "json": broken = b"not json"
-        if damage == "size": broken = b"x" * (env.app.config["CACHE_MAX_ENTRY_BYTES"] + 1)
+        if damage == "json":
+            broken = b"not json"
+        if damage == "size":
+            broken = b"x" * (env.app.config["CACHE_MAX_ENTRY_BYTES"] + 1)
         env.backend.entries[key] = (broken, expiry)
         assert not page(env).cache_hit
     assert env.calls["scope"] == 2
 
 
 def test_json_roundtrip_and_response_independence(environment):
+    """Preserve runtime types, Unicode, spaces, snippets, and independent nested response data."""
     env = environment
     with env.app.app_context():
         run = search.ArchiveSearchRun(search.ArchiveSearchRequest.from_values("plans"), env.app, 3000)
@@ -483,9 +588,14 @@ def test_json_roundtrip_and_response_independence(environment):
 
 
 def test_export_failure_does_not_poison_cache(environment, monkeypatch):
+    """Keep a transient export warning out of the source generation and recover on a later hit."""
     env = environment
     real_writer = search.pd.ExcelWriter
-    monkeypatch.setattr(search.pd, "ExcelWriter", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("export failed")))
+    def fail_excel_writer(*args, **kwargs):
+        """Fail before publishing any workbook bytes or reference."""
+        raise OSError("export failed")
+
+    monkeypatch.setattr(search.pd, "ExcelWriter", fail_excel_writer)
     with env.app.app_context():
         failed = page(env)
         assert not failed.export_available and failed.timestamp is None
@@ -499,6 +609,7 @@ def test_export_failure_does_not_poison_cache(environment, monkeypatch):
 
 
 def test_per_operation_ttl_and_delayed_publication(environment, monkeypatch):
+    """Isolate lifetime policies and cap delayed result/reference writes at the original expiration."""
     env = environment
     with env.app.app_context():
         default = page(env)
@@ -513,6 +624,7 @@ def test_per_operation_ttl_and_delayed_publication(environment, monkeypatch):
         generation = caching.fresh_generation()
         real_encode = caching.encode_search_data
         def delayed(*args):
+            """Simulate serialization latency before publication computes the remaining backend TTL."""
             env.clock.advance(10)
             return real_encode(*args)
         monkeypatch.setattr(caching, "encode_search_data", delayed)
@@ -528,11 +640,13 @@ def test_per_operation_ttl_and_delayed_publication(environment, monkeypatch):
 
 @pytest.mark.parametrize("value", [False, True, 0, -1, "60", "bad", 0.5, None])
 def test_positive_lifetimes_are_strict(value):
+    """Reject bools, coercible strings, fractions, and nonpositive values as cache lifetimes."""
     with pytest.raises(ValueError):
         caching.ArchiveSearchCachePolicy(ttl_seconds=value)
 
 
 def test_long_override_disables_caching_but_search_works(environment):
+    """Disable reuse when a server-side override no longer fits workbook retention."""
     env = environment
     with env.app.app_context():
         assert page(env, cache_ttl_seconds=518400).expires_at is None
@@ -540,6 +654,7 @@ def test_long_override_disables_caching_but_search_works(environment):
 
 
 def test_identity_inputs_and_safe_normalization(environment, monkeypatch):
+    """Isolate source-selection policies while excluding credentials, viewer state, and display-only limits."""
     env = environment
     request = search.ArchiveSearchRequest.from_values('  "Plans"   café! ', "FILEPATH", "project", "ab12", ".PDF, DOCX")
     assert request.query_text == '"Plans"   café!' and request.requested_scope_value == "AB12"
@@ -570,6 +685,7 @@ def test_identity_inputs_and_safe_normalization(environment, monkeypatch):
 
 
 def test_namespaces_isolate_and_old_artifact_cannot_replace_refresh(environment):
+    """Prevent older artifact work from replacing newer results and separate dataset namespaces."""
     env = environment
     with env.app.app_context():
         request = search.ArchiveSearchRequest.from_values("plans")
@@ -587,10 +703,12 @@ def test_namespaces_isolate_and_old_artifact_cannot_replace_refresh(environment)
 
 
 def test_workbook_publication_is_atomic_and_collision_safe(environment, monkeypatch):
+    """Publish complete concurrent XLSX files with distinct IDs resolvable by the download route."""
     env = environment
     real_replace = search.os.replace
     observations = []
     def observe(source, destination):
+        """Verify the destination is unpublished and staging bytes form a complete workbook before rename."""
         assert not os.path.exists(destination)
         assert load_workbook(source).sheetnames == ["Results", "Locations", "Coverage"]
         observations.append(destination)
@@ -608,39 +726,62 @@ def test_workbook_publication_is_atomic_and_collision_safe(environment, monkeypa
 
 
 @pytest.mark.parametrize("setting,value", [
-    ("ARCHIVE_SEARCH_CACHE_ENABLED", "False"), ("CACHE_URL", None), ("CACHE_URL", "invalid"),
-    ("CACHE_URL", "redis://localhost:6379/1"), ("CACHE_NAMESPACE", " "),
-    ("CACHE_URL", "redis://localhost:6379/0?unsupported=yes"),
-    ("CACHE_URL", "rediss://localhost:6379/0?ssl_cert_reqs=invalid"),
+    ("ARCHIVE_SEARCH_CACHE_ENABLED", "False"), ("REDIS_URL", None), ("REDIS_URL", "invalid"),
+    ("REDIS_URL", "redis://localhost:6379/1"), ("CACHE_NAMESPACE", " "),
+    ("REDIS_URL", "redis://localhost:6379/0?unsupported=yes"),
+    ("REDIS_URL", "rediss://localhost:6379/0?ssl_cert_reqs=invalid"),
+    ("REDIS_URL", "redis://localhost:6379/0?cache_config=1"),
+    ("REDIS_URL", "redis://localhost:6379/0?cache=1"),
     ("CACHE_TIMEOUT_SECONDS", False), ("CACHE_TIMEOUT_SECONDS", 0), ("CACHE_TIMEOUT_SECONDS", float("inf")),
     ("CACHE_MAX_ENTRY_BYTES", True), ("ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS", 432000),
 ])
 def test_startup_invalid_configuration_disables_without_connecting(setting, value, caplog):
+    """Disable malformed cache configuration without attempting a backend connection."""
     config = type("InvalidConfig", (TestConfig,), {setting: value})
-    app = create_app(config)
+    # An invalid shared URL can also invalidate RQ configuration; isolate the
+    # cache's best-effort boundary from the producer's independent validation.
+    app = Flask(__name__)
+    app.config.from_object(config)
+    app_config.configure_cache(app)
     assert app.extensions["cache"] is None
     assert "state=disabled" in caplog.text and "invalid_configuration" in caplog.text
 
 
 def test_backend_timeout_bytes_retry_and_error_contract():
+    """Enforce bounded byte operations and preserve the distinction between backend and caller errors."""
     adapter = RedisCache.from_url("redis://localhost:6379/0?socket_timeout=99&decode_responses=True", 0.5)
     options = adapter.client.connection_pool.connection_kwargs
     assert options["socket_timeout"] == options["socket_connect_timeout"] == 0.5
     assert options["decode_responses"] is False and options["retry"].get_retries() == 0
     import redis
     class BrokenClient:
-        def get(self, key): raise redis.ConnectionError("credentials must not escape")
-        def set(self, *args, **kwargs): raise redis.TimeoutError()
-        def delete(self, key): raise redis.ConnectionError()
+        """Fail backend operations while retaining the adapter's public input checks."""
+
+        def get(self, key):
+            """Simulate a connection error carrying sensitive backend details."""
+            raise redis.ConnectionError("credentials must not escape")
+
+        def set(self, *args, **kwargs):
+            """Simulate a write timeout after caller input validation."""
+            raise redis.TimeoutError()
+
+        def delete(self, key):
+            """Simulate an unavailable backend during deletion."""
+            raise redis.ConnectionError()
     broken = RedisCache(BrokenClient())
-    with pytest.raises(CacheUnavailable): broken.get("key")
-    with pytest.raises(CacheUnavailable): broken.set("key", b"value", 1)
-    with pytest.raises(CacheUnavailable): broken.delete("key")
-    with pytest.raises(ValueError): broken.set("key", b"value", True)
+    with pytest.raises(CacheUnavailable):
+        broken.get("key")
+    with pytest.raises(CacheUnavailable):
+        broken.set("key", b"value", 1)
+    with pytest.raises(CacheUnavailable):
+        broken.delete("key")
+    with pytest.raises(ValueError):
+        broken.set("key", b"value", True)
 
 
 @pytest.mark.parametrize("retention", [518400, 0, "518400", True])
 def test_maintenance_separate_retention(environment, monkeypatch, retention):
+    """Retain search workbooks independently while ordinary-file cleanup and task status still complete."""
     from archives_application.main import main_tasks
     env = environment
     env.app.config["ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS"] = retention

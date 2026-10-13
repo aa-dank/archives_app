@@ -904,7 +904,12 @@ def _coverage_summary(scope: ScopeResolution, extensions: list[str], app) -> dic
 
 
 class ArchiveSearchRun:
-    """Execute one archive search and persist its run-level lifecycle metadata."""
+    """Serve one validated search request and persist its own lifecycle metadata.
+
+    Explicit cache policy controls source-result reuse; the disabled default
+    keeps API callers fresh. Hits reuse only source data/generation metadata,
+    while user attribution, telemetry IDs, and duration belong to this request.
+    """
 
     STATUS_INCOMPLETE = "incomplete"
     STATUS_SUCCESSFUL = "successful"
@@ -919,6 +924,7 @@ class ArchiveSearchRun:
         request_source: str = "web",
         cache_policy: ArchiveSearchCachePolicy | None = None,
     ):
+        """Capture request inputs, limits, attribution, and the resolved cache policy."""
         if request_source not in API_REQUEST_SOURCES:
             raise ValueError(
                 f"request_source must be one of: {', '.join(sorted(API_REQUEST_SOURCES))}."
@@ -939,7 +945,13 @@ class ArchiveSearchRun:
         self._executed = False
 
     def execute(self) -> dict:
-        """Create an incomplete run, execute the search, and persist its outcome."""
+        """Create telemetry, reuse or generate source data, and finalize this request.
+
+        The timer includes cache work/searches but excludes telemetry persistence,
+        workbook generation, and rendering. Cache failures stay nonfatal; search
+        exceptions are recorded as failed and propagated without stale fallback.
+        An instance can execute only once.
+        """
         if self._executed:
             raise RuntimeError("An ArchiveSearchRun instance can only be executed once.")
         self._executed = True
@@ -1294,11 +1306,13 @@ def valid_workbook_timestamp(timestamp) -> bool:
 
 
 def is_archive_search_workbook(filename: str) -> bool:
+    """Recognize published search workbooks eligible for their separate retention policy."""
     return (filename.startswith(WORKBOOK_FILENAME_PREFIX) and filename.endswith(".xlsx")
             and valid_workbook_timestamp(filename[len(WORKBOOK_FILENAME_PREFIX):-5]))
 
 
 def archive_search_workbook_path(timestamp: str) -> str:
+    """Resolve a validated download ID to its exact server-controlled temporary path."""
     if not valid_workbook_timestamp(timestamp):
         raise ValueError("Invalid Archive Search workbook timestamp")
     return utils.FlaskAppUtils.create_temp_filepath(
@@ -1308,7 +1322,11 @@ def archive_search_workbook_path(timestamp: str) -> str:
 
 @dataclass(frozen=True)
 class ArchiveSearchPage:
-    """Results and download state prepared for one HTML search response."""
+    """Independent HTML data, optional export, and UTC freshness for one response.
+
+    The workbook timestamp is a download identifier, while generated_at describes
+    the source search and stays unchanged when a cached workbook is regenerated.
+    """
 
     search: dict
     generated_at: datetime
@@ -1319,13 +1337,21 @@ class ArchiveSearchPage:
 
 
 def write_archive_search_workbook(search_data: dict, generated_at: datetime, app) -> str | None:
-    """Publish a complete workbook atomically under a collision-safe download ID."""
+    """Publish a complete workbook atomically and return its exact download ID.
+
+    generated_at labels the source search in Coverage; the file's own publication
+    time selects its download ID and cleanup age. On export failure return None
+    and append a warning to this response-owned search_data, never cached data.
+    """
     staging_path = reservation_path = None
     try:
         results_df, locations_df, coverage_df = build_archive_search_workbook(
             search_data=search_data, generated_at=generated_at
         )
         publication_time = utc_now()
+        # Reserve only the filename, not generation work. Atomic exclusive
+        # creation prevents concurrent exporters choosing the same download ID.
+        # Keeping collisions in the timestamp format lets the route resolve them.
         while True:
             timestamp = publication_time.strftime(WORKBOOK_TIMESTAMP_FORMAT)
             spreadsheet_filepath = archive_search_workbook_path(timestamp)
@@ -1342,6 +1368,8 @@ def write_archive_search_workbook(search_data: dict, generated_at: datetime, app
                 continue
             reservation_path = candidate
             break
+        # Stage beside the final file so rename is atomic on its filesystem.
+        # A valid XLSX suffix is required by pandas' selected writer engine.
         with tempfile.NamedTemporaryFile(dir=os.path.dirname(spreadsheet_filepath),
                                          prefix=".archive-search-", suffix=".xlsx", delete=False) as staging:
             staging_path = staging.name
@@ -1349,6 +1377,8 @@ def write_archive_search_workbook(search_data: dict, generated_at: datetime, app
             results_df.to_excel(writer, index=False, sheet_name="Results")
             locations_df.to_excel(writer, index=False, sheet_name="Locations")
             coverage_df.to_excel(writer, index=False, sheet_name="Coverage")
+        # Cleanup ages the completed file; source age and download access do not
+        # determine retention. Publish bytes before any cache reference is stored.
         os.utime(staging_path, None)
         os.replace(staging_path, spreadsheet_filepath)
     except Exception:
@@ -1378,7 +1408,12 @@ def prepare_archive_search_page(
     refresh: bool = False,
     cache_ttl_seconds: int | None = None,
 ) -> ArchiveSearchPage:
-    """Resolve browser cache policy and prepare an independent HTML/export view."""
+    """Serve browser source data and prepare an independent bounded page/export view.
+
+    Resolve a server-side lifetime before executing the telemetry lifecycle.
+    Reuse a generation's existing workbook or regenerate it from that same data;
+    neither export work nor HTML slicing can mutate the stored source result.
+    """
     search_run = ArchiveSearchRun(
         search_request=search_request,
         app=app,

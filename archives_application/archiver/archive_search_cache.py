@@ -7,25 +7,36 @@ import math
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from sqlalchemy.engine import make_url
 
 from archives_application.cache import ByteCache, CacheUnavailable, positive_integer
 
+if TYPE_CHECKING:
+    from archives_application.archiver.archive_search import ArchiveSearchRequest
+
 
 SCHEMA_VERSION = 1
 SEARCH_FORMAT_VERSION = 1
+# Only cache codec failures belong here; database/search exceptions must retain
+# their existing failure response and telemetry rather than becoming cache misses.
 CODEC_ERRORS = (ValueError, TypeError, KeyError, OverflowError, RecursionError)
 
 
 def utc_now() -> datetime:
+    """Return an aware UTC instant through the cache's replaceable clock boundary."""
     return datetime.now(timezone.utc)
 
 
 @dataclass(frozen=True)
 class ArchiveSearchCachePolicy:
-    """Explicit consumer policy; existing API callers default to disabled."""
+    """Immutable per-operation cache settings, disabled unless explicitly supplied.
+
+    ttl_seconds belongs to the result identity; refresh bypasses lookup without
+    changing that identity. Existing API callers use the disabled default.
+    """
 
     enabled: bool = False
     backend: ByteCache | None = None
@@ -34,7 +45,8 @@ class ArchiveSearchCachePolicy:
     max_entry_bytes: int = 5242880
     refresh: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        """Reject ambiguous lifetime/size types and incomplete enabled policies."""
         positive_integer(self.ttl_seconds, "ttl_seconds")
         positive_integer(self.max_entry_bytes, "max_entry_bytes")
         if type(self.enabled) is not bool or type(self.refresh) is not bool:
@@ -44,7 +56,12 @@ class ArchiveSearchCachePolicy:
 
 
 def browser_cache_policy(app, refresh=False, ttl_seconds=None) -> ArchiveSearchCachePolicy:
-    """Resolve the default or a server-side override before lookup/generation."""
+    """Resolve browser defaults or a server-side TTL override before lookup.
+
+    Invalid configuration or a lifetime that outlasts workbook retention returns
+    a disabled policy so fresh searches remain usable. Request parameters never
+    select the lifetime.
+    """
     if app.config.get("ARCHIVE_SEARCH_CACHE_ENABLED", False) is not True:
         return ArchiveSearchCachePolicy()
     try:
@@ -74,6 +91,11 @@ def browser_cache_policy(app, refresh=False, ttl_seconds=None) -> ArchiveSearchC
 
 @dataclass(frozen=True)
 class SearchGeneration:
+    """Source execution identity and UTC freshness metadata, separate from results.
+
+    expires_at is set only for a generation read from or successfully published
+    to the cache. A failed publication remains an ordinary fresh generation.
+    """
     generation_id: str
     generated_at: datetime
     expires_at: datetime | None = None
@@ -81,16 +103,24 @@ class SearchGeneration:
 
 
 def fresh_generation() -> SearchGeneration:
+    """Identify a successfully completed search before any cache publication."""
     return SearchGeneration(uuid4().hex, utc_now())
 
 
 def _json_bytes(value) -> bytes:
+    """Encode deterministic UTF-8 JSON, preserving Unicode and rejecting nonfinite numbers."""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
                       allow_nan=False).encode("utf-8")
 
 
-def identity_digest(request, config, file_limit: int, ttl_seconds: int) -> str:
-    """Hash normalized inputs and effective settings, excluding secrets/viewer state."""
+def identity_digest(request: "ArchiveSearchRequest", config, file_limit: int, ttl_seconds: int) -> str:
+    """Hash validated inputs, effective search settings, and non-secret data targets.
+
+    Use the existing request normalization without further case/space changes.
+    Preserve extension order because it appears in the page/workbook; exclude
+    HTML limits, viewer state, refresh, and workbook IDs because they do not
+    select source data.
+    """
     target = make_url(config["SQLALCHEMY_DATABASE_URI"])
     identity = {
         "schema_version": SCHEMA_VERSION,
@@ -118,24 +148,29 @@ def identity_digest(request, config, file_limit: int, ttl_seconds: int) -> str:
     return hashlib.sha256(_json_bytes(identity)).hexdigest()
 
 
-def _require(condition):
+def _require(condition: bool) -> None:
+    """Turn a failed codec invariant into a cache-local validation error."""
     if not condition:
         raise ValueError("Invalid Archive Search cache payload")
 
 
-def _fields(value, names):
+def _fields(value, names) -> None:
+    """Require the exact dictionary fields supported by this schema version."""
     _require(type(value) is dict and set(value) == set(names))
 
 
-def _strings(value):
+def _strings(value) -> None:
+    """Require a JSON array containing only strings, retaining order and whitespace."""
     _require(type(value) is list and all(type(item) is str for item in value))
 
 
-def _count(value, nullable=False):
+def _count(value, nullable: bool = False) -> None:
+    """Require a nonnegative integer count/ID, excluding bool, or an allowed null."""
     _require((nullable and value is None) or (type(value) is int and value >= 0))
 
 
-def _datetime(value, utc=False):
+def _datetime(value, utc: bool = False) -> datetime:
+    """Parse ISO datetimes, preserving DB timezone state or requiring UTC metadata."""
     _require(type(value) is str)
     parsed = datetime.fromisoformat(value)
     if utc:
@@ -143,6 +178,8 @@ def _datetime(value, utc=False):
     return parsed
 
 
+# These field groups define the complete v1 contract. Adding/removing result or
+# scope fields requires reviewing the codec and bumping the schema as needed.
 SCOPE_STRINGS = ("scope_type", "display_value")
 SCOPE_LISTS = ("prefixes", "messages", "warnings", "roots_with_no_indexed_files")
 SCOPE_COUNTS = ("project_count", "usable_project_count", "missing_project_location_count", "linked_project_count")
@@ -164,8 +201,13 @@ COVERAGE_FIELDS = (
 )
 
 
-def encode_search_data(data, file_limit):
-    """Explicit conversions for scope, membership sets, ranks, and DB datetimes."""
+def encode_search_data(data: dict, file_limit: int) -> dict:
+    """Return an independent, validated JSON structure for the complete bounded result.
+
+    Convert scope facts, sorted membership sets, finite ranks, and ISO DB
+    datetimes explicitly. Preserve naive/aware timestamps and never mutate the
+    source data or omit locations to meet a storage limit.
+    """
     wire = copy.deepcopy(data)
     wire["scope"] = asdict(data["scope"])
     for result in wire["results"]:
@@ -181,12 +223,20 @@ def encode_search_data(data, file_limit):
                 if location[field] is not None:
                     _require(isinstance(location[field], datetime))
                     location[field] = location[field].isoformat()
+    # Reuse the read-side validator on a disposable copy: decoding reconstructs
+    # runtime types in place, while this function must return JSON-compatible data.
     decode_search_data(copy.deepcopy(wire), file_limit)
     return wire
 
 
-def decode_search_data(wire, file_limit):
-    """Reject incomplete/incompatible data before it can reach templates or exports."""
+def decode_search_data(wire: dict, file_limit: int) -> dict:
+    """Validate and reconstruct a newly parsed JSON dictionary in place.
+
+    The caller owns this disposable dictionary. Restore ScopeResolution, set
+    membership, and confirmation datetimes only after validating their wire
+    types; reject incomplete fields, invalid ranks, and results over file_limit.
+    """
+    # Import lazily because the search service itself imports this cache module.
     from archives_application.archiver.archive_search import ScopeResolution, SEARCH_MODE_LABELS, SCOPE_LABELS
 
     _fields(wire, (*DATA_STRINGS, "scope", "extensions", "results", "coverage", "messages", "warnings", "limit_hit"))
@@ -247,13 +297,21 @@ def decode_search_data(wire, file_limit):
     return wire
 
 
-def remaining_seconds(expires_at) -> int:
+def remaining_seconds(expires_at: datetime) -> int:
     """Round down: delayed writes must never extend the source expiration."""
     return max(0, math.floor((expires_at - utc_now()).total_seconds()))
 
 
 class ArchiveSearchCache:
-    def __init__(self, policy, request, app, file_limit):
+    """Manage one request's bounded result and generation-specific artifact entries.
+
+    Backend failures disable further cache I/O for this request. Reads do not
+    renew TTLs, and every publication uses only the source's remaining lifetime.
+    Search execution and telemetry remain the search service's responsibility.
+    """
+
+    def __init__(self, policy: ArchiveSearchCachePolicy, request: "ArchiveSearchRequest", app, file_limit: int) -> None:
+        """Validate effective retention and construct this operation's cache identity."""
         self.policy, self.request, self.app, self.file_limit = policy, request, app, file_limit
         positive_integer(file_limit, "file_limit")
         retention = positive_integer(app.config.get("ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS", 518400),
@@ -265,7 +323,12 @@ class ArchiveSearchCache:
         self.result_key = f"{self.prefix}:result:{self.digest}"
         self.available = True
 
-    def log(self, event, generation=None, **fields):
+    def log(self, event: str, generation: SearchGeneration | None = None, **fields) -> None:
+        """Record an outcome using identifiers, counters, and timings only.
+
+        Callers must not supply raw queries, paths, credentials, or payloads in
+        fields. Namespace and identity digest distinguish environments/searches.
+        """
         details = {
             "consumer": "archive-search", "namespace": self.policy.namespace,
             "identity_digest": self.digest, "ttl_seconds": self.policy.ttl_seconds,
@@ -276,12 +339,15 @@ class ArchiveSearchCache:
         details.update(fields)
         self.app.logger.info("archive_search_cache %s", json.dumps({"event": event, **details}, sort_keys=True))
 
-    def read(self, key):
+    def read(self, key: str) -> bytes | None:
+        """Return bounded bytes or None; stop further cache I/O after an outage."""
         if not self.available:
             return None
         try:
             value = self.policy.backend.get(key)
         except CacheUnavailable:
+            # Avoid paying the same failing connection cost again during result
+            # publication and workbook-reference handling for this request.
             self.available = False
             self.log("backend_failure", operation="read")
             return None
@@ -290,7 +356,12 @@ class ArchiveSearchCache:
             return None
         return value
 
-    def write(self, key, payload, generation):
+    def write(self, key: str, payload: bytes, generation: SearchGeneration) -> bool:
+        """Publish complete bounded bytes within a cached generation's remaining TTL.
+
+        Return False for exhausted lifetime, oversize, or backend failure. Never
+        delete an earlier entry before replacement or renew the source lifetime.
+        """
         if not self.available:
             return False
         if len(payload) > self.policy.max_entry_bytes:
@@ -309,7 +380,12 @@ class ArchiveSearchCache:
         self.log("write_success", generation, payload_bytes=len(payload), remaining_ttl_seconds=ttl)
         return True
 
-    def lookup(self):
+    def lookup(self) -> tuple[dict, SearchGeneration] | None:
+        """Return independent results and source metadata for a valid hit, else None.
+
+        Refresh bypasses lookup. Schema, identity, source lifetime, and the full
+        bounded result are validated; malformed or expired entries are misses.
+        """
         if self.policy.refresh:
             self.log("refresh")
             return None
@@ -332,10 +408,18 @@ class ArchiveSearchCache:
             _require(expires == generated + timedelta(seconds=self.policy.ttl_seconds))
             _require(generated <= utc_now() < expires)
             data = decode_search_data(envelope["search_data"], self.file_limit)
+            # Location input at the Records root intentionally resolves to all
+            # archives while retaining its requested cache identity.
+            scope_type_matches = (
+                data["scope"].scope_type == self.request.requested_scope_type
+                or (self.request.requested_scope_type == "location" and data["scope"].scope_type == "all")
+            )
             _require(data["query_text"] == self.request.query_text and data["search_mode"] == self.request.search_mode
                      and data["extensions"] == list(self.request.extensions)
-                     and (data["scope"].scope_type == self.request.requested_scope_type
-                          or (self.request.requested_scope_type == "location" and data["scope"].scope_type == "all")))
+                     and scope_type_matches)
+            # Decoding a large entry can cross expiration even if the initial
+            # freshness check passed. Do not return it as a hit after that point.
+            _require(utc_now() < expires)
         except CODEC_ERRORS:
             self.log("invalid_payload", payload_bytes=len(payload))
             return None
@@ -344,11 +428,17 @@ class ArchiveSearchCache:
                  elapsed_ms=round((time.perf_counter() - started) * 1000, 3))
         return data, generation
 
-    def publish(self, data, generation):
-        expires = generation.generated_at + timedelta(seconds=self.policy.ttl_seconds)
-        cached = SearchGeneration(generation.generation_id, generation.generated_at, expires)
+    def publish(self, data: dict, generation: SearchGeneration) -> SearchGeneration:
+        """Attempt atomic result replacement after success, returning its freshness state.
+
+        Failed publication leaves the fresh generation usable. Never delete a
+        previous entry before attempting atomic replacement; a backend timeout
+        can make the write's acknowledgement uncertain without exposing partial data.
+        """
         started = time.perf_counter()
         try:
+            expires = generation.generated_at + timedelta(seconds=self.policy.ttl_seconds)
+            cached = SearchGeneration(generation.generation_id, generation.generated_at, expires)
             payload = _json_bytes({
                 "schema_version": SCHEMA_VERSION, "identity_digest": self.digest,
                 "generation_id": generation.generation_id, "generated_at": generation.generated_at.isoformat(),
@@ -362,10 +452,12 @@ class ArchiveSearchCache:
                  elapsed_ms=round((time.perf_counter() - started) * 1000, 3))
         return cached if self.write(self.result_key, payload, cached) else generation
 
-    def workbook_key(self, generation):
+    def workbook_key(self, generation: SearchGeneration) -> str:
+        """Key an artifact by generation so a late export cannot replace newer results."""
         return f"{self.prefix}:workbook:{generation.generation_id}"
 
-    def workbook_timestamp(self, generation):
+    def workbook_timestamp(self, generation: SearchGeneration) -> str | None:
+        """Read a validated local-temp download ID; the page service checks file presence."""
         from archives_application.archiver.archive_search import valid_workbook_timestamp
         payload = self.read(self.workbook_key(generation))
         if payload is None:
@@ -379,6 +471,7 @@ class ArchiveSearchCache:
             self.log("invalid_workbook_reference", generation)
             return None
 
-    def publish_workbook(self, generation, timestamp):
+    def publish_workbook(self, generation: SearchGeneration, timestamp: str) -> None:
+        """Publish a completed workbook reference using only the source's remaining TTL."""
         self.write(self.workbook_key(generation), _json_bytes({"storage_kind": "local-temp", "timestamp": timestamp}),
                    generation)
