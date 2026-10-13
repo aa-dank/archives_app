@@ -73,17 +73,23 @@ def test_archive_url_reruns_search_with_location_scope(app, client, monkeypatch,
     workbook_ids = []
 
     class FakeRun(archive_search_service.ArchiveSearchRun):
+        """Exercise the real disabled-cache lifecycle with lightweight source results."""
+
         def __init__(self, search_request, **kwargs):
+            """Capture normalized requests while retaining production run metadata."""
             super().__init__(search_request=search_request, **kwargs)
             calls.append(search_request)
 
         def _execute_search(self):
+            """Return minimal page data so this test focuses on URL and export behavior."""
             return {"results": [], "limit_hit": False, "warnings": []}
 
         def _create_incomplete_record(self):
+            """Skip telemetry persistence in this URL-only fixture."""
             pass
 
         def _persist_final_state(self):
+            """Skip telemetry finalization; separate tests cover that lifecycle."""
             pass
 
     original_render = flask.render_template

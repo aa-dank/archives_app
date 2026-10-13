@@ -58,7 +58,12 @@ class AppCustodian:
 
     def _temp_file_clean_up_task(self, queue_id: str):
         """
-        This task will remove all files in the temp_files directory that are older than the specified lifespan.
+        Remove eligible temporary files using their existing or workbook-specific policy.
+
+        Published Archive Search XLSX files use completed-write age and configured
+        seconds; other files keep the existing creation-time/day policy. Invalid
+        workbook retention defers only those workbooks. Cleanup stays inside the
+        queued task's app context and records initiation/completion status.
         :param queue_id: the id of the task in the RQ queue
         """
         with app.app_context():

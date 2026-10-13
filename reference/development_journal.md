@@ -1535,3 +1535,107 @@ planning allowances and warm-hit rollout checks. Capture fresh/cached notices
 and the fresh-search control in a deployed browser for the implementation PR,
 then refine limits from actual cache logs and disk use. Namespace changes are
 the initial whole-cache invalidation mechanism; do not flush a shared RQ service.
+
+---
+
+## Entry 052 - Harden Archive Search cache failure boundaries
+**Date:** 2026-10-13
+**Author:** OpenAI Codex
+
+Review of the new search cache found Redis pool-construction failures that could
+escape startup fallback, and a freshness check that ran before full payload
+decoding. Invalid Redis client/pool options now disable caching through the
+existing configuration error path. Lookup rechecks source expiration after
+decoding so a large entry that expires during reconstruction runs fresh instead
+of being served. Expiration arithmetic and lazy backend numeric overflows remain
+cache-local failures; they cannot abort an otherwise successful fresh search.
+
+Affected runtime components: Redis adapter construction/operations and Archive
+Search result lookup/publication. No new settings, schema, queue, workbook
+retention, or rollout-policy changes. Cache classes/helpers now document failure,
+lifetime, mutation, and publication contracts, with comments explaining the
+non-obvious boundaries.
+
+Verification: 112 regression tests passed, including new cases for Redis
+pool-option failures, expiration during decoding, unrepresentable generation
+expiration, and backend timeout/configuration overflows. The opt-in live-backend
+test skips in the default suite and passed separately against a disposable local
+Redis service through the production TCP adapter. Docstring inspection covered every class and
+function in the new runtime and test modules; Python compilation, all 35 Jinja
+template parses, and `git diff --check` passed. Existing pandas dtype deprecation
+warnings remain. Follow-on: use the deployment contract/storage checks recorded
+in entry 051 before enabling caching.
+
+---
+
+## Entry 053 - Enable cache in WSL and deployment configuration
+**Date:** 2026-10-13
+**Author:** OpenAI Codex
+
+At the user's request, added all seven described cache settings to the local
+`test_config_wsl.json` and `deploy_app_config.json` and set
+`ARCHIVE_SEARCH_CACHE_ENABLED` to the JSON boolean `true`. Both explicitly use
+`redis://localhost:6379/0`, matching their existing Redis host/port, through the
+independent cache client. Namespaces are `archives:wsl:dataset1` and
+`archives:deploy:dataset1` to prevent cross-environment key collisions.
+Result TTL remains 432000 seconds, workbook retention 518400 seconds, cache
+timeout 0.5 seconds, and encoded-entry cap 5242880 bytes. Existing configuration
+values, queue settings, and Redis eviction settings were preserved.
+
+Affected runtime components: browser Archive Search caching after configuration
+reload, and workbook maintenance's explicit retention setting. Configuration and
+Operations document every override, shared Redis memory, separate pools, active
+file selection, and reload requirements. The JSON files are ignored by Git;
+their local edits require separate copying to remote environments. The app
+continues to select `deploy_app_config.json` by default; the WSL file applies
+when explicitly selected.
+
+Verification: both JSON files parsed and retained every prior setting; their
+actual configuration loader/app initialization produced enabled cache policies,
+valid lifetime pairings, distinct namespaces, and pools separate from RQ.
+All 101 focused cache/shareable-URL tests and `git diff --check` passed. No
+services were restarted or live endpoint settings changed. Follow-on: copy/reload
+the intended configuration, run the selected-endpoint contract/storage checks
+from Operations, verify shared-service capacity, and monitor hit rates and disk
+use after activation.
+
+---
+
+## Entry 054 - One Redis URL for cache and queue processes
+**Date:** 2026-10-13
+**Author:** OpenAI Codex
+
+At the user's direction, consolidated connection configuration to one
+`REDIS_URL` for browser result caching, the web app's RQ producer, and the worker.
+Both local JSON files retain `redis://localhost:6379/0`; removed their redundant
+`REDIS_LOCATION`, `REDIS_PORT`, and `CACHE_URL` entries and added a described
+shared `REDIS_URL`. Cache enablement, distinct environment/dataset namespaces,
+lifetimes, entry-size cap, and cache timeouts remain as recorded in entry 053.
+The cache keeps its independent client/pool and never uses `app.q.connection`.
+
+All process roles now use the same resolution order: process-environment
+`REDIS_URL`, explicit JSON/class URL, then legacy host/port fallback. Explicit
+URLs preserve their authentication/TLS options and cannot be overwritten by old
+fields; empty or invalidly typed explicit values do not silently fall back.
+`CACHE_URL` is retired and ignored. The worker reads the same selected JSON file
+as the app instead of independently defaulting to localhost. Worker startup now
+imports the application's configuration and requires its JSON/OAuth files, as
+the web process does. A malformed shared endpoint can also invalidate RQ setup;
+cache-policy failures still retain their existing best-effort behavior.
+
+Affected runtime components: configuration loading, app/cache initialization, and
+worker connection setup. Configuration, Operations, and the feature specification
+document the user's shared-instance decision and migration. No Redis service,
+memory-limit, eviction-policy, database, or workbook-storage changes were made.
+Both JSON files remain Git-ignored and require separate deployment copying.
+
+Verification: all 130 regression tests passed, with the opt-in live Redis test
+skipped in the default suite. New coverage verifies URL/environment precedence,
+legacy compatibility, invalid explicit values, retired-cache-URL handling, actual
+worker entry-point resolution, and shared endpoints with independent cache/queue
+pools. Both real JSON files also passed actual loader/app/worker initialization
+checks without starting workers or opening service connections. Compilation,
+all 35 Jinja template parses, and `git diff --check` passed. Existing pandas dtype
+deprecation warnings remain. Follow-on: copy the migrated JSON files and restart
+web and worker processes together, using matching environment overrides; retain
+the existing shared-service capacity and selected-endpoint rollout checks.

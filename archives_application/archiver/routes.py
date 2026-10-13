@@ -3161,6 +3161,8 @@ def archives_search():
             ),
             hide_sidebar=True
         ))
+        # Application expiration and explicit refresh must remain authoritative;
+        # intermediary/browser page caches cannot substitute their own freshness.
         response.headers['Cache-Control'] = 'private, no-store'
         return response
     except Exception as e:

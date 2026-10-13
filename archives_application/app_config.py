@@ -4,6 +4,7 @@ import flask
 import json
 import logging
 import math
+import os
 import pathlib
 import tomllib
 
@@ -14,15 +15,19 @@ CACHE_DEFAULTS = {
     "ARCHIVE_SEARCH_CACHE_ENABLED": False,
     "ARCHIVE_SEARCH_CACHE_TTL_SECONDS": 432000,
     "ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS": 518400,
-    "CACHE_URL": None,
     "CACHE_NAMESPACE": None,
     "CACHE_TIMEOUT_SECONDS": 0.5,
     "CACHE_MAX_ENTRY_BYTES": 5242880,
 }
 
 
-def configure_cache(app):
-    """Register one independent pool per app/process without connecting at startup."""
+def configure_cache(app) -> None:
+    """Apply optional defaults and register one independent cache pool per app/process.
+
+    Initialization performs no network I/O. Disabled or invalid configuration
+    leaves app.extensions["cache"] as None, logs the effective state, and keeps
+    the fresh-search workflow and existing RQ connection available.
+    """
     for name, default in CACHE_DEFAULTS.items():
         app.config.setdefault(name, default)
     app.extensions["cache"] = None
@@ -30,6 +35,8 @@ def configure_cache(app):
     try:
         if type(enabled) is not bool:
             raise ValueError("ARCHIVE_SEARCH_CACHE_ENABLED must be a boolean")
+        # Workbook retention remains active when result caching is disabled, so
+        # validate the lifetime settings before taking the disabled-cache branch.
         retention = positive_integer(
             app.config["ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS"],
             "ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS",
@@ -44,9 +51,9 @@ def configure_cache(app):
         namespace = app.config["CACHE_NAMESPACE"]
         if not isinstance(namespace, str) or not namespace.strip():
             raise ValueError("CACHE_NAMESPACE must be a nonempty environment/dataset prefix")
-        url = app.config["CACHE_URL"]
+        url = app.config.get("REDIS_URL")
         if not isinstance(url, str) or not url.strip():
-            raise ValueError("CACHE_URL is required when caching is enabled")
+            raise ValueError("REDIS_URL is required when caching is enabled")
         positive_integer(app.config["CACHE_MAX_ENTRY_BYTES"], "CACHE_MAX_ENTRY_BYTES")
         timeout = app.config["CACHE_TIMEOUT_SECONDS"]
         if (type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0):
@@ -55,12 +62,13 @@ def configure_cache(app):
             app.extensions["cache"] = RedisCache.from_url(url, timeout)
         except (ValueError, TypeError, OverflowError):
             # URL parsing errors can contain credentials. Report only the setting.
-            raise ValueError("CACHE_URL is invalid for the Redis-compatible adapter") from None
+            raise ValueError("REDIS_URL is invalid for the Redis-compatible cache adapter") from None
     except (ValueError, TypeError, OverflowError) as error:
         app.logger.error("archive_search_cache state=disabled reason=invalid_configuration detail=%s", error)
         return
     app.logger.info("archive_search_cache state=enabled namespace=%s ttl_seconds=%s",
                     namespace, ttl)
+
 
 def retrieve_app_version():
     """
@@ -108,21 +116,55 @@ def assemble_postgresql_url(host, db_name, username, password="", port="", diale
 
 
 def assemble_redis_url(redis_location, redis_port):
+    """Build the legacy host/port queue URL for configuration compatibility."""
     return'redis://' + redis_location + ":" + redis_port
 
 
+def resolve_redis_url(config, environ=None) -> str:
+    """Resolve the one endpoint shared by the cache, web queue, and RQ worker.
+
+    Environment REDIS_URL takes precedence over explicit JSON/class REDIS_URL.
+    Older configurations may still supply REDIS_LOCATION/REDIS_PORT. An explicit
+    empty or invalidly typed URL is a configuration error, never a silent fallback.
+    Return the URL without logging credentials or changing its connection options.
+    """
+    environment = os.environ if environ is None else environ
+    if "REDIS_URL" in environment:
+        url = environment["REDIS_URL"]
+    elif "REDIS_URL" in config:
+        url = config["REDIS_URL"]
+    elif config.get("REDIS_LOCATION"):
+        url = assemble_redis_url(config["REDIS_LOCATION"], config.get("REDIS_PORT"))
+    else:
+        raise ValueError("REDIS_URL is required for the shared Redis connection")
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("REDIS_URL must be a nonempty string")
+    return url.strip()
+
+
+def redis_url_from_config_file(config_json_path: str) -> str:
+    """Load the worker's shared endpoint from the selected VALUE/DESCRIPTION JSON.
+
+    Use the same resolver as app initialization so environment overrides and
+    legacy fallback cannot send the producer and worker to different services.
+    This helper reads connection configuration without creating an app or queue.
+    """
+    with open(config_json_path) as config_file:
+        entries = json.load(config_file)
+    return resolve_redis_url({key: entry["VALUE"] for key, entry in entries.items()})
+
+
 def json_to_config_factory(google_creds_path: str, config_json_path: str):
+    """Build a Flask configuration class from described JSON values and OAuth inputs.
+
+    Unwrap VALUE entries, assemble the existing database URI, and resolve the
+    shared Redis endpoint using the same precedence as the worker and app factory.
+    DESCRIPTION entries remain in the source JSON for the configuration editor.
+
+    :param config_json_path: Selected application JSON file.
+    :param google_creds_path: OAuth JSON containing the web client credentials.
+    :return: DynamicServerConfig class with resolved settings as attributes.
     """
-    THis function turns a json file of config info and a google credentials json file into a flask app config class.
-    The purpose is to allow the changing of app settings using a json file. Where different json files represent new
-    configurations and configurations can be changed by changing the json file
-    :param config_json_path: string path
-    :param google_creds_path: string path
-    :return: DynamicServerConfig class with json keys as attributes
-    """
-
-
-
     with open(config_json_path) as config_file:
         config_dict = json.load(config_file)
 
@@ -143,10 +185,9 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
                                                                         ssl=config_dict["POSTGRESQL_SSL"])
     config_dict['CONFIG_JSON_PATH'] = config_json_path
 
-    # Assemble Redis url
-    if config_dict.get('REDIS_LOCATION'):
-        config_dict['REDIS_URL'] = assemble_redis_url(redis_location=config_dict.get('REDIS_LOCATION'),
-                                                      redis_port=config_dict.get('REDIS_PORT'))
+    # Resolve the shared endpoint once; legacy host/port cannot overwrite an
+    # explicit URL, and environment overrides apply to web and worker alike.
+    config_dict['REDIS_URL'] = resolve_redis_url(config_dict)
 
     # The DynamicServerConfig class is created dynamically using Python's type() function, which takes three arguments:
     # the name of the class, a tuple of parent classes (empty in this case), and a dictionary of attributes and their

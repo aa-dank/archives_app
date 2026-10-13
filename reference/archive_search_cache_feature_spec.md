@@ -8,6 +8,12 @@
 
 **Branch:** `feature/search-cache`
 
+**Configuration decision, 2026-10-13:** At the user's direction, use one shared
+`REDIS_URL` for the cache, web queue producer, and worker. Separate cache clients,
+timeouts, namespaces, and consumer lifetimes remain; the original separate
+`CACHE_URL` setting is retired. Environment overrides apply to every role, and
+legacy host/port configuration remains a compatibility fallback.
+
 ## Purpose and selected design
 
 Reuse completed Archive Search results for up to five days so repeated searches
@@ -181,9 +187,14 @@ disable caching; do not use zero to mean either disabled or never-expiring.
 
 ### Client and backend integration
 
-Register a separately configured client in `app.extensions`. Construct one
+Register a separate cache client in `app.extensions`, using the shared resolved
+`REDIS_URL` and cache-specific timeouts. Construct one
 connection pool per application process and reuse it across requests.
-Do not access the cache through `app.q.connection` or change queue configuration.
+Do not access the cache through `app.q.connection` or change queue behavior or
+eviction settings. Resolve the same endpoint consistently for web/cache/worker:
+environment `REDIS_URL`, then explicit JSON/class `REDIS_URL`, then legacy
+`REDIS_LOCATION`/`REDIS_PORT`. An explicit URL must not be overwritten by legacy
+fields, and an invalid explicit value must not silently fall back.
 Caching must work without requiring an RQ worker.
 
 The first backend uses ordinary `GET`, `SET` with expiration, and `DEL`.
@@ -469,16 +480,18 @@ Use the existing JSON `VALUE`/`DESCRIPTION` format and documented defaults:
 | `ARCHIVE_SEARCH_CACHE_ENABLED` | `false` | Opt in to browser search/result and workbook-reference caching. |
 | `ARCHIVE_SEARCH_CACHE_TTL_SECONDS` | `432000` | Search consumer's default lifetime of five days; positive integer, resolved per generation. |
 | `ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS` | `518400` | Workbook cleanup threshold of six days; greater than the effective search-cache lifetime. |
-| `CACHE_URL` | Unset | Explicit cache endpoint; supports the selected client's TLS/auth options. |
+| `REDIS_URL` | Shared connection setting | Endpoint for cache, web queue, and worker; resolve environment, explicit JSON/class, or legacy host/port, preserving supported TLS/auth options. |
 | `CACHE_NAMESPACE` | Unset | Required nonempty environment/dataset prefix when enabled. |
 | `CACHE_TIMEOUT_SECONDS` | `0.5` | Positive connect/read timeout; bounded cache operations. |
 | `CACHE_MAX_ENTRY_BYTES` | `5242880` | Maximum encoded entry size, initially 5 MiB. |
 
-Require `CACHE_URL` and `CACHE_NAMESPACE` when enabling the feature.
+Require a resolved `REDIS_URL` and `CACHE_NAMESPACE` when enabling the feature.
 Future consumers define separate default-lifetime settings when implemented;
 there is no shared `CACHE_TTL_SECONDS` that governs all cached data and files.
-Do not silently fall back to queue settings. The cache may explicitly use the
-same service, but it still owns a separate client/configuration boundary.
+The cache and queue intentionally use the same resolved service URL; the cache
+still owns a separate client, timeouts, and consumer-policy boundary. Retired
+`CACHE_URL` values do not select another service. Worker startup reads the same
+selected JSON file as the app, with the same environment override precedence.
 Accept a real boolean for the enable setting; do not treat the string
 `"False"` as truthy. Invalid cache configuration disables caching with a clear
 configuration error in logs while preserving normal searches.

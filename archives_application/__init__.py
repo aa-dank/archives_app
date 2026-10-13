@@ -65,6 +65,9 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
 
     # config app from config class
     app.config.from_object(config_class)
+    # Use the worker's same resolution policy, including late environment
+    # overrides and explicit configuration classes supplied by callers/tests.
+    app.config['REDIS_URL'] = app_config.resolve_redis_url(app.config)
     app.config.setdefault('FILE_INFO_TEXT_WINDOW_CHARS', 10000)
     app.config.setdefault('FILE_INFO_DATE_MENTION_LIMIT', 50)
     app_config.configure_cache(app)

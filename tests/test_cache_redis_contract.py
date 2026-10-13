@@ -13,6 +13,7 @@ from archives_application.cache import RedisCache
 
 
 def test_redis_atomic_publication_and_independent_ttls():
+    """Check a selected real backend with disposable keys, independent expiry, and concurrent atomic writes."""
     url = os.environ.get("ARCHIVES_CACHE_TEST_URL")
     socket = os.environ.get("ARCHIVES_CACHE_TEST_SOCKET")
     if not url and not socket:
@@ -27,6 +28,7 @@ def test_redis_atomic_publication_and_independent_ttls():
         adapter.set(longer, b"long", 10)
         adapter.set(atomic, payloads[0], 10)
         def publish():
+            """Repeatedly replace one complete value while the reader checks for partial-publication exposure."""
             for index in range(40):
                 adapter.set(atomic, payloads[index % 2], 10)
         with ThreadPoolExecutor(max_workers=2) as pool:

@@ -4,9 +4,14 @@ Operational responsibilities for the existing archives application include maint
 
 ## Web and worker processes
 
-The Flask application is exposed as `run:app`; Gunicorn is included as its production WSGI server dependency. Executing `run.py` directly starts Flask with debug mode enabled. `worker.py` consumes RQ's `default` queue and reads `REDIS_URL` from the environment, defaulting to `redis://localhost:6379`. The application constructs its queue connection from JSON configuration. Both must reach the same Redis instance.
+The Flask application is exposed as `run:app`; Gunicorn is included as its production WSGI server dependency. Executing `run.py` directly starts Flask with debug mode enabled. `worker.py` consumes RQ's `default` queue. Web queue, cache, and worker resolve one shared `REDIS_URL`: process environment first, explicit selected-JSON value second, then legacy host/port fallback. The worker reads the application's selected JSON file instead of using an independent localhost default. Apply any environment override consistently to all process roles.
 
 Web and worker processes rely on matching dependency versions, configuration files, and filesystem mounts. Their service accounts need access to the archives and inboxes, plus write access to the backup directory and `archives_application/static/temp_files/`. The supplied worker uses RQ's `Worker`; its entry point targets Linux/WSL rather than a native-Windows worker implementation.
+
+Worker startup now imports the application's configuration and therefore needs
+the selected JSON and OAuth files available in the working directory, as the web
+process already does. Restart web and worker processes together after changing
+the shared endpoint or its process-environment override.
 
 Process-supervisor, reverse-proxy, and scheduling configuration live outside this repository. The application's configuration editor invokes the configured `APP_RESTART_COMMAND` and `APP_WORKERS_RESTART_COMMAND` hooks. The app uses `ProxyFix`, and the configuration factory enables `OAUTHLIB_INSECURE_TRANSPORT`; the deployed proxy must supply trusted forwarded headers and enforce HTTPS.
 
@@ -60,7 +65,16 @@ entries automatically. Empty results and scope/coverage warnings also cache.
 No database schema change or cache migration is needed. Disabling the flag and
 restarting restores fresh browser searches without deleting entries or files.
 
-Use a separate endpoint/client and a distinct environment/dataset namespace;
+The local `test_config_wsl.json` and `deploy_app_config.json` were opted in on
+2026-10-13. Both now explicitly set the shared `REDIS_URL` to
+`redis://localhost:6379/0`, preserving their previous endpoint, with independent cache clients and the distinct
+`archives:wsl:dataset1` / `archives:deploy:dataset1` namespaces. See
+[Configuration](configuration.md#archive-search-cache-and-workbook-retention)
+for the complete override record. These ignored JSON files are local settings;
+running processes and remote deployments require their normal configuration
+reload/copy steps. The application still selects the deployment file by default.
+
+Use the shared endpoint with a separate cache client/pool and a distinct environment/dataset namespace;
 see [Configuration](configuration.md#archive-search-cache-and-workbook-retention)
 for all settings and a JSON example. Namespace changes are the initial bulk
 invalidation mechanism; never use `FLUSHDB`/`FLUSHALL` on a service shared with
@@ -80,10 +94,10 @@ its own publication age. Downloads continue to serve retained files after the
 result expires; a normal search at expiration runs fresh.
 
 The five-day lifetime and five-MiB per-entry cap do not bound aggregate Redis
-memory. Assign a cache budget and disposable-entry eviction policy before
-rollout. Prefer an independently bounded service; if explicitly sharing with RQ,
-verify spare capacity and queue-safe eviction behavior separately. Do not change
-queue eviction settings as part of this feature. The offline analysis in the
+memory. The selected deployment shares this service with RQ, so verify spare
+capacity and queue-safe resource/eviction behavior. A separate bounded cache
+service would require a later configuration split. No global memory limit or
+queue eviction policy is set by these application settings. The offline analysis in the
 [feature spec](archive_search_cache_feature_spec.md#verification-and-acceptance)
 found a peak of 50 successful browser searches per five days and estimated
 256–441 MiB with overhead/headroom; 512 MiB is a conservative planning allowance,
@@ -137,7 +151,7 @@ size/outcome logs and temporary-disk use, then adjust limits from measured data.
 | Import fails with a missing config/OAuth JSON file | Run from the repository root and supply both selected JSON files; loading happens at import time. |
 | Database connection error | Verify `Sqalchemy_Database_Location`, database name, credentials, string port/SSL values, network access, and URI encoding. |
 | Missing relation, column, `vector` type, or `search_vector` | Confirm the canonical database migrations/extensions are installed. This app does not migrate the database at startup. |
-| Jobs remain queued | Confirm a worker listens on `default` and its environment `REDIS_URL` reaches the same Redis instance as the app's JSON configuration. |
+| Jobs remain queued | Confirm a worker listens on `default`, loads the same selected JSON file, and has the same `REDIS_URL` environment override as the web process. |
 | File edit fails or paths point to the wrong place | Confirm mounts, service-account permissions, and the correspondence between app and user archive roots. Use the configured user-path prefix. |
 | Content search misses a known document | Check extraction status and chunk coverage; run location/index maintenance if metadata is stale. Filename indexing does not imply text extraction. |
 | Project/CAAN searches have no archive scope | Check synchronized relationships and recorded `projects.file_server_location`; confirm project locations when appropriate. |
