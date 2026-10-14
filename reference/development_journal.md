@@ -1472,7 +1472,30 @@ Windows client.
 
 ---
 
-## Entry 051 - Opt-in Archive Search caching and workbook retention
+## Entry 051 - Ariolimax favicon
+**Date:** 2026-10-12
+**Author:** OpenAI Codex
+
+Added a transparent SVG favicon based on the supplied Ariolimax archivist
+reference: a smiling, curled banana slug holding a folder with a building
+emblem. Gold shading uses the app's amber, with teal outlines, a steel blue
+folder, and light neutral paper and highlights. The asset consists of native
+vector paths and gradients. The shared page layout advertises the scalable
+icon, giving pages a consistent browser-tab identity.
+
+Affected runtime components: shared HTML layout and static favicon asset.
+Verification: parsed the SVG and its local references, rendered the shared
+template, and confirmed an isolated Flask static request returns the exact
+asset with the SVG content type. Rendered with librsvg and visually checked
+previews at 16, 24, 32, 64, and 96 pixels on light and dark backgrounds, plus
+the full-size artwork; confirmed transparent corners and no embedded raster
+content. `git diff --check` passed.
+No migration or operational follow-on work is required; browsers may need a
+refresh to replace a cached favicon after deployment.
+
+---
+
+## Entry 052 - Opt-in Archive Search caching and workbook retention
 **Date:** 2026-10-13
 **Author:** OpenAI Codex
 
@@ -1538,7 +1561,7 @@ the initial whole-cache invalidation mechanism; do not flush a shared RQ service
 
 ---
 
-## Entry 052 - Harden Archive Search cache failure boundaries
+## Entry 053 - Harden Archive Search cache failure boundaries
 **Date:** 2026-10-13
 **Author:** OpenAI Codex
 
@@ -1564,11 +1587,11 @@ Redis service through the production TCP adapter. Docstring inspection covered e
 function in the new runtime and test modules; Python compilation, all 35 Jinja
 template parses, and `git diff --check` passed. Existing pandas dtype deprecation
 warnings remain. Follow-on: use the deployment contract/storage checks recorded
-in entry 051 before enabling caching.
+in entry 052 before enabling caching.
 
 ---
 
-## Entry 053 - Enable cache in WSL and deployment configuration
+## Entry 054 - Enable cache in WSL and deployment configuration
 **Date:** 2026-10-13
 **Author:** OpenAI Codex
 
@@ -1601,7 +1624,7 @@ use after activation.
 
 ---
 
-## Entry 054 - One Redis URL for cache and queue processes
+## Entry 055 - One Redis URL for cache and queue processes
 **Date:** 2026-10-13
 **Author:** OpenAI Codex
 
@@ -1610,7 +1633,7 @@ At the user's direction, consolidated connection configuration to one
 Both local JSON files retain `redis://localhost:6379/0`; removed their redundant
 `REDIS_LOCATION`, `REDIS_PORT`, and `CACHE_URL` entries and added a described
 shared `REDIS_URL`. Cache enablement, distinct environment/dataset namespaces,
-lifetimes, entry-size cap, and cache timeouts remain as recorded in entry 053.
+lifetimes, entry-size cap, and cache timeouts remain as recorded in entry 054.
 The cache keeps its independent client/pool and never uses `app.q.connection`.
 
 All process roles now use the same resolution order: process-environment
@@ -1642,7 +1665,7 @@ the existing shared-service capacity and selected-endpoint rollout checks.
 
 ---
 
-## Entry 055 - Archive Search result actions and freshness details
+## Entry 056 - Archive Search result actions and freshness details
 **Date:** 2026-10-13 to 2026-10-14
 **Author:** OpenAI Codex
 
@@ -1662,7 +1685,9 @@ generations stored in cache can show expiration; cache-disabled/unpublished
 generations omit that row.
 
 Affected runtime component: Archive Search results template and local CSS.
-No search, cache, API, configuration, or workbook behavior changes. Updated the
+No search, cache, API, configuration, or workbook behavior changes. The caching
+release advances the app version to `1.19.6`; `uv lock` updates only the root
+project version and preserves every dependency version. Updated the
 feature specification and Operations. Verification: all 101 focused
 cache/shareable-URL tests passed; rendered-page checks covered cached, fresh,
 and caching-disabled states, badge/action placement, available/unavailable
