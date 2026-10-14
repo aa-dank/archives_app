@@ -205,8 +205,11 @@ def test_alias_refresh_and_result_headers(environment):
     cached = env.client.get("/file_search", query_string=params)
     assert first.status_code == cached.status_code == 200
     assert first.headers["Cache-Control"] == cached.headers["Cache-Control"] == "private, no-store"
-    assert b"Results generated at 2026-10-13 12:00:00 UTC" in cached.data
-    assert b"Cached results; expires at 2026-10-18 12:00:00 UTC" in cached.data
+    assert b"archive-cache-state-fresh\">Fresh results</span>" in first.data
+    assert b"archive-cache-state-cached\">Cached results</span>" in cached.data
+    assert b'Coverage &amp; freshness' in cached.data
+    assert b'<time datetime="2026-10-13T12:00:00+00:00">2026-10-13 12:00:00 UTC</time>' in cached.data
+    assert b'<time datetime="2026-10-18T12:00:00+00:00">2026-10-18 12:00:00 UTC</time>' in cached.data
     assert "13xx   Ranch" in cached.text and "Plans   café &lt;x&gt;.pdf" in cached.text
     import html
     import re

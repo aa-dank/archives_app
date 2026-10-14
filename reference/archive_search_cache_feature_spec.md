@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-09
 
-**Last updated:** 2026-10-13
+**Last updated:** 2026-10-14
 
 **Status:** Implemented; browser caching remains disabled by default pending deployment opt-in
 
@@ -122,10 +122,17 @@ normal GET submissions.
 
 For every result page:
 
-- Show **Results generated at ...**, using the source-data timestamp.
-- For a hit, identify the results as cached and show their expiration time.
+- Show a **Cached results** or **Fresh results** badge beside **Run fresh search**,
+  keeping the badge and action grouped in the **Results** panel header when the
+  toolbar wraps. Put **Download Excel** in that same header and the workbook note
+  beneath it. On narrow screens, actions wrap beneath the Results heading.
+- Keep the page's top toolbar focused on **Back to search** and **How to interpret
+  results**.
+- Put **Results generated at**, using the source-data timestamp, and **Cache
+  expires at** when applicable inside the **Coverage & freshness** dropdown.
 - Provide **Run fresh search** with every active search option preserved.
-- Explain that cached results can omit recent archive/index changes.
+- Explain inside that dropdown that cached results can omit recent archive/index
+  changes.
 - Use an explicit timezone. Store cache metadata in UTC and display UTC in the
   first release; avoid relying on the web host's local timezone.
 - Keep HTML limits, ranking, path whitespace, escaping, and snippet highlighting

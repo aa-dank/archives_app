@@ -52,8 +52,13 @@ RQ jobs are tracked in the `worker_tasks` table through `WorkerTaskModel`, inclu
 With `ARCHIVE_SEARCH_CACHE_ENABLED=true`, `/archives_search` and `/file_search`
 reuse complete successful results for five days by default. This intentionally
 changes the fresh-on-every-open browser URL behavior documented in journal
-entries 044 and 046. Results show their source generation time in UTC; cached
-pages also show expiration. **Run fresh search** preserves active search options
+entries 044 and 046. A **Cached results** or **Fresh results** badge sits beside
+**Run fresh search** in the **Results** panel header, alongside **Download Excel**.
+The workbook note sits beneath that header; the top toolbar contains navigation
+and help. Result actions wrap below the heading on narrow screens.
+The **Coverage & freshness** dropdown contains source
+generation time in UTC, cache expiration when available, and the note about
+recent archive/index changes. **Run fresh search** preserves active search options
 and adds `refresh=1`, bypassing lookup and publishing a new generation only on
 success. A failed refresh reports its failure and preserves the previous entry
 for normal requests. Search-result HTML uses `Cache-Control: private, no-store`.
