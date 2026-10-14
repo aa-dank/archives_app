@@ -1639,3 +1639,34 @@ all 35 Jinja template parses, and `git diff --check` passed. Existing pandas dty
 deprecation warnings remain. Follow-on: copy the migrated JSON files and restart
 web and worker processes together, using matching environment overrides; retain
 the existing shared-service capacity and selected-endpoint rollout checks.
+
+---
+
+## Entry 055 - Archive Search result actions and freshness details
+**Date:** 2026-10-13 to 2026-10-14
+**Author:** OpenAI Codex
+
+Simplified the busy Archive Search toolbar by grouping a Cached results or Fresh
+results badge, Run fresh search, and Download Excel in the Results panel header,
+with the workbook explanation beneath it. The badge stays paired with refresh;
+actions align to the right on wide screens and wrap below the heading on narrow
+screens. The top toolbar contains only Back to search and How to interpret
+results. Unavailable exports keep a disabled control, and empty results retain
+their actions.
+
+Removed the prominent timestamp paragraph and renamed Coverage to Coverage &
+freshness. Its collapsed details contain source generation time in UTC, cache
+expiration when available, and the note that cached results can omit recent
+archive/index changes, alongside existing scope and coverage information. Fresh
+generations stored in cache can show expiration; cache-disabled/unpublished
+generations omit that row.
+
+Affected runtime component: Archive Search results template and local CSS.
+No search, cache, API, configuration, or workbook behavior changes. Updated the
+feature specification and Operations. Verification: all 101 focused
+cache/shareable-URL tests passed; rendered-page checks covered cached, fresh,
+and caching-disabled states, badge/action placement, available/unavailable
+exports, empty results, collapsed metadata, and conditional expiration. All 35
+Jinja templates parsed and `git diff --check` passed. Existing pandas dtype
+deprecation warnings remain. Follow-on: capture wide/narrow layouts and the
+expanded Coverage & freshness pane in the implementation PR's browser screenshots.
