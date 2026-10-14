@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="185 180 655 655" role="img" aria-labelledby="title desc">
+  <title id="title">Archives App — Ariolimax archivist</title>
+  <desc id="desc">A smiling golden banana slug with a curled tail holds a steel blue archive folder bearing a building emblem. Transparent background.</desc>
+  <defs>
+    <linearGradient id="gold" x1="270" y1="280" x2="690" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f8d65a"/>
+      <stop offset="0.48" stop-color="#edbd27"/>
+      <stop offset="1" stop-color="#d39e00"/>
+    </linearGradient>
+    <linearGradient id="folder" x1="465" y1="480" x2="650" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5f788a"/>
+      <stop offset="1" stop-color="#35759a"/>
+    </linearGradient>
+    <path id="body" d="M312 337C312 303 307 271 302 248C283 243 278 225 289 215C302 201 325 212 324 230C324 236 322 241 320 245C325 279 335 313 350 335C371 310 402 321 420 337C438 353 441 378 450 399C467 435 440 463 406 469C389 509 394 548 419 584C446 627 488 668 541 671C601 675 647 645 675 600C696 566 700 525 711 481C722 438 744 404 774 391C794 382 811 390 811 405C811 425 791 454 786 497C781 538 790 583 773 633C747 714 688 772 613 799C534 829 432 815 358 785C274 752 220 677 219 586C212 496 245 405 312 337Z"/>
+    <clipPath id="body-clip"><use href="#body"/></clipPath>
+  </defs>
+
+  <!-- The rear eyestalk sits behind the head. -->
+  <path d="M386 325L440 253C437 235 446 225 458 225C472 224 481 236 479 249C477 261 468 266 458 265C442 288 430 314 424 341Z" fill="#d39e00" stroke="#35759a" stroke-width="14" stroke-linejoin="round"/>
+
+  <!-- One continuous silhouette keeps the curled body smooth. -->
+  <use href="#body" fill="url(#gold)"/>
+  <g clip-path="url(#body-clip)">
+    <path d="M333 609C350 690 404 752 472 767C555 787 636 751 693 700C747 652 772 595 782 521C798 635 745 733 668 779C613 815 542 825 489 812C414 794 348 712 333 609Z" fill="#d39e00"/>
+    <path d="M331 459C351 486 370 503 395 507L405 467Z" fill="#d39e00"/>
+    <path d="M369 633C407 669 440 675 478 662L447 636Z" fill="#d39e00"/>
+    <g fill="none" stroke="#fafafa" stroke-linecap="round">
+      <path d="M309 351C273 386 243 448 234 510C220 590 239 654 268 695" stroke-width="15" stroke-opacity="0.47"/>
+      <path d="M312 350C320 328 310 270 305 244" stroke-width="9" stroke-opacity="0.58"/>
+      <path d="M354 336C383 326 415 342 428 366" stroke-width="12" stroke-opacity="0.48"/>
+      <path d="M478 653C533 690 600 688 651 647C695 611 711 559 725 506C736 460 753 426 785 405" stroke-width="15" stroke-opacity="0.48"/>
+    </g>
+  </g>
+  <use href="#body" fill="none" stroke="#35759a" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Far arm, folder back, and the two paper edges. -->
+  <path d="M397 520C415 535 438 534 457 526L477 544L460 576L419 579C409 562 401 540 397 520Z" fill="url(#gold)" stroke="#35759a" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M452 580V474Q452 463 464 463H511L533 484H631Q641 484 641 495V575Z" fill="url(#folder)" stroke="#35759a" stroke-width="13" stroke-linejoin="round"/>
+  <path d="M465 568V506Q465 497 475 497H625Q635 497 635 507V566Z" fill="#fafafa"/>
+  <path d="M477 568V516Q477 507 488 507H633Q645 507 645 520V568Z" fill="#fafafa" stroke="#35759a" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M459 583L482 547Q486 541 495 541H561L580 526H661Q669 526 666 536L642 625Q640 635 629 635H490L458 614Z" fill="url(#folder)" stroke="#35759a" stroke-width="13" stroke-linejoin="round"/>
+
+  <!-- A compact architectural mark ties the mascot to the archives. -->
+  <g fill="#fafafa">
+    <path d="M540 613V582L554 576V557L579 548V613ZM584 613V567L601 574V613Z"/>
+    <path d="M534 613H608" fill="none" stroke="#fafafa" stroke-width="4"/>
+  </g>
+  <g fill="#5f788a">
+    <path d="M560 562h5v6h-5Zm9-3h5v6h-5Zm-9 14h5v6h-5Zm9-3h5v6h-5Zm-9 14h5v6h-5Zm9-3h5v6h-5Zm-9 14h5v6h-5Zm9-3h5v6h-5Zm-22-5h5v6h-5Zm0 11h5v6h-5Zm42-19h5v6h-5Zm0 11h5v6h-5Zm0 11h5v6h-5Z"/>
+    <path d="M561 604h11v9h-11Z"/>
+  </g>
+
+  <!-- The front arm wraps over the folder without a seam at the shoulder. -->
+  <path d="M372 559C400 582 441 585 477 575C491 569 502 573 494 589C480 617 452 636 422 642C402 646 383 640 369 633" fill="url(#gold)" stroke="#35759a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M382 570C411 588 454 586 484 578" fill="none" stroke="#fafafa" stroke-opacity="0.55" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Face and the curve of the belly. -->
+  <g fill="none" stroke="#35759a" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M332 459C355 474 381 477 406 469" stroke-width="10"/>
+    <path d="M343 415C363 435 393 440 417 427" stroke-width="9"/>
+    <path d="M335 418Q345 417 347 408" stroke-width="9"/>
+    <path d="M334 609C342 700 406 784 489 809" stroke-width="10"/>
+  </g>
+  <g fill="#35759a">
+    <circle cx="362" cy="378" r="14"/>
+    <circle cx="426" cy="377" r="12"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="367" cy="373" r="4.5"/>
+    <circle cx="430" cy="373" r="4"/>
+  </g>
+</svg>
