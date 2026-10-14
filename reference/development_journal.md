@@ -1692,6 +1692,10 @@ feature specification and Operations. Verification: all 101 focused
 cache/shareable-URL tests passed; rendered-page checks covered cached, fresh,
 and caching-disabled states, badge/action placement, available/unavailable
 exports, empty results, collapsed metadata, and conditional expiration. All 35
-Jinja templates parsed and `git diff --check` passed. Existing pandas dtype
-deprecation warnings remain. Follow-on: capture wide/narrow layouts and the
-expanded Coverage & freshness pane in the implementation PR's browser screenshots.
+Jinja templates parsed and `git diff --check` passed. Release validation after
+integrating the favicon from master passed all 131 tests against an isolated,
+disposable Redis instance, including the live atomic-publication/TTL contract.
+`uv lock --check --offline` passed. Existing pandas dtype deprecation warnings
+remain. Browser installation was declined, so PR screenshots could not be
+captured. Follow-on: visually check wide/narrow layouts and the expanded
+Coverage & freshness pane during rollout.
