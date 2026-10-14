@@ -4,9 +4,14 @@ Operational responsibilities for the existing archives application include maint
 
 ## Web and worker processes
 
-The Flask application is exposed as `run:app`; Gunicorn is included as its production WSGI server dependency. Executing `run.py` directly starts Flask with debug mode enabled. `worker.py` consumes RQ's `default` queue and reads `REDIS_URL` from the environment, defaulting to `redis://localhost:6379`. The application constructs its queue connection from JSON configuration. Both must reach the same Redis instance.
+The Flask application is exposed as `run:app`; Gunicorn is included as its production WSGI server dependency. Executing `run.py` directly starts Flask with debug mode enabled. `worker.py` consumes RQ's `default` queue. Web queue, cache, and worker resolve one shared `REDIS_URL`: process environment first, explicit selected-JSON value second, then legacy host/port fallback. The worker reads the application's selected JSON file instead of using an independent localhost default. Apply any environment override consistently to all process roles.
 
 Web and worker processes rely on matching dependency versions, configuration files, and filesystem mounts. Their service accounts need access to the archives and inboxes, plus write access to the backup directory and `archives_application/static/temp_files/`. The supplied worker uses RQ's `Worker`; its entry point targets Linux/WSL rather than a native-Windows worker implementation.
+
+Worker startup now imports the application's configuration and therefore needs
+the selected JSON and OAuth files available in the working directory, as the web
+process already does. Restart web and worker processes together after changing
+the shared endpoint or its process-environment override.
 
 Process-supervisor, reverse-proxy, and scheduling configuration live outside this repository. The application's configuration editor invokes the configured `APP_RESTART_COMMAND` and `APP_WORKERS_RESTART_COMMAND` hooks. The app uses `ProxyFix`, and the configuration factory enables `OAUTHLIB_INSECURE_TRANSPORT`; the deployed proxy must supply trusted forwarded headers and enforce HTTPS.
 
@@ -28,9 +33,121 @@ The Docker files record a development web/Redis stack with site-specific CIFS mo
 
 Backups are streamed to `db_backup_<timestamp>.sql.bz2.part` and renamed to `.sql.bz2` after successful completion. They contain a compressed plain SQL dump; test recovery into a separate database using PostgreSQL tools. Maintain separate backups of the archive shares: a database dump does not include document files.
 
-Maintenance currently expires temporary files after **3 days**, timestamped database backups after **2 days**, and task records according to the per-function map in [main/routes.py](../archives_application/main/routes.py). Cleanup runs when maintenance is invoked; the repository does not install a scheduler. Review these retention periods and retain independent recovery copies before scheduling cleanup.
+Maintenance expires ordinary temporary files after **3 days**, Archive Search
+workbooks after **6 days** by default, timestamped database backups after **2
+days**, and task records according to the per-function map in
+[main/routes.py](../archives_application/main/routes.py). Archive Search
+workbooks use `ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS` and completed-file
+modification time; downloads/hits do not renew their age. Both supported
+14-digit legacy and 20-digit current timestamp filenames receive this policy.
+Invalid workbook retention defers their deletion and logs an error while other
+cleanup continues. Cleanup runs when maintenance is invoked; the repository
+does not install a scheduler. Review these retention periods and retain
+independent recovery copies before scheduling cleanup.
 
 RQ jobs are tracked in the `worker_tasks` table through `WorkerTaskModel`, including task ID, status, and results. Check both the worker logs and those records when an accepted operation does not finish. Task timeout values are measured in **seconds** throughout the queue helpers.
+
+## Archive Search caching
+
+With `ARCHIVE_SEARCH_CACHE_ENABLED=true`, `/archives_search` and `/file_search`
+reuse complete successful results for five days by default. This intentionally
+changes the fresh-on-every-open browser URL behavior documented in journal
+entries 044 and 046. A **Cached results** or **Fresh results** badge sits beside
+**Run fresh search** in the **Results** panel header, alongside **Download Excel**.
+The workbook note sits beneath that header; the top toolbar contains navigation
+and help. Result actions wrap below the heading on narrow screens.
+The **Coverage & freshness** dropdown contains source
+generation time in UTC, cache expiration when available, and the note about
+recent archive/index changes. **Run fresh search** preserves active search options
+and adds `refresh=1`, bypassing lookup and publishing a new generation only on
+success. A failed refresh reports its failure and preserves the previous entry
+for normal requests. Search-result HTML uses `Cache-Control: private, no-store`.
+API searches remain fresh with their existing response contract.
+
+Freshness covers scope resolution, file results, all attached locations,
+snippets, and coverage. Indexing/extraction/project updates do not invalidate
+entries automatically. Empty results and scope/coverage warnings also cache.
+No database schema change or cache migration is needed. Disabling the flag and
+restarting restores fresh browser searches without deleting entries or files.
+
+The local `test_config_wsl.json` and `deploy_app_config.json` were opted in on
+2026-10-13. Both now explicitly set the shared `REDIS_URL` to
+`redis://localhost:6379/0`, preserving their previous endpoint, with independent cache clients and the distinct
+`archives:wsl:dataset1` / `archives:deploy:dataset1` namespaces. See
+[Configuration](configuration.md#archive-search-cache-and-workbook-retention)
+for the complete override record. These ignored JSON files are local settings;
+running processes and remote deployments require their normal configuration
+reload/copy steps. The application still selects the deployment file by default.
+
+Use the shared endpoint with a separate cache client/pool and a distinct environment/dataset namespace;
+see [Configuration](configuration.md#archive-search-cache-and-workbook-retention)
+for all settings and a JSON example. Namespace changes are the initial bulk
+invalidation mechanism; never use `FLUSHDB`/`FLUSHALL` on a service shared with
+RQ. Old namespaced entries expire normally. Payload/search versions belong to
+the consumer and must advance when result interpretation or ranking changes.
+
+Workbooks live in the existing temporary directory on a single host, or a shared
+volume mounted at the same path on every serving host. Verify web/worker write
+and cleanup access and this storage layout before enabling caching. A shared
+Redis cache does not make another host's local downloads available. Completed
+XLSX files publish through same-directory staging and atomic rename; workbook
+references use generation IDs so an older export cannot replace a newer result.
+Files are shared artifacts and are never added to a viewer's logout-deletion
+list. Missing files/references regenerate from still-valid cached data, retaining
+the original Coverage timestamp and result expiration. The replacement file has
+its own publication age. Downloads continue to serve retained files after the
+result expires; a normal search at expiration runs fresh.
+
+The five-day lifetime and five-MiB per-entry cap do not bound aggregate Redis
+memory. The selected deployment shares this service with RQ, so verify spare
+capacity and queue-safe resource/eviction behavior. A separate bounded cache
+service would require a later configuration split. No global memory limit or
+queue eviction policy is set by these application settings. The offline analysis in the
+[feature spec](archive_search_cache_feature_spec.md#verification-and-acceptance)
+found a peak of 50 successful browser searches per five days and estimated
+256–441 MiB with overhead/headroom; 512 MiB is a conservative planning allowance,
+not expected usage or a request to alter an existing Redis limit.
+
+The 26 locally retained example workbooks total 2,259,171 bytes, average 86,891
+bytes, and peak at 1,032,493 bytes. A rough six-day allowance of 60 generations
+(scaling the observed 50/five-day workload) gives about 5 MiB at the sample mean,
+or 59 MiB if each reaches the sample maximum; allow about 120 MiB with twofold
+headroom. This is a planning estimate, not a measured six-day traffic bound.
+Refreshes, concurrent misses, failed reference writes, and manual deletion can
+create extra files. Confirm capacity beyond other temporary artifacts and refine
+both cache and disk allowances from actual traffic after rollout.
+
+Before enabling on the selected deployment, run the disposable-key Redis
+contract check with `ARCHIVES_CACHE_TEST_URL` set to that endpoint:
+
+```bash
+.venv/bin/pytest -q tests/test_cache_redis_contract.py
+```
+
+This opt-in test uses unique `archives-cache-contract:<uuid>` keys, checks
+independent TTLs and complete atomic publication, and deletes only its own keys.
+It does not change server configuration. The test-only
+`ARCHIVES_CACHE_TEST_SOCKET` option supports a disposable local Redis service;
+neither test variable is an application configuration setting. Validate TLS,
+authentication, network access, and shared workbook storage on the actual
+deployment separately.
+
+Application `archive_search_cache` log events distinguish lookup hit/miss,
+refresh, malformed/oversized payloads, backend failure, serialization and write
+outcomes, and workbook reuse/regeneration. Fields include namespace/consumer,
+identity digest, generation ID, lifetime, payload size, source age, and relevant
+elapsed times. Raw queries, file-server paths, credentials, and payloads are
+excluded from these cache events. Every valid request still gets best-effort
+current-viewer telemetry; warm hits retain those writes, so duration alone is
+not a hit-rate metric. Backend failures/timeouts fall back to fresh searches
+without retries or serving expired entries. Concurrent misses/refreshes may
+duplicate work; the last completed atomic publication wins.
+
+For a staged opt-in rollout, verify a warm repeat skips scope/search/metadata/
+snippet/coverage queries and XLSX writing, compare output and current-viewer
+telemetry, exercise refresh and a missing workbook, and capture fresh/cached
+notices plus the fresh-search control for the implementation PR. Monitor cache
+size/outcome logs and temporary-disk use, then adjust limits from measured data.
 
 ## Troubleshooting
 
@@ -39,7 +156,7 @@ RQ jobs are tracked in the `worker_tasks` table through `WorkerTaskModel`, inclu
 | Import fails with a missing config/OAuth JSON file | Run from the repository root and supply both selected JSON files; loading happens at import time. |
 | Database connection error | Verify `Sqalchemy_Database_Location`, database name, credentials, string port/SSL values, network access, and URI encoding. |
 | Missing relation, column, `vector` type, or `search_vector` | Confirm the canonical database migrations/extensions are installed. This app does not migrate the database at startup. |
-| Jobs remain queued | Confirm a worker listens on `default` and its environment `REDIS_URL` reaches the same Redis instance as the app's JSON configuration. |
+| Jobs remain queued | Confirm a worker listens on `default`, loads the same selected JSON file, and has the same `REDIS_URL` environment override as the web process. |
 | File edit fails or paths point to the wrong place | Confirm mounts, service-account permissions, and the correspondence between app and user archive roots. Use the configured user-path prefix. |
 | Content search misses a known document | Check extraction status and chunk coverage; run location/index maintenance if metadata is stale. Filename indexing does not imply text extraction. |
 | Project/CAAN searches have no archive scope | Check synchronized relationships and recorded `projects.file_server_location`; confirm project locations when appropriate. |

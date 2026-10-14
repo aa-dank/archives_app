@@ -1492,3 +1492,210 @@ the full-size artwork; confirmed transparent corners and no embedded raster
 content. `git diff --check` passed.
 No migration or operational follow-on work is required; browsers may need a
 refresh to replace a cached favicon after deployment.
+
+---
+
+## Entry 052 - Opt-in Archive Search caching and workbook retention
+**Date:** 2026-10-13
+**Author:** OpenAI Codex
+
+Implemented the Archive Search cache specification on `feature/search-cache`.
+When explicitly enabled, matching `/archives_search` and `/file_search` requests
+share successful bounded results for five days from search completion. This
+changes the always-fresh browser URL contract in entries 044 and 046. The API
+remains fresh. Each validated request retains its own current-viewer telemetry,
+including hits. Result pages show source generation time in UTC, cached-result
+expiration, a freshness explanation, and a Run fresh search link preserving
+active options. `refresh=1` bypasses lookup; failed refresh preserves the prior
+entry for normal requests. Result HTML uses `Cache-Control: private, no-store`.
+
+Added an independent byte-cache adapter and application extension using ordinary
+Redis GET/SET-with-expiration/DEL, namespaced keys, bounded connection/read
+timeouts, and no retries. Search-specific identity and strict versioned JSON
+include effective per-generation policy and data-target settings without
+credentials or viewer state. Malformed, expired, incompatible, oversized, or
+unavailable cache data falls back to fresh searches. Writes use only remaining
+lifetime. Structured cache logs record outcomes and resource information without
+raw queries, paths, credentials, or payloads. No database schema/migration or RQ
+connection/eviction changes are required.
+
+Workbooks are separate generation references, reused while present and
+regenerated from cached data after file/reference loss. Export warnings are
+response-local. Files publish through same-directory staging and atomic rename
+with collision-safe timestamp download IDs; Coverage retains the source UTC
+generation time. Temporary-file maintenance now retains valid legacy/current
+Archive Search workbooks for six days from completed publication/last write;
+ordinary temporary files retain their existing three-day policy. Downloads and
+hits never renew file age or result expiry. Invalid workbook retention defers
+workbook deletion while other cleanup continues.
+
+Configuration: caching defaults to disabled; result TTL is 432000 seconds,
+workbook retention 518400 seconds, cache timeout 0.5 seconds, and entry cap
+5242880 bytes. Enabling requires explicit `CACHE_URL` and `CACHE_NAMESPACE`.
+Integer lifetimes must be positive and retention must exceed the effective TTL,
+including server-side overrides. Invalid settings disable caching with a
+configuration error while fresh searches remain usable. All seven new settings,
+types, defaults, JSON VALUE/DESCRIPTION examples, restart requirements, namespace
+invalidation, and rollout sizing are documented in Configuration/Operations.
+Existing deployment/test JSON and credentials were not modified.
+
+Affected runtime components: application initialization/configuration, cache
+adapter, Archive Search execution/page service, browser route/template, workbook
+publication, and queued temporary-file cleanup. Verification: 105 regression
+tests passed; the opt-in backend test skips in the default suite and passed
+separately against a disposable local Redis service for TTLs and atomic
+publication. Coverage includes query-stage/Excel skipping on warm hits, aliases,
+API isolation, refresh, malformed/outage/oversize fallback, JSON/datetime/space
+preservation, current-user telemetry, expiration, workbook loss and concurrent
+publication, and separate maintenance policies. Python compilation, all 35
+Jinja template parses, and `git diff --check` passed. Existing pandas dtype
+deprecation warnings remain.
+
+Follow-on: verify the contract against the selected deployment endpoint and
+TLS/auth/network settings, shared workbook-volume access, and resource/eviction
+capacity before explicitly enabling. Operations records the traffic/cache/disk
+planning allowances and warm-hit rollout checks. Capture fresh/cached notices
+and the fresh-search control in a deployed browser for the implementation PR,
+then refine limits from actual cache logs and disk use. Namespace changes are
+the initial whole-cache invalidation mechanism; do not flush a shared RQ service.
+
+---
+
+## Entry 053 - Harden Archive Search cache failure boundaries
+**Date:** 2026-10-13
+**Author:** OpenAI Codex
+
+Review of the new search cache found Redis pool-construction failures that could
+escape startup fallback, and a freshness check that ran before full payload
+decoding. Invalid Redis client/pool options now disable caching through the
+existing configuration error path. Lookup rechecks source expiration after
+decoding so a large entry that expires during reconstruction runs fresh instead
+of being served. Expiration arithmetic and lazy backend numeric overflows remain
+cache-local failures; they cannot abort an otherwise successful fresh search.
+
+Affected runtime components: Redis adapter construction/operations and Archive
+Search result lookup/publication. No new settings, schema, queue, workbook
+retention, or rollout-policy changes. Cache classes/helpers now document failure,
+lifetime, mutation, and publication contracts, with comments explaining the
+non-obvious boundaries.
+
+Verification: 112 regression tests passed, including new cases for Redis
+pool-option failures, expiration during decoding, unrepresentable generation
+expiration, and backend timeout/configuration overflows. The opt-in live-backend
+test skips in the default suite and passed separately against a disposable local
+Redis service through the production TCP adapter. Docstring inspection covered every class and
+function in the new runtime and test modules; Python compilation, all 35 Jinja
+template parses, and `git diff --check` passed. Existing pandas dtype deprecation
+warnings remain. Follow-on: use the deployment contract/storage checks recorded
+in entry 052 before enabling caching.
+
+---
+
+## Entry 054 - Enable cache in WSL and deployment configuration
+**Date:** 2026-10-13
+**Author:** OpenAI Codex
+
+At the user's request, added all seven described cache settings to the local
+`test_config_wsl.json` and `deploy_app_config.json` and set
+`ARCHIVE_SEARCH_CACHE_ENABLED` to the JSON boolean `true`. Both explicitly use
+`redis://localhost:6379/0`, matching their existing Redis host/port, through the
+independent cache client. Namespaces are `archives:wsl:dataset1` and
+`archives:deploy:dataset1` to prevent cross-environment key collisions.
+Result TTL remains 432000 seconds, workbook retention 518400 seconds, cache
+timeout 0.5 seconds, and encoded-entry cap 5242880 bytes. Existing configuration
+values, queue settings, and Redis eviction settings were preserved.
+
+Affected runtime components: browser Archive Search caching after configuration
+reload, and workbook maintenance's explicit retention setting. Configuration and
+Operations document every override, shared Redis memory, separate pools, active
+file selection, and reload requirements. The JSON files are ignored by Git;
+their local edits require separate copying to remote environments. The app
+continues to select `deploy_app_config.json` by default; the WSL file applies
+when explicitly selected.
+
+Verification: both JSON files parsed and retained every prior setting; their
+actual configuration loader/app initialization produced enabled cache policies,
+valid lifetime pairings, distinct namespaces, and pools separate from RQ.
+All 101 focused cache/shareable-URL tests and `git diff --check` passed. No
+services were restarted or live endpoint settings changed. Follow-on: copy/reload
+the intended configuration, run the selected-endpoint contract/storage checks
+from Operations, verify shared-service capacity, and monitor hit rates and disk
+use after activation.
+
+---
+
+## Entry 055 - One Redis URL for cache and queue processes
+**Date:** 2026-10-13
+**Author:** OpenAI Codex
+
+At the user's direction, consolidated connection configuration to one
+`REDIS_URL` for browser result caching, the web app's RQ producer, and the worker.
+Both local JSON files retain `redis://localhost:6379/0`; removed their redundant
+`REDIS_LOCATION`, `REDIS_PORT`, and `CACHE_URL` entries and added a described
+shared `REDIS_URL`. Cache enablement, distinct environment/dataset namespaces,
+lifetimes, entry-size cap, and cache timeouts remain as recorded in entry 054.
+The cache keeps its independent client/pool and never uses `app.q.connection`.
+
+All process roles now use the same resolution order: process-environment
+`REDIS_URL`, explicit JSON/class URL, then legacy host/port fallback. Explicit
+URLs preserve their authentication/TLS options and cannot be overwritten by old
+fields; empty or invalidly typed explicit values do not silently fall back.
+`CACHE_URL` is retired and ignored. The worker reads the same selected JSON file
+as the app instead of independently defaulting to localhost. Worker startup now
+imports the application's configuration and requires its JSON/OAuth files, as
+the web process does. A malformed shared endpoint can also invalidate RQ setup;
+cache-policy failures still retain their existing best-effort behavior.
+
+Affected runtime components: configuration loading, app/cache initialization, and
+worker connection setup. Configuration, Operations, and the feature specification
+document the user's shared-instance decision and migration. No Redis service,
+memory-limit, eviction-policy, database, or workbook-storage changes were made.
+Both JSON files remain Git-ignored and require separate deployment copying.
+
+Verification: all 130 regression tests passed, with the opt-in live Redis test
+skipped in the default suite. New coverage verifies URL/environment precedence,
+legacy compatibility, invalid explicit values, retired-cache-URL handling, actual
+worker entry-point resolution, and shared endpoints with independent cache/queue
+pools. Both real JSON files also passed actual loader/app/worker initialization
+checks without starting workers or opening service connections. Compilation,
+all 35 Jinja template parses, and `git diff --check` passed. Existing pandas dtype
+deprecation warnings remain. Follow-on: copy the migrated JSON files and restart
+web and worker processes together, using matching environment overrides; retain
+the existing shared-service capacity and selected-endpoint rollout checks.
+
+---
+
+## Entry 056 - Archive Search result actions and freshness details
+**Date:** 2026-10-13 to 2026-10-14
+**Author:** OpenAI Codex
+
+Simplified the busy Archive Search toolbar by grouping a Cached results or Fresh
+results badge, Run fresh search, and Download Excel in the Results panel header,
+with the workbook explanation beneath it. The badge stays paired with refresh;
+actions align to the right on wide screens and wrap below the heading on narrow
+screens. The top toolbar contains only Back to search and How to interpret
+results. Unavailable exports keep a disabled control, and empty results retain
+their actions.
+
+Removed the prominent timestamp paragraph and renamed Coverage to Coverage &
+freshness. Its collapsed details contain source generation time in UTC, cache
+expiration when available, and the note that cached results can omit recent
+archive/index changes, alongside existing scope and coverage information. Fresh
+generations stored in cache can show expiration; cache-disabled/unpublished
+generations omit that row.
+
+Affected runtime component: Archive Search results template and local CSS.
+No search, cache, API, configuration, or workbook behavior changes. The caching
+release advances the app version to `1.19.6`; `uv lock` updates only the root
+project version and preserves every dependency version. Updated the
+feature specification and Operations. Verification: all 101 focused
+cache/shareable-URL tests passed; rendered-page checks covered cached, fresh,
+and caching-disabled states, badge/action placement, available/unavailable
+exports, empty results, collapsed metadata, and conditional expiration. All 35
+Jinja templates parsed and `git diff --check` passed. Release validation after
+integrating the favicon from master passed all 131 tests against an isolated,
+disposable Redis instance, including the live atomic-publication/TTL contract.
+`uv lock --check --offline` passed. Existing pandas dtype deprecation warnings
+remain. Browser installation was declined, so PR screenshots could not be
+captured. Follow-on: visually check wide/narrow layouts and the expanded
+Coverage & freshness pane during rollout.

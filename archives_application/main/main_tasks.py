@@ -13,6 +13,8 @@ from typing import Dict
 from sqlalchemy.engine import make_url
 from archives_application import create_app, utils
 from archives_application.models import WorkerTaskModel
+from archives_application.cache import positive_integer
+from archives_application.archiver.archive_search import is_archive_search_workbook
 
 # Create the app context so that tasks can access app extensions even though
 # they are not running in the main thread.
@@ -56,7 +58,12 @@ class AppCustodian:
 
     def _temp_file_clean_up_task(self, queue_id: str):
         """
-        This task will remove all files in the temp_files directory that are older than the specified lifespan.
+        Remove eligible temporary files using their existing or workbook-specific policy.
+
+        Published Archive Search XLSX files use completed-write age and configured
+        seconds; other files keep the existing creation-time/day policy. Invalid
+        workbook retention defers only those workbooks. Cleanup stays inside the
+        queued task's app context and records initiation/completion status.
         :param queue_id: the id of the task in the RQ queue
         """
         with app.app_context():
@@ -67,8 +74,28 @@ class AppCustodian:
             expiration_date = now - timedelta(days=self.temporary_file_lifespan)
             temporary_files = [os.path.join(self.temporary_files_location, f) for f in os.listdir(self.temporary_files_location) 
                                if os.path.isfile(os.path.join(self.temporary_files_location, f))]
-            creation_dt = lambda f_path: datetime.fromtimestamp(os.path.getctime(f_path))            
-            to_remove = [f for f in temporary_files if creation_dt(f) < expiration_date]
+
+            # Determine the retention period for archive search workbooks
+            try:
+                workbook_retention = positive_integer(
+                    flask.current_app.config.get("ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS", 518400),
+                    "ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS",
+                )
+            except ValueError as error:
+                workbook_retention = None
+                log["errors"].append(str(error))
+                flask.current_app.logger.error("Archive Search workbook deletion deferred: %s", error)
+            to_remove = []
+
+            # Identify temporary files that should be removed based on retention policies
+            for filepath in temporary_files:
+                if is_archive_search_workbook(os.path.basename(filepath)):
+                    # Completed publication/write time; downloads never renew age.
+                    if (workbook_retention is not None
+                            and time.time() - os.path.getmtime(filepath) >= workbook_retention):
+                        to_remove.append(filepath)
+                elif datetime.fromtimestamp(os.path.getctime(filepath)) < expiration_date:
+                    to_remove.append(filepath)
             for filepath in to_remove:
                 try:
                     filesize = os.path.getsize(filepath)

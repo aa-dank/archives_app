@@ -7,13 +7,8 @@
             Showing {{ search.html_result_count }} file-level result{% if search.html_result_count != 1 %}s{% endif %}.
         </p>
 
-        <div class="archive-results-actions">
+        <div class="archive-search-navigation">
             <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('archiver.archives_search') }}">Back to search</a>
-            {% if export_available %}
-                <a class="btn btn-outline-info btn-sm" href="{{ url_for('archiver.archives_search', timestamp=timestamp) }}">Download Excel workbook</a>
-            {% else %}
-                <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Download Excel workbook unavailable</button>
-            {% endif %}
             <button
                 class="btn btn-outline-info btn-sm archive-results-guide-toggle"
                 type="button"
@@ -66,11 +61,6 @@
             </div>
         {% endif %}
 
-        {% if export_available %}
-            <p class="archive-workbook-note">
-                <span class="text-muted">Excel workbook includes up to {{ search.excel_file_limit }} top results. Sheets: Results, Locations, Coverage.</span>
-            </p>
-        {% endif %}
     </div>
 
     {% macro help_label(label, explanation) -%}
@@ -88,7 +78,7 @@
     <div class="content-section archive-coverage-section">
         <div class="archive-coverage-header">
             <div>
-                <h4>Coverage</h4>
+                <h4>Coverage &amp; freshness</h4>
                 <div class="text-muted">
                     {{ search.coverage.content_searchable_files }} of {{ search.coverage.files_in_scope }} files content-searchable in this scope.
                 </div>
@@ -100,6 +90,7 @@
                 data-target="#archiveCoverageDetails"
                 aria-expanded="false"
                 aria-controls="archiveCoverageDetails"
+                aria-label="Toggle coverage and freshness details"
             >
                 Details <span class="collapse-toggle-icon">&#9660;</span>
             </button>
@@ -108,6 +99,16 @@
         <div class="table-responsive">
             <table class="table table-dark table-striped table-bordered table-hover table-sm">
                 <tbody>
+                    <tr>
+                        <th>{{ help_label("Results generated at", "When these search results were generated, shown in UTC. Reusing cached results keeps the original time.") }}</th>
+                        <td><time datetime="{{ generated_at.isoformat() }}">{{ generated_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</time></td>
+                    </tr>
+                    {% if expires_at is not none %}
+                        <tr>
+                            <th>{{ help_label("Cache expires at", "When these results stop being reusable from cache. A fresh search can replace them sooner.") }}</th>
+                            <td><time datetime="{{ expires_at.isoformat() }}">{{ expires_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</time></td>
+                        </tr>
+                    {% endif %}
                     <tr>
                         <th>{{ help_label("Search mode", "Which parts of the archive were searched for this query: filename, path, extracted document text, or a combined search.") }}</th>
                         <td>{{ search.search_mode_label }}</td>
@@ -135,11 +136,36 @@
                 </tbody>
             </table>
         </div>
+        <p class="text-muted archive-search-freshness-note">
+            Cached results can omit recent archive or index changes.
+        </p>
         </div>
     </div>
 
     <div class="content-section archive-results-wide">
-        <h4>Results</h4>
+        <div class="archive-results-header">
+            <h4>Results</h4>
+            <div class="archive-results-actions" role="group" aria-label="Result actions">
+                <div class="archive-refresh-actions" role="group" aria-label="Search freshness and refresh">
+                    {% if cache_hit %}
+                        <span class="badge badge-pill archive-cache-state archive-cache-state-cached">Cached results</span>
+                    {% else %}
+                        <span class="badge badge-pill archive-cache-state archive-cache-state-fresh">Fresh results</span>
+                    {% endif %}
+                    <a class="btn btn-outline-primary btn-sm" href="{{ fresh_search_url }}">Run fresh search</a>
+                </div>
+                {% if export_available %}
+                    <a class="btn btn-outline-info btn-sm" href="{{ url_for('archiver.archives_search', timestamp=timestamp) }}">Download Excel</a>
+                {% else %}
+                    <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Download Excel unavailable</button>
+                {% endif %}
+            </div>
+        </div>
+        {% if export_available %}
+            <p class="text-muted archive-workbook-note">
+                Excel workbook includes up to {{ search.excel_file_limit }} top results. Sheets: Results, Locations, Coverage.
+            </p>
+        {% endif %}
         {% if search.results %}
             <div class="archive-results-scroll">
                 <table class="table table-dark table-striped table-bordered table-hover table-sm archive-results-table">
@@ -241,11 +267,55 @@
             padding-right: 12px;
             overflow-x: visible;
         }
+        .archive-search-navigation,
         .archive-results-actions {
             display: flex;
+            align-items: center;
             flex-wrap: wrap;
             gap: 0.5rem;
+        }
+        .archive-search-navigation {
             margin-bottom: 1rem;
+        }
+        .archive-results-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.75rem 1rem;
+            margin-bottom: 0.75rem;
+        }
+        .archive-results-header h4 {
+            margin-bottom: 0;
+        }
+        .archive-results-actions {
+            justify-content: flex-end;
+        }
+        .archive-workbook-note {
+            margin-bottom: 0.75rem;
+        }
+        /* Keep the state badge beside its action when the toolbar wraps. */
+        .archive-refresh-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .archive-cache-state {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.45em 0.65em;
+            white-space: nowrap;
+        }
+        .archive-cache-state-cached {
+            background-color: #e4f3ff;
+            color: #134b70;
+        }
+        .archive-cache-state-fresh {
+            background-color: #e5f5ec;
+            color: #205937;
+        }
+        .archive-search-freshness-note {
+            margin-bottom: 0;
         }
         .archive-results-guide {
             border: 1px solid #dddddd;
@@ -254,8 +324,7 @@
             margin-bottom: 1rem;
             padding: 0.75rem 1rem;
         }
-        .archive-results-guide p:last-child,
-        .archive-workbook-note {
+        .archive-results-guide p:last-child {
             margin-bottom: 0;
         }
         button[aria-expanded="true"] .collapse-toggle-icon {
@@ -417,9 +486,13 @@
             }
         }
         @media (max-width: 575.98px) {
+            .archive-results-header,
             .archive-coverage-header {
                 align-items: flex-start;
                 flex-direction: column;
+            }
+            .archive-results-actions {
+                justify-content: flex-start;
             }
         }
     </style>
