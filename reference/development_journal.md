@@ -1714,19 +1714,33 @@ deployment or mount consumers must provision it separately. Affected operational
 components are repository secret handling and deployment configuration delivery;
 application code, database state, and running services are unchanged.
 
-Verification before publication: the local credential file was preserved
-byte-for-byte and is absent from the index. The initial isolated rehearsal
-removed only this file from all 576 historical commit trees, rewriting 477
-commits across 29 of 34 branches and six PR refs. An exact-password scan found
-no other matching file version in remote-branch history. The user authorized
-publishing the rewrite after reviewing the cleanup plan, now kept locally in
-the ignored `dev_files` directory. A fresh remote snapshot and full
-sensitive-data-removal verification will precede the coordinated ref updates;
-completion results will be recorded here.
+At the user's authorization, ran git-filter-repo 2.47.0's sensitive-data-removal
+mode using a temporary Git 2.51.0 build, with a fresh remote mirror and restricted
+recovery copies outside the repository. Preserved all commits, including empty
+commits and merge structure. The verified candidate rewrote 478 of 577 commits
+(including the tracking-fix/journal commit), changing 29 of 34 branch tips.
+Published those 29 updates in one atomic push with explicit leases against the
+original remote tips; all 34 remote branch tips matched the verified result.
+No branch protection or open PR required changes, no forks were reported, and
+LFS was not in use.
+
+Verification: every candidate commit tree matched its original with only the
+root credential file removed; all 2,223 reachable file versions were free of
+the exact exposed password. File history was empty and Git object-integrity
+checks passed. Also sanitized the working clone's 589 mapped commits (490
+rewritten) and six direct-tree Codex checkpoint refs. Both existing stashes
+were restored in their original order after an extra pruning pass cleared
+their log; their remaining contents and all mapped commit trees were verified.
+The local credential file and ignored development files were preserved. A
+local exclude rule protects the credential filename when switching to older
+branches, whose historical ignore files do not contain the new master rule.
+The cleanup plan and audit reports remain in ignored `dev_files` storage.
 
 Operational follow-on: rotate/revoke any still-valid exposed password and
 update its consumers separately. Preserve local configuration before replacing
-other clones, avoid merging pre-cleanup history, and assess GitHub's read-only
-PR refs/cached views under its sensitive-data removal support policy. Any
-temporary recovery bundle retains the original secrets and requires restricted
-storage until it is deliberately retired.
+other clones and avoid merging pre-cleanup history. GitHub's six read-only
+`refs/pull/1/head` through `refs/pull/6/head` still retain the old history; PR
+references/cached views require separate handling under GitHub's sensitive-data
+removal support policy. The remote first changed commit and residual-ref details
+are retained with the local cleanup plan. Temporary recovery copies retain the
+original secrets and require restricted storage until deliberately retired.
