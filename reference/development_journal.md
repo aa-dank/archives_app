@@ -1699,3 +1699,34 @@ disposable Redis instance, including the live atomic-publication/TTL contract.
 remain. Browser installation was declined, so PR screenshots could not be
 captured. Follow-on: visually check wide/narrow layouts and the expanded
 Coverage & freshness pane during rollout.
+
+---
+
+## Entry 057 - Remove committed credentials and clean repository history
+**Date:** 2026-10-14
+**Author:** OpenAI Codex
+
+Investigation found populated username/password assignments in the tracked
+`credentials.env`, introduced on 2023-04-03. At the user's direction, removed
+the file from tracking while preserving the local copy and added an ignore
+rule. The application does not automatically load this file; external
+deployment or mount consumers must provision it separately. Affected operational
+components are repository secret handling and deployment configuration delivery;
+application code, database state, and running services are unchanged.
+
+Verification before publication: the local credential file was preserved
+byte-for-byte and is absent from the index. The initial isolated rehearsal
+removed only this file from all 576 historical commit trees, rewriting 477
+commits across 29 of 34 branches and six PR refs. An exact-password scan found
+no other matching file version in remote-branch history. The user authorized
+publishing the rewrite after reviewing the cleanup plan, now kept locally in
+the ignored `dev_files` directory. A fresh remote snapshot and full
+sensitive-data-removal verification will precede the coordinated ref updates;
+completion results will be recorded here.
+
+Operational follow-on: rotate/revoke any still-valid exposed password and
+update its consumers separately. Preserve local configuration before replacing
+other clones, avoid merging pre-cleanup history, and assess GitHub's read-only
+PR refs/cached views under its sensitive-data removal support policy. Any
+temporary recovery bundle retains the original secrets and requires restricted
+storage until it is deliberately retired.

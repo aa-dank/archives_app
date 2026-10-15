@@ -30,6 +30,10 @@
 *.csv
 *.db
 
+# Local credentials #
+#####################
+credentials.env
+
 # OS generated files #
 ######################
 .DS_Store
