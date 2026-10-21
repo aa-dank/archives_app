@@ -253,6 +253,23 @@ a[aria-expanded="false"] .collapse-toggle-icon {
   font-weight: 600;
 }
 
+.archiving-chart-section {
+  margin: 1.5rem 0;
+  min-width: 0;
+}
+
+.archiving-chart {
+  width: 100%;
+  height: 480px;
+  min-width: 0;
+}
+
+@media (max-width: 575.98px) {
+  .archiving-chart {
+    height: 560px;
+  }
+}
+
 .contract-schedule-dates {
   display: flex;
   justify-content: space-between;

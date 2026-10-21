@@ -2,29 +2,19 @@
 
 import flask
 import io
-import matplotlib
-matplotlib.use('Agg') # Required to generate plots without a display
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from datetime import datetime, timedelta, time
 from flask import current_app
 from flask_login import login_required, current_user
-from matplotlib import ticker
 from sqlalchemy import func
 
 from .forms import TimekeepingForm, TimeSheetForm, TimeKeeperAdminForm
+from .charts import PLOTLY_CDN_URL, date_bounds, dashboard_chart
 from archives_application import utils
 from archives_application.models import UserModel, TimekeeperEventModel, ArchivedFileModel, db
 
 timekeeper = flask.Blueprint('timekeeper', __name__)
-
-def temp_file_url(filename: str): 
-    """
-    Pattern for getting the url for a temp file which has already been saved to the server.
-    """
-    return flask.url_for(r"static", filename="temp_files/" + filename)
 
 def daterange(start_date: datetime, end_date: datetime):
     """
@@ -877,287 +867,36 @@ def archiving_dashboard(archiver_id):
             - archivist_name: The name of the archivist.
             - archivist_files_count: The total number of files archived by the archivist (all time).
             - archivist_data_quantity: The total data quantity archived by the archivist in GB (all time).
-            - total_plot: URL to the generated chart showing collective archiving activity.
-            - archivist_plot: URL to the generated chart showing the archivist's archiving activity.
+            - charts: Serialized collective/individual Plotly figures or empty states.
+            - plotly_js_url: Version-matched CDN bundle shared by the charts.
             - form: The TimeSheetForm object for selecting the date range and rolling average window.
         Or returns an Excel file attachment when the export_spreadsheet button is used.
     """
-    def bytes_to_mb(b):
-        return b / (1024 ** 2)
-
-    def build_daily_agg(input_df: pd.DataFrame, date_range: pd.DatetimeIndex, rolling_avg_days: int) -> pd.DataFrame:
-        """
-        Aggregate raw archived-file rows into a clean daily DataFrame with rolling
-        averages and MB normalisation applied.
-
-        Steps:
-        1. Truncate date_archived timestamps to dates and group by date.
-        2. Fill in every weekday in date_range (so gaps appear as zeros).
-        3. Compute rolling averages for file count and file size.
-        4. Drop leading rows where rolling averages are still NaN.
-        5. Normalise file_size (bytes) to MB-scale and rescale to file-count units
-           so both series share one left y-axis while MB values read off the right.
-
-        Returns a DataFrame indexed by date with columns:
-            file_size, total_files,
-            size_rolling_avg, files_rolling_avg,
-            file_size_norm, size_rolling_avg_norm,   (0-1 scale relative to MB axis)
-            file_size_as_files, size_rolling_avg_as_files,  (rescaled to file-count axis)
-        plus helper tick arrays returned as extra values.
-
-        Returns: (agg_df, mb_ticks, files_ticks)
-        """
-        tick_maker = ticker.MaxNLocator(nbins=6)
-
-        work_df = input_df.copy()
-        work_df["date_archived"] = pd.to_datetime(work_df["date_archived"]).dt.date
-
-        date_groups = work_df.groupby("date_archived")
-        sizes = date_groups.size().rename("total_files")
-        agg_df = pd.concat(
-            [date_groups.agg({"file_size": "sum"}), sizes],
-            axis=1, join="outer"
-        )
-
-        # Fill every weekday in the requested range so there are no gaps
-        weekdays = date_range[date_range.weekday < 5].date
-        agg_df = pd.DataFrame(index=weekdays).join(agg_df, how="left").fillna(0)
-
-        # Rolling averages computed on daily data regardless of later bar binning
-        agg_df["size_rolling_avg"] = (
-            agg_df["file_size"].rolling(window=rolling_avg_days, min_periods=rolling_avg_days).mean()
-        )
-        agg_df["files_rolling_avg"] = (
-            agg_df["total_files"].rolling(window=rolling_avg_days, min_periods=rolling_avg_days).mean()
-        )
-        agg_df = agg_df.dropna(subset=["size_rolling_avg", "files_rolling_avg"])
-
-        # MB normalisation: derive tick values from real MB range, then express
-        # byte values as a 0-1 fraction of the MB axis ceiling.
-        max_mb = max(bytes_to_mb(agg_df["file_size"].max()),
-                     bytes_to_mb(agg_df["size_rolling_avg"].max()))
-        mb_ticks = tick_maker.tick_values(0, max_mb)
-        mb_axis_ceiling = max(mb_ticks)  # in MB
-
-        def norm_to_mb_fraction(byte_val):
-            return bytes_to_mb(byte_val) / mb_axis_ceiling if mb_axis_ceiling else 0
-
-        agg_df["file_size_norm"] = agg_df["file_size"].map(norm_to_mb_fraction)
-        agg_df["size_rolling_avg_norm"] = agg_df["size_rolling_avg"].map(norm_to_mb_fraction)
-
-        # Rescale the normalised values into file-count units for plotting on the left axis
-        max_files = max(agg_df["total_files"].max(), agg_df["files_rolling_avg"].max())
-        files_ticks = tick_maker.tick_values(0, max_files)
-        files_axis_ceiling = max(files_ticks)
-
-        agg_df["file_size_as_files"] = agg_df["file_size_norm"] * files_axis_ceiling
-        agg_df["size_rolling_avg_as_files"] = agg_df["size_rolling_avg_norm"] * files_axis_ceiling
-
-        return agg_df, mb_ticks, files_ticks
-
-    def bin_bars_for_range(agg_df: pd.DataFrame, span_days: int) -> pd.DataFrame:
-        """
-        Aggregate the daily agg_df columns (total_files, file_size_as_files) into
-        bins whose width is chosen adaptively based on the date-range span:
-            <= 90 days  -> daily  (bin_days = 1)
-            <= 270 days -> 3-day  (bin_days = 3)
-            else        -> weekly (bin_days = 7)
-
-        The binned DataFrame is returned in long form with columns:
-            Date (bin-period label as a string), Files, measure_type
-        where measure_type is '# of Files' or 'MB of Files'.
-        """
-        if span_days <= 90:
-            bin_days = 1
-        elif span_days <= 270:
-            bin_days = 3
-        else:
-            bin_days = 7
-
-        df = agg_df[["total_files", "file_size_as_files"]].copy()
-        df.index = pd.to_datetime(df.index)
-
-        if bin_days == 1:
-            binned = df
-        else:
-            freq = f"{bin_days}D"
-            binned = df.resample(freq).sum()
-
-        binned = binned.reset_index()
-        binned.rename(columns={"index": "Date"}, inplace=True)
-        binned["Date"] = pd.to_datetime(binned["Date"]).dt.strftime("%Y-%m-%d")
-
-        long_df = pd.melt(
-            binned,
-            id_vars="Date",
-            value_vars=["total_files", "file_size_as_files"],
-            var_name="measure_type",
-            value_name="Files",
-        )
-        long_df["measure_type"] = long_df["measure_type"].replace(
-            {"total_files": "# of Files", "file_size_as_files": "MB of Files"}
-        )
-        return long_df
-
-    def build_rolling_lines(agg_df: pd.DataFrame, rolling_avg_days: int) -> pd.DataFrame:
-        """
-        Extract the daily rolling-average columns from agg_df into a long-form
-        DataFrame for line plotting. The lines always remain at daily granularity
-        regardless of bar binning, so they still represent a true N-day rolling average.
-
-        Returns a DataFrame with columns: Date (string), Files, measure_type.
-        """
-        lines_src = agg_df[["files_rolling_avg", "size_rolling_avg_as_files"]].copy()
-        lines_src.index = pd.to_datetime(lines_src.index)
-        lines_src = lines_src.reset_index()
-        lines_src.rename(columns={"index": "Date"}, inplace=True)
-        lines_src["Date"] = pd.to_datetime(lines_src["Date"]).dt.strftime("%Y-%m-%d")
-
-        long_df = pd.melt(
-            lines_src,
-            id_vars="Date",
-            value_vars=["files_rolling_avg", "size_rolling_avg_as_files"],
-            var_name="measure_type",
-            value_name="Files",
-        )
-        long_df["measure_type"] = long_df["measure_type"].replace(
-            {
-                "files_rolling_avg": f"{rolling_avg_days} Day Rolling Average File Count",
-                "size_rolling_avg_as_files": f"{rolling_avg_days} Day Rolling Average Data Volume (MB)",
-            }
-        )
-        return long_df
-
-    def metrics_plot_file(
-        bars_df: pd.DataFrame,
-        lines_df: pd.DataFrame,
-        mb_ticks,
-        file_count_ticks,
-        file_destination: str,
-        archiver_name: str = None,
-    ) -> str:
-        """
-        Render and persist a dual-axis archiving metrics plot.
-
-        Bars (grouped, one pair per bin period) show raw file counts and the MB
-        series rescaled to file-count units.  Lines (daily) overlay the rolling
-        averages for both measures.  The right y-axis carries real MB tick labels
-        so readers can recover actual data volumes from the bar heights.
-
-        X-axis labels are drawn selectively: every bar position gets a tick, but
-        labels are only printed every N-th bar so the axis stays legible regardless
-        of span.  N is chosen so there are roughly 30-60 visible labels.
-
-        Returns file_destination after saving the PNG.
-        """
-        bar_colors  = ["#007988", "#fdc700"]
-        line_colors = ["#003c6c", "#f29813"]
-
-        bar_dates   = bars_df["Date"].unique()   # one entry per bin period
-        line_dates  = lines_df["Date"].unique()  # one entry per calendar day
-
-        n_bars = len(bar_dates)
-        n_lines = len(line_dates)
-
-        # Decide how many bar labels to skip so ~30-60 labels appear
-        label_every = max(1, n_bars // 50)
-
-        # Map bar date strings to integer positions (0, 1, 2 …)
-        bar_pos = {d: i for i, d in enumerate(bar_dates)}
-        # Map line dates to fractional positions within the bar axis
-        bar_span = n_bars - 1 if n_bars > 1 else 1
-        line_pos = {d: i * (bar_span / max(n_lines - 1, 1)) for i, d in enumerate(line_dates)}
-
-        plt.clf()
-        sns.set_theme(style="darkgrid")
-        fig, ax1 = plt.subplots(figsize=(max(30, n_bars // 3), 10))
-
-        # --- Bars ---
-        files_bars  = bars_df[bars_df["measure_type"] == "# of Files"].set_index("Date")["Files"]
-        mb_bars     = bars_df[bars_df["measure_type"] == "MB of Files"].set_index("Date")["Files"]
-        x_positions = np.arange(n_bars)
-        bar_width   = 0.4
-        ax1.bar(x_positions - bar_width / 2, files_bars.reindex(bar_dates).fillna(0),
-                width=bar_width, color=bar_colors[0], label="# of Files")
-        ax1.bar(x_positions + bar_width / 2, mb_bars.reindex(bar_dates).fillna(0),
-                width=bar_width, color=bar_colors[1], label="MB of Files")
-
-        # --- Rolling-average lines (daily, mapped onto the bar integer axis) ---
-        for (measure_label, group), color in zip(
-            lines_df.groupby("measure_type", sort=False), line_colors
-        ):
-            xs = [line_pos[d] for d in group["Date"] if d in line_pos]
-            ys = group.set_index("Date").reindex(
-                [d for d in group["Date"] if d in line_pos]
-            )["Files"].tolist()
-            ax1.plot(xs, ys, color=color, linestyle="--", linewidth=1.5, label=measure_label)
-
-        # --- X-axis ticks and selective labels ---
-        ax1.set_xticks(x_positions)
-        x_labels = [
-            bar_dates[i] if i % label_every == 0 else "" for i in range(n_bars)
-        ]
-        ax1.set_xticklabels(x_labels, rotation=45, ha="right")
-
-        # --- Left y-axis (file-count units) ---
-        ax1.set_yticks(file_count_ticks)
-        ax1.set_ylim(min(file_count_ticks), max(file_count_ticks))
-        ax1.set_ylabel("# of Files")
-
-        # --- Right y-axis (MB units, aligned to the normalised scale) ---
-        ax2 = ax1.twinx()
-        ax2.set_yticks(mb_ticks)
-        ax2.set_ylim(min(mb_ticks), max(mb_ticks))
-        ax2.grid(False)
-        ax2.set_ylabel("MB Archived")
-
-        title = f"Archiving Metrics for {archiver_name}" if archiver_name else "Total Archiving Metrics"
-        ax1.set_title(title, fontsize=20)
-        ax1.legend(loc="upper left")
-        fig.tight_layout()
-        plt.savefig(file_destination)
-        plt.close(fig)
-        return file_destination
-
-
     # Archivists may only view their own dashboard; admins may view any dashboard.
-    try:
-        if 'ADMIN' not in current_user.roles.split(","):
-            current_user_id = UserModel.query.filter_by(email=current_user.email).first().id
-            if current_user_id != archiver_id:
-                return flask.Response("Unauthorized", status=401)
-
-    except Exception as e:
-        utils.FlaskAppUtils.web_exception_subroutine(
-            flash_message="Error checking user roles:",
-            thrown_exception=e,
-            app_obj=current_app
-        )
+    if 'ADMIN' not in current_user.roles.split(",") and current_user.id != archiver_id:
+        return flask.Response("Unauthorized", status=401)
+    archivist = db.get_or_404(UserModel, archiver_id)
 
     try:
-        default_chart_window = 30 # measured in days
-        rolling_avg_window = 7 # measured in days; default used when none is entered in the form
-        query_start_date = datetime.now() - timedelta(days = default_chart_window)
-        query_start_date = query_start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        query_end_date = datetime.now()
-        query_end_date = query_end_date.replace(hour=23, minute=59, second=59, microsecond=0)
-        collective_plot_url, archiver_plot_url, archivist_total_data, archivist_total_files = None, None, None, None
-        archiver_name = UserModel.query.filter_by(id=archiver_id).first().first_name
+        rolling_avg_window = 7
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=30)
+        archiver_name = archivist.first_name
         form = TimeSheetForm()
 
         if form.validate_on_submit():
-            user_start_date = form.timesheet_begin.data
-            user_end_date = form.timesheet_end.data
-            query_start_date = datetime(year=user_start_date.year, month=user_start_date.month, day=user_start_date.day)
-            query_end_date = datetime(year=user_end_date.year, month=user_end_date.month, day=user_end_date.day)
+            start_date = form.timesheet_begin.data
+            end_date = form.timesheet_end.data
             if form.rolling_avg_window.data:
                 rolling_avg_window = int(form.rolling_avg_window.data)
 
             if form.export_spreadsheet.data:
+                export_start, export_end_before = date_bounds(start_date, end_date)
                 export_query = db.session.query(ArchivedFileModel)\
                     .filter(
                         ArchivedFileModel.archivist_id == archiver_id,
-                        ArchivedFileModel.date_archived.between(query_start_date, query_end_date)
+                        ArchivedFileModel.date_archived >= export_start,
+                        ArchivedFileModel.date_archived < export_end_before
                     )
                 export_df = utils.FlaskAppUtils.db_query_to_df(query=export_query)
                 drop_cols = [c for c in ['id', 'archivist_id', 'file_id', 'document_date'] if c in export_df.columns]
@@ -1181,8 +920,8 @@ def archiving_dashboard(archiver_id):
                         max_length = max((len(str(cell.value)) for cell in column_cells if cell.value), default=0)
                         worksheet.column_dimensions[column_cells[0].column_letter].width = max_length + 2
                 output.seek(0)
-                start_str = query_start_date.strftime('%Y%m%d')
-                end_str = query_end_date.strftime('%Y%m%d')
+                start_str = start_date.strftime('%Y%m%d')
+                end_str = end_date.strftime('%Y%m%d')
                 download_name = f"{archiver_name}_archived_files_{start_str}_to_{end_str}.xlsx"
                 return flask.send_file(
                     output,
@@ -1191,59 +930,27 @@ def archiving_dashboard(archiver_id):
                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
 
-        # We start the query with a date that is the rolling_avg_window days before the chosen start date,
-        # so that the rolling average of the first included day can be calculated
-        query_start_date = query_start_date - timedelta(days=rolling_avg_window)
-        query = db.session.query(ArchivedFileModel)\
-            .filter(ArchivedFileModel.date_archived.between(query_start_date, query_end_date))
-        df = utils.FlaskAppUtils.db_query_to_df(query=query)
-        archivist_df = df[df["archivist_id"] == archiver_id].copy()
-        date_range = pd.date_range(start=query_start_date, end=query_end_date)
-        span_days = (query_end_date - query_start_date).days
-        if df.shape[0] != 0:
-            collective_agg, collective_mb_ticks, collective_files_ticks = build_daily_agg(
-                input_df=df, date_range=date_range, rolling_avg_days=rolling_avg_window
-            )
-            collective_bars_df = bin_bars_for_range(collective_agg, span_days)
-            collective_lines_df = build_rolling_lines(collective_agg, rolling_avg_window)
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-            collective_filename = f"collective_metrics_{timestamp}.png"
-            collective_chart_path = utils.FlaskAppUtils.create_temp_filepath(collective_filename)
-            collective_chart_path = metrics_plot_file(
-                bars_df=collective_bars_df,
-                lines_df=collective_lines_df,
-                mb_ticks=collective_mb_ticks,
-                file_count_ticks=collective_files_ticks,
-                file_destination=collective_chart_path,
-            )
-            collective_plot_url = temp_file_url(collective_filename)
-            # Record image path to session so it can be deleted upon logout
-            if not flask.session[current_user.email].get('temporary files'):
-                flask.session[current_user.email]['temporary files'] = []
-            flask.session[current_user.email]['temporary files'].append(collective_chart_path)
+        display_start, end_before = date_bounds(start_date, end_date)
+        history_start = display_start - timedelta(days=rolling_avg_window - 1)
+        # Only the fields needed by both charts; no model hydration or count query.
+        query = db.session.query(
+            ArchivedFileModel.date_archived,
+            ArchivedFileModel.file_size,
+            ArchivedFileModel.archivist_id,
+        ).filter(
+            ArchivedFileModel.date_archived >= history_start,
+            ArchivedFileModel.date_archived < end_before,
+        )
+        df = pd.read_sql(query.statement, db.session.connection())
+        archivist_df = df.loc[df["archivist_id"] == archiver_id]
+        charts = [
+            dashboard_chart(df, start_date, end_date, rolling_avg_window,
+                            "Total archiving activity", "collective-activity"),
+            dashboard_chart(archivist_df, start_date, end_date, rolling_avg_window,
+                            f"Archiving activity for {archiver_name}", "archivist-activity"),
+        ]
 
-        # if the archivist has no data for the selected date range, we don't bother with their individual chart
-        if archivist_df.shape[0] != 0:
-            archivist_agg, archivist_mb_ticks, archivist_files_ticks = build_daily_agg(
-                input_df=archivist_df, date_range=date_range, rolling_avg_days=rolling_avg_window
-            )
-            archivist_bars_df = bin_bars_for_range(archivist_agg, span_days)
-            archivist_lines_df = build_rolling_lines(archivist_agg, rolling_avg_window)
-            archiver_filename = f"{archiver_name}_metrics_{timestamp}.png"
-            archiver_chart_path = utils.FlaskAppUtils.create_temp_filepath(archiver_filename)
-            archiver_chart_path = metrics_plot_file(
-                bars_df=archivist_bars_df,
-                lines_df=archivist_lines_df,
-                mb_ticks=archivist_mb_ticks,
-                file_count_ticks=archivist_files_ticks,
-                file_destination=archiver_chart_path,
-                archiver_name=archiver_name,
-            )
-            archiver_plot_url = temp_file_url(archiver_filename)
-            # Record image path to session so it can be deleted upon logout
-            flask.session[current_user.email]['temporary files'].append(archiver_chart_path)
-
-        # For the given archivist, retrieve the total count odf archived files 
+        # For the given archivist, retrieve the total count of archived files
         # and total quantity of data archived.
         archivist_total_files = db.session.query(ArchivedFileModel)\
             .filter(ArchivedFileModel.archivist_id == archiver_id)\
@@ -1256,18 +963,15 @@ def archiving_dashboard(archiver_id):
         # convert archivist_total_data bytes to gigabytes and round to 3 decimal places
         archivist_total_data = round(((archivist_total_data or 0) / (1024**3)), 3)
 
-        start_date_str = (query_start_date + timedelta(days=rolling_avg_window)).strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT')[:-10])
-        end_date_str = query_end_date.strftime(current_app.config.get('DEFAULT_DATETIME_FORMAT')[:-10])
-
         return flask.render_template('archivist_dashboard.html',
                                      form=form,
                                      archivist_name=archiver_name,
                                      archivist_files_count=archivist_total_files,
                                      archivist_data_quantity=archivist_total_data,
-                                     plot_start_date=start_date_str,
-                                     plot_end_date=end_date_str,
-                                     total_plot= collective_plot_url,
-                                     archivist_plot= archiver_plot_url)
+                                     plot_start_date=start_date.isoformat(),
+                                     plot_end_date=end_date.isoformat(),
+                                     charts=charts,
+                                     plotly_js_url=PLOTLY_CDN_URL)
 
     except Exception as e:
         m = "Error creating or rendering dashboard:\n"

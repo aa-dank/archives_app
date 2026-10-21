@@ -1744,3 +1744,68 @@ references/cached views require separate handling under GitHub's sensitive-data
 removal support policy. The remote first changed commit and residual-ref details
 are retained with the local cleanup plan. Temporary recovery copies retain the
 original secrets and require restricted storage until deliberately retired.
+
+---
+
+## Entry 058 - Interactive Plotly archiving dashboard
+**Date:** 2026-10-20
+**Author:** OpenAI Codex
+
+Replaced collective and individual archiving-dashboard PNGs with responsive
+Plotly figures: grouped file-count and archived-MB bars, plus daily rolling
+averages on independent, automatically scaled y-axes. Aggregated bars no longer
+clip against limits calculated from daily values. The dashboard supports hover,
+zoom/reset, and legend controls and reports empty selected intervals explicitly.
+Chart calculations and figure construction now live in `timekeeper/charts.py`;
+the route retrieves only timestamps, byte sizes, and archivist IDs for charts.
+The dashboard no longer writes temporary images or adds chart paths to sessions.
+
+Rolling averages now cover consecutive calendar days, including weekend activity
+and zero-activity days. Fetching N - 1 preceding days supplies the first visible
+N-day average; that history never enters displayed bars. Displayed inclusive
+range length selects daily bars through 90 days, three-day bars through 270,
+and seven-day bars thereafter, anchored at the selected start with a partial
+final bin. Charts and spreadsheets both use inclusive selected dates through
+an exclusive next-day-midnight bound, fixing end-day and fractional-second
+omissions. All-time summary metrics, export columns/path conversion, and role
+restrictions remain; missing archivists now return 404, and authorization checks
+use the authenticated user ID directly. Displayed date headings use ISO dates.
+Volume retains the existing bytes / 1024**2 conversion and MB label.
+
+Affected runtime components: timekeeper dashboard/export route, chart helpers,
+dashboard template/CSS/JavaScript, and the shared layout's page-script block.
+Figure data passes through Plotly serialization and Jinja `tojson`. Both charts
+share one versioned Plotly.js 4.1.1 bundle from Plotly's official CDN, matching
+locked Python Plotly 7.1.0. The CDN URL uses the installed package's public
+`get_plotlyjs_version()`; other pages do not load it. At the user's direction,
+removed the initially prepared local bundle, generator, and generated filename
+reference. Browsers require HTTPS access to `cdn.plot.ly`. Removed Matplotlib,
+Seaborn,
+and their unused dependencies; retained NumPy as a direct dependency. Existing
+remaining package versions were preserved. Regenerated `uv.lock` and Docker's
+production-only requirements export and synced the development environment.
+Development documents dependency updates, CDN version matching, and rollout.
+
+Verification: all 149 regression tests passed; the opt-in live Redis contract
+test was skipped. Nineteen new cases cover calendar averages, history isolation,
+aggregation thresholds/partial bins, end-day export parity, axes/grouping,
+empty and zero-byte data, safe serialization, CDN version matching and script
+ordering, defaults, and authorization. Chromium checks using the live Plotly
+CDN on 1440px desktop and 390px mobile layouts
+verified hover, legend toggling, zoom/reset, grouped bars, unclipped weekly
+totals, zero-volume axes, responsive sizing, and one shared bundle request, with
+no JavaScript errors. Screenshots and local benchmark/browser reports are in
+ignored `dev_files/plotly_validation`. All templates parsed; Python/JavaScript
+syntax, lock consistency, installed-package compatibility, requirements dry-run,
+and `git diff --check` passed. Existing pandas/SQLAlchemy warnings remain.
+
+A synthetic SQLite dataset of 100,000 archive records yielded warm full-page
+responses of approximately 0.15–0.99 seconds across 31-, 365-, and 1,825-day
+selections, with 41–385 KB HTML responses excluding the shared JS bundle.
+Caching remains deferred pending representative deployment measurements. No
+database migration, production data change, or contract-schedule change is part
+of this release. Follow-on: deploy the updated Python code/dependencies and
+local chart initializer and restart web processes; confirm browser access to
+the Plotly CDN and measure the real PostgreSQL query
+and browser performance before adding caching. Docker build validation remains
+outstanding because Docker Desktop WSL integration is unavailable here.

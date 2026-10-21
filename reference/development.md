@@ -23,7 +23,24 @@ Update [the development journal](development_journal.md) with changes to deploye
 The app version comes from `pyproject.toml`. `requirements.txt` is a generated export used by Docker; keep it aligned with the lockfile when changing dependencies:
 
 ```bash
-uv export --format requirements-txt --no-hashes -o requirements.txt
+uv export --locked --no-dev --format requirements-txt --no-hashes -o requirements.txt
 ```
+
+The archiving dashboard loads one shared Plotly.js bundle from Plotly's CDN.
+Its explicit JavaScript version comes from the installed Python package's
+`get_plotlyjs_version()`, so upgrading the locked Python dependency updates the
+CDN reference automatically. When updating Plotly, sync and verify:
+
+```bash
+uv sync --locked
+uv run --locked pytest tests/test_archiving_charts.py
+```
+
+Commit the lockfile and requirements export with dependency changes and restart
+the web processes after deployment. Python and JavaScript have separate version
+numbers; the regression suite checks the CDN URL against Plotly's own HTML
+export. Browsers need HTTPS access to `cdn.plot.ly` to display charts. No local
+Plotly.js bundle or bundle-generation step is required; the chart initializer
+remains in the application's static directory.
 
 Return to the [reference index](README.md).

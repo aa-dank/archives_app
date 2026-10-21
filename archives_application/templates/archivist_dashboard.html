@@ -16,19 +16,23 @@
         {% endif %}
 
         <!-- Charts -->
-        {% if total_plot or archivist_plot %}
         <div>
             <hr>
             <h5>Charts for {{ plot_start_date }} to {{ plot_end_date }}</h5>
-            <p class="text-muted">Right-click an image and choose "Open image in new tab" to see a larger version.</p>
-            {% if total_plot %}
-                <img style="height: 100%; width: 100%; object-fit: contain" src="{{ total_plot }}">
-            {% endif %}
-            {% if archivist_plot %}
-                <img style="height: 100%; width: 100%; object-fit: contain" src="{{ archivist_plot }}">
-            {% endif %}
+            <p class="text-muted">Bars show period totals; dashed lines show daily rolling averages, including weekends and days without activity. Hover for details, drag to zoom, double-click to reset, and click legend entries to show or hide a series.</p>
+            {% for chart in charts %}
+            <section class="archiving-chart-section" aria-labelledby="{{ chart.id }}-heading">
+                <h6 id="{{ chart.id }}-heading">{{ chart.title }}</h6>
+                {% if chart.figure %}
+                <div id="{{ chart.id }}" class="archiving-chart" aria-labelledby="{{ chart.id }}-heading"></div>
+                <script type="application/json" class="archiving-chart-data" data-chart-id="{{ chart.id }}">{{ chart.figure|tojson }}</script>
+                <noscript><p>Enable JavaScript to view this activity chart.</p></noscript>
+                {% else %}
+                <p class="text-muted">No archiving activity in the selected date range.</p>
+                {% endif %}
+            </section>
+            {% endfor %}
         </div>
-        {% endif %}
 
         <hr>
         <form method="POST" action="" enctype="multipart/form-data">
@@ -70,7 +74,7 @@
                 </div>
                 <div class="form-group">
                     {{ form.rolling_avg_window.label(class="form-control-label") }}
-                    <small class="form-text text-muted">Optional &mdash; leave blank to use the default of 7 days. Only applies to charts.</small>
+                    <small class="form-text text-muted">Optional &mdash; leave blank to use 7 calendar days. Days without activity count as zero. Only applies to charts.</small>
                     {% if form.rolling_avg_window.errors %}
                         {{ form.rolling_avg_window(class="form-control form-control-lg is-invalid", placeholder="7") }}
                         <div class="invalid-feedback">
@@ -90,3 +94,10 @@
         </form>
     </div>
 {% endblock content %}
+
+{% block scripts %}
+    {% if charts|selectattr('figure')|list %}
+    <script defer src="{{ plotly_js_url }}"></script>
+    <script defer src="{{ url_for('static', filename='archiving_charts.js') }}"></script>
+    {% endif %}
+{% endblock scripts %}
