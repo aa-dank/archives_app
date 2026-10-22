@@ -75,10 +75,14 @@ content updates the existing location's file association. Existing duplicate
 locations and obsolete content records are not cleaned up by this change.
 
 A run makes one circular pass from the starting directory, wrapping through the
-earlier directories, or stops at its time budget. A complete pass resets the next
+earlier directories, or stops at its time budget. Seeking follows the starting
+branch without enumerating earlier subtrees; those are visited on wraparound.
+A complete pass resets the next
 start to the archive root (`.`); root-level files are included. Existing filename,
 extension, and empty-file exclusions remain in force. Enumeration errors fail the
-run instead of silently skipping a subtree. The route rejects nonpositive budgets
+run instead of silently skipping a subtree. A failed checkpoint save also stops
+the run, preserving the exception cause and retry directory, rather than being
+treated as an ordinary per-file error. The route rejects nonpositive budgets
 and sets RQ's timeout to the full duration in seconds plus 300 seconds.
 
 Deadline checks occur between files and between 1-MiB hash reads; incomplete hashes

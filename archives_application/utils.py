@@ -1185,19 +1185,15 @@ class FilesUtils:
             - SHA-1 is no longer recommended for collision resistance in security-sensitive contexts.
               Prefer hashlib.sha256 or stronger for integrity/security validation.
         """
-        def chunk_reader(fobj, chunk_size=1024):
-            """ Generator that reads a file in chunks of bytes """
+        chunk_size = 1024 * 1024 if check_progress is not None else 1024
+        hashobj = hash_algo()
+        with open(filepath, "rb") as stream:
             while True:
                 if check_progress is not None:
                     check_progress()
-                chunk = fobj.read(chunk_size)
+                chunk = stream.read(chunk_size)
                 if not chunk:
-                    return
-                yield chunk
-
-        hashobj = hash_algo()
-        with open(filepath, "rb") as f:
-            for chunk in chunk_reader(f, chunk_size=1024 * 1024 if check_progress is not None else 1024):
+                    break
                 hashobj.update(chunk)
 
         if check_progress is not None:

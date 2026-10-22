@@ -1810,3 +1810,30 @@ leave `started`; checkpoints survive. Blocked SMB calls cannot observe deadlines
 until they return. Directory replay deliberately retries every file, so a file or
 directory taking longer than the whole budget still needs investigation; no
 file-level cursor, concurrent-scrape coordination, or slow-file skipping was added.
+
+---
+
+## Entry 060 - Review scrape transaction and checkpoint boundaries
+**Date:** 2026-10-22
+**Author:** OpenAI Codex
+
+Review found that heartbeat persistence failures inside hashing could be caught
+as ordinary file errors, allowing the run to continue. Checkpoint failures now
+stop processing and use the existing failed-task save, retaining the retry
+directory and original exception cause. Seeking a saved directory now prunes
+earlier branches until wraparound, avoiding redundant SMB subtree enumeration
+while preserving circular traversal order and inclusive replay.
+
+Extracted the per-file content/location transaction into a focused helper that
+returns committed counter increments, centralized traversal setup, and flattened
+the hash-read loop. Existing file reconciliation and hashing results are preserved.
+Affected runtime components: scrape traversal/checkpoint handling and shared hash
+helper; no schema or configuration changes.
+
+Verification: 151 tests passed, one opt-in Redis test skipped. Added failure
+injection during hashing and after file commit, and an exact circular-order test
+that verifies seeking visits only checkpoint ancestors. Existing forced-kill,
+replay, deadline, and rollback coverage passed. Compilation and diff checks
+passed; existing deprecation warnings remain. Follow-on: deploy matching web and
+worker code and investigate checkpoint-storage failures when reported. No live
+services, archives, or deployed database were changed.

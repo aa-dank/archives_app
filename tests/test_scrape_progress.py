@@ -173,6 +173,43 @@ def test_long_hash_persists_heartbeat_before_returning(app, monkeypatch):
     assert scrape(app)["Stop Reason"] == "scan_complete"
 
 
+@pytest.mark.parametrize("during_hash", [True, False])
+def test_checkpoint_failure_stops_processing_and_preserves_retry_location(app, monkeypatch, during_hash):
+    write_file(app, "A/a.pdf", b"a")
+    write_file(app, "A/b.pdf", b"b")
+    clock = SimpleNamespace(now=0)
+    monkeypatch.setattr(tasks, "time", SimpleNamespace(monotonic=lambda: clock.now))
+    original_hash = utils.FilesUtils.get_hash
+    original_update = utils.RQTaskUtils.update_task_subroutine
+    attempts = []
+
+    def failing_update(*args, **kwargs):
+        if clock.now >= 31:
+            raise RuntimeError("injected checkpoint failure")
+        return original_update(*args, **kwargs)
+
+    def slow_hash(filepath, check_progress=None):
+        attempts.append(filepath)
+        digest = original_hash(filepath)
+        clock.now = 31
+        if during_hash:
+            check_progress()
+        return digest
+
+    monkeypatch.setattr(utils.RQTaskUtils, "update_task_subroutine", failing_update)
+    monkeypatch.setattr(utils.FilesUtils, "get_hash", slow_hash)
+    with pytest.raises(tasks.ScrapeCheckpointError) as caught:
+        scrape(app)
+    assert isinstance(caught.value.__cause__, RuntimeError)
+    assert len(attempts) == 1
+    task = db.session.query(WorkerTaskModel).one()
+    assert task.status == "failed"
+    assert task.status_details["Next Start Location"] == "A"
+    assert task.status_details["Current File"] == os.path.join("A", "a.pdf")
+    assert db.session.query(FileLocationModel).count() == (0 if during_hash else 1)
+    assert db.session.query(FileModel).count() == (0 if during_hash else 1)
+
+
 def test_rq_timeout_is_reraised_with_checkpoint_preserved(app, monkeypatch):
     write_file(app, "A/a.pdf")
 
@@ -296,7 +333,7 @@ def test_deadline_while_seeking_does_not_replace_checkpoint_with_earlier_directo
 
     def slow_walk(*args, **kwargs):
         for root, directories, files in original_walk(*args, **kwargs):
-            if root.endswith(os.sep + "A"):
+            if root == app.config["ARCHIVES_LOCATION"]:
                 clock.now = 11
             yield root, directories, files
 
@@ -305,6 +342,34 @@ def test_deadline_while_seeking_does_not_replace_checkpoint_with_earlier_directo
     assert result["Next Start Location"] == "B"
     assert result["Stop Reason"] == "time_limit"
     assert db.session.query(FileLocationModel).count() == 0
+
+
+def test_resume_seeks_only_ancestors_then_visits_every_directory_in_circular_order(app, monkeypatch):
+    for path in ("A/early/a.pdf", "B/A/early.pdf", "B/AB/start.pdf", "B/AB/child/a.pdf",
+                 "B/Z/later.pdf", "C/later.pdf", "root.pdf"):
+        write_file(app, path)
+    archive = app.config["ARCHIVES_LOCATION"]
+    start = os.path.join(archive, "B", "AB")
+    original_walk = os.walk
+    expected = []
+    for root, directories, _ in original_walk(archive):
+        directories.sort()
+        expected.append(root)
+    visited = []
+
+    def observed_walk(*args, **kwargs):
+        for root, directories, files in original_walk(*args, **kwargs):
+            visited.append(root)
+            yield root, directories, files
+
+    monkeypatch.setattr(tasks.os, "walk", observed_walk)
+    walk = tasks._scrape_directories(archive, start, lambda: None)
+    first, _ = next(walk)
+    assert first == start
+    assert visited == [archive, os.path.join(archive, "B"), start]
+    actual = [first] + [root for root, _ in walk]
+    index = expected.index(start)
+    assert actual == expected[index:] + expected[:index]
 
 
 def test_directory_enumeration_error_fails_instead_of_skipping_subtree(app, monkeypatch):
