@@ -5,12 +5,11 @@ from archives_application.models import ArchivedFileModel, FileLocationModel, Fi
 from archives_application.archiver.routes import exclude_extensions, exclude_filenames
 import flask
 import os
-import random
 import time
 import traceback
 from datetime import timedelta, datetime
-from itertools import cycle
 from typing import Callable
+from rq.timeouts import JobTimeoutException
 
 
 # Create the app context so that tasks can access app extensions even though
@@ -132,152 +131,176 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
             utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=task_results)
 
 
+class ScrapeTimeLimitReached(Exception):
+    """End a scrape cooperatively without accepting an incomplete file hash."""
+
+
+def _scrape_directories(archives_location, start_location, check_deadline):
+    """Walk one circular pass, yielding the start directory inclusively.
+
+    Rewalk the prefix after reaching the end so directories before the saved
+    location still get visited. Deadline checks during seeking never advance the
+    saved checkpoint. Enumeration errors must not silently skip a subtree.
+    """
+    def walk_error(error):
+        raise error
+
+    found = False
+    for root, directories, files in os.walk(archives_location, onerror=walk_error):
+        check_deadline()
+        directories.sort()
+        if root == start_location:
+            found = True
+        if found:
+            yield root, files
+    if not found:
+        raise FileNotFoundError(f"Scrape start directory was not found: {start_location}")
+    if start_location != archives_location:
+        for root, directories, files in os.walk(archives_location, onerror=walk_error):
+            check_deadline()
+            directories.sort()
+            if root == start_location:
+                break
+            yield root, files
+
+
 def scrape_file_data_task(archives_location: str, start_location: str, file_server_root_index: int,
                           exclusion_functions: list[Callable[[str], bool]], scrape_time: timedelta,
                           queue_id: str):
+    """Scrape with durable directory checkpoints and a cooperative time budget.
+
+    Resume replays the saved directory, including its already committed files.
+    File contents and their location are reconciled in one transaction. A hard
+    termination can leave status ``started``, but cannot erase prior checkpoints.
+    ``file_server_root_index`` remains accepted for jobs already stored in RQ;
+    relative paths are now derived directly from ``archives_location``.
     """
-    This function scrapes file data from the archives file server and adds it to the database.
-    
-    :param archives_location: The location of the archives file server.
-    :param start_location: The location from which to start scraping file data.
-    :param file_server_root_index: The index of the file server root in the file server path.
-    :param exclusion_functions: A list of functions that take a file path as input and return True if the file
-    should be excluded from the scraping process.
-    :param scrape_time: The amount of time to spend scraping file data measured in seconds.
-    :param queue_id: The id of task in the worker queue.
-    """
-    
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
-        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-
-        # create a log of the scraping process
+        start_time = time.monotonic()
+        deadline = start_time + scrape_time.total_seconds()
+        last_checkpoint = start_time
         scrape_log = {"Scrape Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
                       "This Start Location": start_location,
-                      "Files Added":0,
-                      "File Locations Added":0,
-                      "Files Confirmed":0,
-                      "Errors":[],
-                      "Time Elapsed":0,
-                      "Next Start Location": start_location}
-        start_time = time.time()
-        start_location_found = False
-        scrape_time_expired = False
-        start_location_root_found = False
-        root_dirs_paths = [os.path.join(archives_location, d) for d in os.listdir(archives_location) if os.path.isdir(os.path.join(archives_location, d))]
-        
-        # if no start location is provided, we will start from a random root directory
-        if not start_location:
-            start_location = random.choice(root_dirs_paths)
+                      "Files Added": 0, "File Locations Added": 0,
+                      "Files Confirmed": 0, "File Locations Updated": 0,
+                      "Errors": [], "Time Elapsed": "0s",
+                      "Current File": None, "Current File Started": None,
+                      "Last Completed File": None}
+        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db, task_result=scrape_log)
 
-        # iterate through the root of the file share to find the root directory to start scrape from
-        for root_dir in cycle(root_dirs_paths):
-            if scrape_time_expired:
-                break
+        def check_deadline():
+            if time.monotonic() >= deadline:
+                raise ScrapeTimeLimitReached()
 
-            if not start_location_root_found:
-                if start_location.startswith(root_dir):
-                    start_location_root_found = True
-                else:
-                    continue
-            
-            for root, _, files in os.walk(root_dir):
+        def checkpoint(force=False):
+            """Commit before slow file I/O and every 30 seconds during hashing."""
+            nonlocal last_checkpoint
+            now = time.monotonic()
+            if force or now - last_checkpoint >= 30:
+                scrape_log["Time Elapsed"] = f"{now - start_time:.3f}s"
+                utils.RQTaskUtils.update_task_subroutine(
+                    sql_db=db, q_id=queue_id, status_details=scrape_log)
+                last_checkpoint = now
 
-                # if the time limit for scraping has passed, we end the scraping loop
-                if timedelta(seconds=(time.time() - start_time)) >= scrape_time:
-                    # process root to be agnostic to where the archives location is mounted
-                    scrape_time_expired = True
-                    next_start                                                                                                                                                                                                                                                                                                                                                     = utils.FileServerUtils.split_path(root)[file_server_root_index:]
-                    scrape_log["Next Start Location"] = os.path.join(*next_start)
-                    break
+        def hash_progress():
+            check_deadline()
+            checkpoint()
 
-                # We iterate through the archives folder structure until we find the location from which we want to start
-                # scraping file data.
-                if root == start_location:
-                    start_location_found = True
+        try:
+            if scrape_time.total_seconds() <= 0:
+                raise ValueError("scrape_time must be positive")
+            archives_location = os.path.abspath(archives_location)
+            start_location = os.path.abspath(start_location or archives_location)
+            if os.path.commonpath([archives_location, start_location]) != archives_location:
+                raise ValueError("Scrape start directory must be inside the archive root")
+            if not os.path.isdir(archives_location):
+                raise FileNotFoundError(f"Archive root is unavailable: {archives_location}")
+            # A saved directory can be deleted between enqueue and execution.
+            # Revisit its nearest existing ancestor instead of skipping ahead.
+            requested_start = start_location
+            while start_location != archives_location and not os.path.isdir(start_location):
+                start_location = os.path.dirname(start_location)
+            if not os.path.isdir(start_location):
+                raise FileNotFoundError(f"Scrape start directory is unavailable: {start_location}")
+            if start_location != requested_start:
+                scrape_log["Resume Fallback"] = start_location
+            scrape_log["Next Start Location"] = os.path.relpath(start_location, archives_location)
+            checkpoint(force=True)
 
-                if not start_location_found:
-                    continue
-
-                filepaths = [os.path.join(root, f) for f in files]
-                for file in filepaths:
+            for root, files in _scrape_directories(archives_location, start_location, check_deadline):
+                scrape_log["Next Start Location"] = os.path.relpath(root, archives_location)
+                scrape_log["Current File"] = None
+                scrape_log["Current File Started"] = None
+                checkpoint(force=True)
+                for filename in sorted(files):
+                    check_deadline()
+                    file = os.path.join(root, filename)
+                    if any(fun(file) for fun in exclusion_functions):
+                        continue
+                    scrape_log["Current File"] = os.path.relpath(file, archives_location)
+                    scrape_log["Current File Started"] = datetime.now().isoformat()
+                    checkpoint(force=True)
                     try:
-                        # if the file is excluded by one of the exclusion functions, move to next file
-                        if any([fun(file) for fun in exclusion_functions]):
-                            continue
-                        
-                        # if the file is empty, move to next file
                         file_size = os.path.getsize(file)
                         if file_size == 0:
                             continue
+                        file_hash = utils.FilesUtils.get_hash(filepath=file, check_progress=hash_progress)
+                        check_deadline()
+                        db_file_entry = db.session.query(FileModel).filter_by(hash=file_hash).first()
+                        file_is_new = db_file_entry is None
+                        if file_is_new:
+                            db_file_entry = FileModel(
+                                hash=file_hash, size=file_size, extension=filename.split(".")[-1].lower())
+                            db.session.add(db_file_entry)
+                            db.session.flush()
 
-                        # if there is not an equivalent entry in database, we add it.
-                        file_is_new = False # flag to indicate if the file is new to the database
-                        file_hash = utils.FilesUtils.get_hash(filepath=file)
-                        db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
-                        if not db_file_entry:
-                            file_is_new = True
-                            path_list = utils.FileServerUtils.split_path(file)
-                            extension = path_list[-1].split(".")[-1].lower()
-                            model = FileModel(hash=file_hash,
-                                            size=file_size,
-                                            extension=extension)
-                            db.session.add(model)
-                            db.session.commit()
-                            db_file_entry = db.session.query(FileModel).filter(FileModel.hash == file_hash).first()
-                            scrape_log["Files Added"] += 1
-
-                        path_list = utils.FileServerUtils.split_path(file)
-                        # This is for if there is a file in the root directory of the share
-                        # (eg R:\some_file.pdf or N:\PPDORecords\some_file.pdf)
-                        file_server_dirs = ""
-                        if path_list[file_server_root_index:-1] != []:
-                            file_server_dirs = os.path.join(*path_list[file_server_root_index:-1])
-                        filename = path_list[-1]
-                        confirmed_exists_dt = datetime.now()
-                        confirmed_hash_dt = datetime.now()
-                        
-                        # If the file is not new, we check if the path is already represented in the database
-                        # and update the file database entry to reflect that the file has been checked.
-                        if not file_is_new:
-
-                            # query to see if the current path is already represented in the database
-                            db_path_entry = db.session.query(FileLocationModel).filter(
-                                FileLocationModel.file_server_directories == file_server_dirs,
-                                FileLocationModel.filename == filename).first()
-
-                            # If there is an entry for this path in the database update the dates now we have confirmed location and
-                            # that the file has not changed (hash is same.)
-                            if db_path_entry:
-                                entry_updates = {"existence_confirmed": confirmed_exists_dt,
-                                                "hash_confirmed": confirmed_hash_dt}
-                                db.session.query(FileLocationModel).filter(
-                                    FileLocationModel.file_server_directories == file_server_dirs,
-                                    FileLocationModel.filename == filename).update(entry_updates)
-                                db.session.commit()
-                                scrape_log["Files Confirmed"] += 1
-                                continue
-
-                        new_location = FileLocationModel(file_id=db_file_entry.id,
-                                                        file_server_directories=file_server_dirs,
-                                                        filename=filename, existence_confirmed=confirmed_exists_dt,
-                                                        hash_confirmed=confirmed_hash_dt)
-                        db.session.add(new_location)
+                        directories = os.path.relpath(root, archives_location)
+                        if directories == ".":
+                            directories = ""
+                        location = db.session.query(FileLocationModel).filter_by(
+                            file_server_directories=directories, filename=filename).first()
+                        location_is_new = location is None
+                        location_changed = location is not None and location.file_id != db_file_entry.id
+                        if location_is_new:
+                            location = FileLocationModel(file_server_directories=directories, filename=filename)
+                            db.session.add(location)
+                        # Always compare the path association, even when the
+                        # observed content already exists at another location.
+                        location.file_id = db_file_entry.id
+                        location.existence_confirmed = datetime.now()
+                        location.hash_confirmed = location.existence_confirmed
                         db.session.commit()
-                        scrape_log["File Locations Added"] += 1
-
-                    except Exception as e:
+                        scrape_log["Files Added"] += int(file_is_new)
+                        scrape_log["File Locations Added"] += int(location_is_new)
+                        scrape_log["File Locations Updated"] += int(location_changed)
+                        scrape_log["Files Confirmed"] += int(not location_is_new)
+                        scrape_log["Last Completed File"] = scrape_log["Current File"]
+                        checkpoint()
+                    except (ScrapeTimeLimitReached, JobTimeoutException):
+                        raise
+                    except Exception as error:
                         utils.FlaskAppUtils.attempt_db_rollback(db)
-                        e_dict = {"Filepath": file,
-                                  "Exception": str(e),
-                                  "Traceback": traceback.format_exc()}
-                        scrape_log["Errors"].append(e_dict)
+                        scrape_log["Errors"].append({"Filepath": file, "Exception": str(error),
+                                                     "Traceback": traceback.format_exc()})
+                check_deadline()
+            scrape_log["Stop Reason"] = "scan_complete"
+            scrape_log["Next Start Location"] = "."
+            scrape_log["Current File"] = None
+            scrape_log["Current File Started"] = None
+        except ScrapeTimeLimitReached:
+            utils.FlaskAppUtils.attempt_db_rollback(db)
+            scrape_log["Stop Reason"] = "time_limit"
+        except Exception as error:
+            utils.FlaskAppUtils.attempt_db_rollback(db)
+            scrape_log["Stop Reason"] = "failed"
+            scrape_log["Errors"].append({"Exception": str(error), "Traceback": traceback.format_exc()})
+            scrape_log["Time Elapsed"] = f"{time.monotonic() - start_time:.3f}s"
+            utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=scrape_log)
+            raise
 
-        # update the task entry in the database
-        scrape_log["Time Elapsed"] = str(time.time() - start_time) + "s"
-        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id,
-                                                   sql_db=db,
-                                                   task_result=scrape_log)
+        scrape_log["Time Elapsed"] = f"{time.monotonic() - start_time:.3f}s"
+        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=scrape_log)
         return scrape_log
 
 

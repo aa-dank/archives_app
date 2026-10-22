@@ -1147,7 +1147,7 @@ class FilesUtils:
         return converted_path
 
     @staticmethod
-    def get_hash(filepath, hash_algo=hashlib.sha1):
+    def get_hash(filepath, hash_algo=hashlib.sha1, check_progress=None):
         """
         Compute a cryptographic (or checksum) hash digest of a file's byte content.
 
@@ -1159,6 +1159,8 @@ class FilesUtils:
             filepath (str | os.PathLike): Path to the file whose contents will be hashed.
             hash_algo (Callable[[], 'hashlib._Hash']): A zero-argument callable returning a hash object
                 supporting .update(bytes) and .hexdigest(). Defaults to hashlib.sha1.
+            check_progress (Callable[[], None] | None): Optional progress/deadline callback.
+                Called before each read and before returning; exceptions abort the hash.
 
         Returns:
             str: The hexadecimal string digest of the file contents.
@@ -1175,7 +1177,8 @@ class FilesUtils:
             '3b1f6a9b7b2d...'
 
         Performance Notes:
-            - Chunk size is currently 1024 bytes; adjust if profiling shows benefit for large files.
+            - Reads use 1024 bytes normally, or 1 MiB with a progress callback to
+              keep deadline/heartbeat overhead small for large scrape inputs.
             - The function streams the file; memory footprint remains small regardless of file size.
 
         Security Notes:
@@ -1185,6 +1188,8 @@ class FilesUtils:
         def chunk_reader(fobj, chunk_size=1024):
             """ Generator that reads a file in chunks of bytes """
             while True:
+                if check_progress is not None:
+                    check_progress()
                 chunk = fobj.read(chunk_size)
                 if not chunk:
                     return
@@ -1192,9 +1197,11 @@ class FilesUtils:
 
         hashobj = hash_algo()
         with open(filepath, "rb") as f:
-            for chunk in chunk_reader(f):
+            for chunk in chunk_reader(f, chunk_size=1024 * 1024 if check_progress is not None else 1024):
                 hashobj.update(chunk)
 
+        if check_progress is not None:
+            check_progress()
         return hashobj.hexdigest()
 
 
@@ -1254,8 +1261,10 @@ class RQTaskUtils:
         except redis.exceptions.ConnectionError:
             raise ConnectionError("Failed to connect to the Redis instance. Please ensure that the Redis server is running and accessible.")
 
+        now = datetime.now()
         new_task_record = WorkerTaskModel(task_id=job_id,
-                                          time_enqueued=str(datetime.now()),
+                                          time_enqueued=now,
+                                          time_updated=now,
                                           origin=task.origin,
                                           function_name=enqueued_function.__name__,
                                           status="queued",
@@ -1273,8 +1282,8 @@ class RQTaskUtils:
         :param task_id: the id of the task to be updated
         :param new_status: the new status of the task
         """
-        task_db_updates = {}
-        if status_details:
+        task_db_updates = {"time_updated": datetime.now()}
+        if status_details is not None:
             task_db_updates["status_details"] = status_details
         
         if new_status:
@@ -1284,7 +1293,7 @@ class RQTaskUtils:
         sql_db.session.commit()
 
     @staticmethod
-    def initiate_task_subroutine(q_id, sql_db, task_result={}):
+    def initiate_task_subroutine(q_id, sql_db, task_result=None):
         """
         Updates the database to indicate that the task has started. 
         This is meant to be called at the begining of a task sent to the rq worker.
@@ -1292,7 +1301,9 @@ class RQTaskUtils:
         :param sql_db: the database object
         :param start_task_db_updates: dictionary of updates to be made to the database
         """
-        start_task_db_updates = {"status": 'started', "status_details": task_result}
+        now = datetime.now()
+        start_task_db_updates = {"status": 'started', "status_details": task_result if task_result is not None else {},
+                                "time_started": now, "time_updated": now}
         sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(start_task_db_updates)
         sql_db.session.commit()
 
@@ -1305,7 +1316,9 @@ class RQTaskUtils:
         :param sql_db: the database object
         """
         # update the database to indicate that the task has completed
-        task_db_updates = {"status": 'finished', "status_details": task_result, "time_completed":datetime.now()}
+        now = datetime.now()
+        task_db_updates = {"status": 'finished', "status_details": task_result,
+                           "time_completed": now, "time_updated": now}
         sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(task_db_updates)
         sql_db.session.commit()
 
@@ -1318,7 +1331,9 @@ class RQTaskUtils:
         :param sql_db: the database object
         :param task_result: dicionary data from the task having run
         """
-        task_db_updates = {"status": 'failed', "status_details": task_result, "time_completed":datetime.now()}
+        now = datetime.now()
+        task_db_updates = {"status": 'failed', "status_details": task_result,
+                           "time_completed": now, "time_updated": now}
         sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(task_db_updates)
         sql_db.session.commit()
 

@@ -1763,3 +1763,50 @@ checks against the migrated column layout verified lifecycle JSON writes and
 unpopulated new timestamps. Compilation and `git diff --check` passed. Existing
 pandas warnings remain. Follow-on: deploy and restart matching web/worker code
 together against the migrated database. No services or database were changed.
+
+---
+
+## Entry 059 - Persist scrape progress and resume interrupted runs
+**Date:** 2026-10-22
+**Author:** OpenAI Codex
+
+Daily scrapes could exceed their cooperative budget inside a directory and lose
+their in-memory resume summary on worker termination. The existing task row now
+saves the inclusive relative directory checkpoint before processing it, the current
+file/start time before I/O, and progress every 30 seconds during returning hash
+reads. Shared task helpers populate `time_started`/`time_updated`; terminal helpers
+also retain their existing completion timestamps. Resume selects the newest
+non-test scraper checkpoint by enqueue time/ID even when the task was interrupted
+or failed. Explicit starts retain precedence and Windows paths use mount mapping;
+missing saved directories replay their nearest existing ancestor.
+
+Monotonic deadlines are checked during traversal, between files, and between hash
+chunks; partial hashes are discarded and RQ timeout exceptions propagate after a
+failed-task save. File/hash and path reconciliation commit together. Existing paths
+are associated with the observed content even when its hash is new or already
+known elsewhere, making sequential replay safe without creating new locations.
+Existing duplicate locations and obsolete content/history are left in place.
+Traversal makes one circular pass, includes archive-root files, preserves existing
+exclusions, and fails on directory enumeration errors. Completion records whether
+the budget expired or the pass finished; a finished pass resets the checkpoint to
+the root. Positive durations use `total_seconds()` plus the existing 300-second
+RQ buffer, including durations longer than a day.
+
+Affected runtime components: scrape task/traversal, scrape route/resume selector,
+shared hashing and queue/status helpers. No additional schema migration or service
+changes. Verification: 148 tests passed and one opt-in Redis test skipped. New
+coverage includes a forcibly killed child against disposable on-disk SQLite,
+durable recovery without skipped sibling files or new duplicate locations,
+partial-file deadline/replay, 30-second heartbeat persistence, RQ timeout handling,
+atomic rollback, changed-content reconciliation, exclusions, circular traversal,
+invalid/test/unrelated checkpoint filtering, missing directories, seek deadlines,
+enumeration failure, timestamp lifecycle, explicit Windows starts, and multi-day
+timeouts. Compilation and diff checks passed; existing pandas/SQLAlchemy
+deprecation warnings remain.
+
+Follow-on: restart matching web/worker processes and monitor the first daily run's
+saved current file, elapsed time, timestamps, and stop reason. Hard kills can still
+leave `started`; checkpoints survive. Blocked SMB calls cannot observe deadlines
+until they return. Directory replay deliberately retries every file, so a file or
+directory taking longer than the whole budget still needs investigation; no
+file-level cursor, concurrent-scrape coordination, or slow-file skipping was added.

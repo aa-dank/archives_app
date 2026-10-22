@@ -49,8 +49,44 @@ RQ jobs are tracked in the `worker_tasks` table through `WorkerTaskModel`, inclu
 
 Requires database revision `8e2b7c4d9a10`: task JSON is now `status_details`,
 and the model includes nullable `time_started` and `time_updated` columns.
-Timestamp population and scraper behavior changes are deferred. Deploy and
-restart matching web and worker code together against the migrated schema.
+The shared queue helpers record `time_updated` at enqueue and every status/details
+save, `time_started` on task initiation, and `time_completed` on normal completion
+or explicitly handled failure. Timestamps follow the existing naive datetime
+convention; historical rows are not backfilled. Deploy and restart matching web
+and worker code together against the migrated schema.
+
+The file scraper commits a directory checkpoint before processing each directory
+and saves the current file before its filesystem I/O. Hashing refreshes progress
+every 30 seconds while reads return. `status_details` includes relative
+`Next Start Location`, `Current File`, `Current File Started`, `Last Completed File`,
+counters, errors, elapsed time, and `Stop Reason` (`time_limit`, `scan_complete`,
+or `failed`). A budget-limited run is normally `finished` with `time_limit`; this
+does not mean the whole archive was scanned. RQ timeouts propagate after saving
+a failed task record. A hard termination can still leave status `started`, with
+its last committed checkpoint and timestamps available.
+
+Daily requests without `start_path` resume the newest non-test scraper task with
+a valid checkpoint, including interrupted/failed runs. Selection uses enqueue
+time and ID, not later edits to an older task. Explicit starts retain precedence;
+Windows paths are mapped to the application mount. Missing checkpoint directories
+fall back to their nearest existing ancestor. Resume always rechecks the saved
+directory from its first file. Files and locations commit together, and changed
+content updates the existing location's file association. Existing duplicate
+locations and obsolete content records are not cleaned up by this change.
+
+A run makes one circular pass from the starting directory, wrapping through the
+earlier directories, or stops at its time budget. A complete pass resets the next
+start to the archive root (`.`); root-level files are included. Existing filename,
+extension, and empty-file exclusions remain in force. Enumeration errors fail the
+run instead of silently skipping a subtree. The route rejects nonpositive budgets
+and sets RQ's timeout to the full duration in seconds plus 300 seconds.
+
+Deadline checks occur between files and between 1-MiB hash reads; incomplete hashes
+are discarded. A blocked SMB read cannot report progress or observe a cooperative
+deadline until it returns, so RQ remains the outer limit. A single file or directory
+whose replay exceeds the whole budget can still prevent forward progress. Use the
+saved current-file/start-time information to investigate those cases; this release
+does not introduce a file-level resume cursor or skip a repeatedly slow file.
 
 ## Archive Search caching
 

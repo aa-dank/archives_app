@@ -2251,24 +2251,35 @@ def archived_or_not():
 
 
 def retrieve_location_to_start_scraping():
-    """
-    Retrieves the location from which to start scraping files. 
-    This is the last directory scraped of the most recent completed scrape.
-    If there is no location in the database, we use the root of the archives directory.
-    
-    :return: str Location to start scraping files
-    """
-    location = flask.current_app.config.get("ARCHIVES_LOCATION")
+    """Resume the newest production scrape with a valid saved directory.
 
-    most_recent_scrape = db.session.query(WorkerTaskModel).filter(
-        db.cast(WorkerTaskModel.status_details, db.String).like('%Next Start Location%'),
-        WorkerTaskModel.time_completed.isnot(None)
-    ).order_by(db.desc(WorkerTaskModel.time_completed)).first()
-
-    if most_recent_scrape is not None:
-        previous_scrape_location = most_recent_scrape.status_details["Next Start Location"]
-        location = os.path.join(location, previous_scrape_location)
-    return location
+    Interrupted tasks are eligible. Enqueue order, rather than update time,
+    prevents a later status edit from making an older checkpoint take precedence.
+    """
+    archives_location = os.path.abspath(flask.current_app.config["ARCHIVES_LOCATION"])
+    scrapes = db.session.query(WorkerTaskModel).filter(
+        WorkerTaskModel.function_name == "scrape_file_data_task",
+        WorkerTaskModel.origin != "test",
+        WorkerTaskModel.status_details.isnot(None),
+    ).order_by(db.desc(WorkerTaskModel.time_enqueued), db.desc(WorkerTaskModel.id))
+    for scrape in scrapes.yield_per(50):
+        details = scrape.status_details
+        if not isinstance(details, dict):
+            continue
+        saved = details.get("Next Start Location")
+        if not isinstance(saved, str) or not saved:
+            continue
+        # Relative checkpoints remain usable when the share's mount changes.
+        location = os.path.abspath(os.path.join(archives_location, saved.replace("\\", os.sep)))
+        try:
+            if os.path.commonpath([archives_location, location]) != archives_location:
+                continue
+        except ValueError:
+            continue
+        while location != archives_location and not os.path.isdir(location):
+            location = os.path.dirname(location)
+        return location
+    return archives_location
 
     
 @archiver.route("/scrape_files", methods=['GET', 'POST'])
@@ -2366,11 +2377,15 @@ def scrape_files():
             scrape_location = utils.FlaskAppUtils.retrieve_request_param('start_path', None)
             if not scrape_location:
                 scrape_location = retrieve_location_to_start_scraping()
+            elif not os.path.isabs(scrape_location):
+                scrape_location = utils.FlaskAppUtils.user_path_to_app_path(scrape_location, flask.current_app)
 
             scrape_time = 60  # default scrape time measured in minutes
             file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get("ARCHIVES_LOCATION")))
             if utils.FlaskAppUtils.retrieve_request_param('scrape_time', None):
                 scrape_time = int(utils.FlaskAppUtils.retrieve_request_param('scrape_time'))
+            if scrape_time <= 0:
+                return flask.Response("scrape_time must be a positive number of minutes", status=400)
             scrape_time = timedelta(minutes=scrape_time)
             # Create our own job id to pass to the task so it can manipulate and query its own representation 
             # in the database and Redis.
@@ -2388,7 +2403,7 @@ def scrape_files():
                                                             enqueued_function=scrape_file_data_task,
                                                             task_kwargs=scrape_params,
                                                             enqueue_call_kwargs=nq_call_kwargs,
-                                                            timeout=scrape_time.seconds + 300) # add operation buffer to ensure task completion
+                                                            timeout=int(scrape_time.total_seconds()) + 300) # add operation buffer to ensure task completion
             
             nq_results = {"enqueueing_results": utils.serializable_dict(nq_results),
                           "scrape_task_params": utils.serializable_dict(scrape_params)}
