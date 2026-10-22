@@ -1259,7 +1259,7 @@ class RQTaskUtils:
                                           origin=task.origin,
                                           function_name=enqueued_function.__name__,
                                           status="queued",
-                                          task_results=task_info)
+                                          status_details=task_info)
         db.session.add(new_task_record)
         db.session.commit()
         results = task.__dict__
@@ -1267,15 +1267,15 @@ class RQTaskUtils:
         return results
     
     @staticmethod
-    def update_task_subroutine(sql_db, q_id, new_status=None, task_results=None):
+    def update_task_subroutine(sql_db, q_id, new_status=None, status_details=None):
         """
         Updates the status of a task in the database.
         :param task_id: the id of the task to be updated
         :param new_status: the new status of the task
         """
         task_db_updates = {}
-        if task_results:
-            task_db_updates["task_results"] = task_results
+        if status_details:
+            task_db_updates["status_details"] = status_details
         
         if new_status:
             task_db_updates["status"] = new_status
@@ -1292,7 +1292,7 @@ class RQTaskUtils:
         :param sql_db: the database object
         :param start_task_db_updates: dictionary of updates to be made to the database
         """
-        start_task_db_updates = {"status": 'started', "task_results": task_result}
+        start_task_db_updates = {"status": 'started', "status_details": task_result}
         sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(start_task_db_updates)
         sql_db.session.commit()
 
@@ -1305,7 +1305,7 @@ class RQTaskUtils:
         :param sql_db: the database object
         """
         # update the database to indicate that the task has completed
-        task_db_updates = {"status": 'finished', "task_results": task_result, "time_completed":datetime.now()}
+        task_db_updates = {"status": 'finished', "status_details": task_result, "time_completed":datetime.now()}
         sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(task_db_updates)
         sql_db.session.commit()
 
@@ -1318,7 +1318,7 @@ class RQTaskUtils:
         :param sql_db: the database object
         :param task_result: dicionary data from the task having run
         """
-        task_db_updates = {"status": 'failed', "task_results": task_result, "time_completed":datetime.now()}
+        task_db_updates = {"status": 'failed', "status_details": task_result, "time_completed":datetime.now()}
         sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(task_db_updates)
         sql_db.session.commit()
 

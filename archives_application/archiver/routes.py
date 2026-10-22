@@ -2261,12 +2261,12 @@ def retrieve_location_to_start_scraping():
     location = flask.current_app.config.get("ARCHIVES_LOCATION")
 
     most_recent_scrape = db.session.query(WorkerTaskModel).filter(
-        db.cast(WorkerTaskModel.task_results, db.String).like('%Next Start Location%'),
+        db.cast(WorkerTaskModel.status_details, db.String).like('%Next Start Location%'),
         WorkerTaskModel.time_completed.isnot(None)
     ).order_by(db.desc(WorkerTaskModel.time_completed)).first()
 
     if most_recent_scrape is not None:
-        previous_scrape_location = most_recent_scrape.task_results["Next Start Location"]  
+        previous_scrape_location = most_recent_scrape.status_details["Next Start Location"]
         location = os.path.join(location, previous_scrape_location)
     return location
 

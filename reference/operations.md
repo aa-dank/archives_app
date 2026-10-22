@@ -47,6 +47,11 @@ independent recovery copies before scheduling cleanup.
 
 RQ jobs are tracked in the `worker_tasks` table through `WorkerTaskModel`, including task ID, status, and results. Check both the worker logs and those records when an accepted operation does not finish. Task timeout values are measured in **seconds** throughout the queue helpers.
 
+Requires database revision `8e2b7c4d9a10`: task JSON is now `status_details`,
+and the model includes nullable `time_started` and `time_updated` columns.
+Timestamp population and scraper behavior changes are deferred. Deploy and
+restart matching web and worker code together against the migrated schema.
+
 ## Archive Search caching
 
 With `ARCHIVE_SEARCH_CACHE_ENABLED=true`, `/archives_search` and `/file_search`

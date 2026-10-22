@@ -1744,3 +1744,22 @@ references/cached views require separate handling under GitHub's sensitive-data
 removal support policy. The remote first changed commit and residual-ref details
 are retained with the local cleanup plan. Temporary recovery copies retain the
 original secrets and require restricted storage until deliberately retired.
+
+---
+
+## Entry 058 - Align worker task model with migrated schema
+**Date:** 2026-10-22
+**Author:** OpenAI Codex
+
+Following external database revision `8e2b7c4d9a10`, added nullable
+`time_started`/`time_updated` model fields and switched task JSON references from
+`task_results` to `status_details`. Affected components: task model, queue/status
+helpers, project-location progress updates, and scrape resume reads. Timestamp
+population, checkpointing, timeout handling, and file reconciliation are deferred;
+existing task behavior and completed-scrape selection are preserved.
+
+Verification: 130 tests passed, one opt-in Redis test skipped; isolated SQLite
+checks against the migrated column layout verified lifecycle JSON writes and
+unpopulated new timestamps. Compilation and `git diff --check` passed. Existing
+pandas warnings remain. Follow-on: deploy and restart matching web/worker code
+together against the migrated database. No services or database were changed.

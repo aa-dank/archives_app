@@ -128,14 +128,16 @@ class WorkerTaskModel(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.String(255), nullable=False)
     time_enqueued = db.Column(db.DateTime, nullable=False)
+    time_started = db.Column(db.DateTime)
+    time_updated = db.Column(db.DateTime)
     time_completed = db.Column(db.DateTime)
     origin = db.Column(db.String(255), nullable=False)
     function_name = db.Column(db.String(255))
     status = db.Column(db.String)
-    task_results = db.Column(db.JSON)
+    status_details = db.Column(db.JSON)
 
     def __repr__(self):
-        return f"Enqueued Task: {self.id}, {self.task_id}, {self.time_enqueued}, {self.origin}, {self.function_name}, {self.time_completed}, {self.status}, {self.task_results}"
+        return f"Enqueued Task: {self.id}, {self.task_id}, {self.time_enqueued}, {self.origin}, {self.function_name}, {self.time_completed}, {self.status}, {self.status_details}"
 
 
 class ArchiveSearchRunModel(db.Model):
