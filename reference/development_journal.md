@@ -1837,3 +1837,43 @@ replay, deadline, and rollback coverage passed. Compilation and diff checks
 passed; existing deprecation warnings remain. Follow-on: deploy matching web and
 worker code and investigate checkpoint-storage failures when reported. No live
 services, archives, or deployed database were changed.
+
+---
+
+## Entry 061 - Persist file-location confirmation progress
+**Date:** 2026-10-22
+**Author:** OpenAI Codex
+
+File-location confirmation previously saved its summary only at completion.
+It now saves the active location ID, relative path, and check start time before
+filesystem I/O, plus committed counters, last completed location/path, elapsed
+time, and a stop reason. Progress refreshes before each check and after returning
+checks when 30 seconds have elapsed; the existing task helpers maintain timestamps.
+Continuation remains driven by `existence_confirmed`, with never-confirmed NULLs
+first and ID breaking ties, rather than a separate cursor. Bounded scalar batches
+avoid ORM expiration/reloads on each progress commit. Empty tables finish without
+spinning through the whole budget.
+
+Missing-location removal, last-location canonical-file cleanup, and archive-event
+file-ID unlinking now commit as one transaction before progress saves. Counters
+advance only after commit; individual location failures roll back and remain in
+the summary. RQ timeouts and progress-save failures propagate through failed-task
+handling. Monotonic budget checks also run after filesystem checks, preventing
+late-returning checks from starting removals. The route rejects nonpositive
+durations and uses full duration seconds plus the existing 600-second RQ buffer.
+
+Affected runtime components: confirmation task, its per-location transaction
+helper, and enqueue route. Existing removal policy is preserved; no filesystem
+mutations, schema changes, or changes to other worker tasks were introduced.
+Verification: 166 tests passed, one opt-in Redis test skipped. New coverage checks
+durable snapshots before I/O, post-commit counter refresh, atomic cleanup/rollback
+with archive history, remaining-copy preservation, timeout and save failure,
+oldest/NULL ordering, empty-table termination, multi-day timeout handling, and a
+forcibly killed child whose next run selects the unfinished location first.
+Compilation and diff checks passed; existing deprecation warnings remain.
+
+Follow-on: deploy matching web/worker code and inspect confirmation snapshots and
+stop reasons. A blocked filesystem check still relies on RQ's outer timeout; a
+hard kill can leave `started` with the last saved snapshot. Successful operations
+remain committed and unfinished locations retain their older timestamps. No live
+services, archive files, or deployed database were changed.

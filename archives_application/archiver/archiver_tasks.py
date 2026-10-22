@@ -331,80 +331,117 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
         return scrape_log
 
 
-def confirm_file_locations_task(archive_location: str, confirming_time: timedelta, queue_id: str):
-    """
-    Reconciles file location entries in the database with the actual filesystem.
+def _confirm_file_location(db, location, exists):
+    """Commit one existence check and any last-location cleanup atomically.
 
-    :param archive_location: str: The root archives directory to check file existence.
-    :param confirming_time: timedelta: Time duration to run the confirmation process.
-    :param queue_id: str: The id of this task in the worker queue.
-    :return: dict: A log summarizing missing, removed, and confirmed file locations and any errors.
+    Return whether the canonical file record was removed. The caller rolls back
+    failures before saving progress; no task update can commit a partial cleanup.
+    """
+    file_removed = False
+    if exists:
+        db.session.query(FileLocationModel).filter_by(id=location.id).update(
+            {"existence_confirmed": datetime.now()})
+    else:
+        db.session.query(FileLocationModel).filter_by(id=location.id).delete()
+        remaining = db.session.query(FileLocationModel.id).filter_by(file_id=location.file_id).first()
+        if remaining is None:
+            db.session.query(ArchivedFileModel).filter_by(file_id=location.file_id).update({"file_id": None})
+            file_removed = bool(db.session.query(FileModel).filter_by(id=location.file_id).delete())
+    db.session.commit()
+    return file_removed
+
+
+def confirm_file_locations_task(archive_location: str, confirming_time: timedelta, queue_id: str):
+    """Confirm oldest locations first, persisting progress between transactions.
+
+    The current location is saved before filesystem I/O, with elapsed time and
+    committed counters refreshed at least every 30 seconds while checks return.
+    Updated existence timestamps provide continuation on subsequent runs; no
+    separate resume cursor is needed. A blocked filesystem check remains subject
+    to RQ's timeout, and an interrupted check is left eligible for a later run.
     """
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
-        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
+        start_time = time.monotonic()
+        deadline = start_time + confirming_time.total_seconds()
+        last_update = start_time
+        log = {"Confirm Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
+               "Errors": [], "Locations Checked": 0, "Locations Missing": 0,
+               "Files Removed": 0, "Files Confirmed": 0, "Time Elapsed": "0s",
+               "Current Location ID": None, "Current File": None,
+               "Current File Started": None, "Last Completed Location ID": None,
+               "Last Completed File": None}
+        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
 
-        start_time = time.time()
-        confirm_locations_log = {"Confirm Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
-                                 "Errors": [],
-                                 "Locations Missing": 0,
-                                 "Files Removed": 0,
-                                 "Files Confirmed": 0}
-        
-        # We iterate through the file locations in the database, 1000 at a time, and check if the file still exists.
-        while timedelta(seconds=(time.time() - start_time)) < confirming_time:
-            file_location_entries = db.session.query(FileLocationModel).order_by(db.asc(FileLocationModel.existence_confirmed)).limit(1000)
-            for file_location in file_location_entries:
-                try:
-                    if timedelta(seconds=(time.time() - start_time)) >= confirming_time:
+        def save_progress(force=False):
+            """Save only at transaction boundaries; persistence errors stop the run."""
+            nonlocal last_update
+            now = time.monotonic()
+            if force or now - last_update >= 30:
+                log["Time Elapsed"] = f"{now - start_time:.3f}s"
+                utils.RQTaskUtils.update_task_subroutine(sql_db=db, q_id=queue_id, status_details=log)
+                last_update = now
+
+        try:
+            if confirming_time.total_seconds() <= 0:
+                raise ValueError("confirming_time must be positive")
+            while time.monotonic() < deadline:
+                # Scalar snapshots avoid ORM expiration/reloads after every
+                # committed progress save while keeping batches bounded.
+                locations = db.session.query(
+                    FileLocationModel.id, FileLocationModel.file_id,
+                    FileLocationModel.file_server_directories, FileLocationModel.filename,
+                ).order_by(FileLocationModel.existence_confirmed.asc().nullsfirst(),
+                           FileLocationModel.id.asc()).limit(1000).all()
+                if not locations:
+                    log["Stop Reason"] = "no_locations"
+                    break
+                for location in locations:
+                    if time.monotonic() >= deadline:
                         break
-                    
-                    file_location_path = os.path.join(archive_location, file_location.file_server_directories, file_location.filename)
-                    
-                    # if the file no longer exists, we delete the entry in the database
-                    if not os.path.exists(file_location_path):
-                        confirm_locations_log["Locations Missing"] += 1
-                        file_id = file_location.file_id
-                        db.session.delete(file_location)
-                        db.session.commit()
-                        
-                        # if there are no other locations for this file, we delete entry in the files table
-                        other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
-                        if other_locations == []:
-                            
-                            # check for any archive events associated with this file. Update those events to remove their file_id.
-                            archive_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_id).all()
-                            if archive_events != []:
-                                for event in archive_events:
-                                    event.file_id = None
-                                db.session.commit()
-                            
-                            # delete the file entry in the database
-                            db.session.query(FileModel).filter(FileModel.id == file_id).delete()
-                            db.session.commit()
-                            confirm_locations_log["Files Removed"] += 1
-                    
+                    relative_path = os.path.join(location.file_server_directories or "", location.filename)
+                    log["Current Location ID"] = location.id
+                    log["Current File"] = relative_path
+                    log["Current File Started"] = datetime.now().isoformat()
+                    save_progress(force=True)
+                    try:
+                        exists = os.path.exists(os.path.join(archive_location, relative_path))
+                        # A slow check must not start destructive database work
+                        # after the cooperative budget has already expired.
+                        if time.monotonic() >= deadline:
+                            break
+                        file_removed = _confirm_file_location(db, location, exists)
+                    except JobTimeoutException:
+                        raise
+                    except Exception as error:
+                        utils.FlaskAppUtils.attempt_db_rollback(db)
+                        log["Errors"].append({"Location": location.file_server_directories,
+                                              "filename": location.filename, "Exception": str(error),
+                                              "Traceback": traceback.format_exc()})
                     else:
-                        # if the file exists, we update the existence_confirmed date of this file_locations entry
-                        db.session.query(FileLocationModel).filter(FileLocationModel.id == file_location.id)\
-                            .update({"existence_confirmed": datetime.now()})
-                        db.session.commit()
-                        confirm_locations_log["Files Confirmed"] += 1
-                
-                except Exception as e:
-                    utils.FlaskAppUtils.attempt_db_rollback(db)
-                    e_dict = {"Location": file_location.file_server_directories,
-                              "filename": file_location.filename,
-                              "Exception": str(e),
-                              "Traceback": traceback.format_exc()}
-                    confirm_locations_log["Errors"].append(e_dict)
-                
-        # update the task entry in the database
-        confirm_locations_log["Time Elapsed"] = str(time.time() - start_time) + "s"
-        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id,
-                                                   sql_db=db,
-                                                   task_result=confirm_locations_log)
-        return confirm_locations_log
+                        log["Locations Checked"] += 1
+                        log["Locations Missing"] += int(not exists)
+                        log["Files Removed"] += int(file_removed)
+                        log["Files Confirmed"] += int(exists)
+                        log["Last Completed Location ID"] = location.id
+                        log["Last Completed File"] = relative_path
+                    save_progress()
+            log.setdefault("Stop Reason", "time_limit")
+            if log["Stop Reason"] == "no_locations":
+                log["Current Location ID"] = None
+                log["Current File"] = None
+                log["Current File Started"] = None
+        except Exception as error:
+            utils.FlaskAppUtils.attempt_db_rollback(db)
+            log["Stop Reason"] = "failed"
+            log["Errors"].append({"Exception": str(error), "Traceback": traceback.format_exc()})
+            log["Time Elapsed"] = f"{time.monotonic() - start_time:.3f}s"
+            utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            raise
+
+        log["Time Elapsed"] = f"{time.monotonic() - start_time:.3f}s"
+        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+        return log
 
 
 def scrape_location_files_task(scrape_location: str, queue_id: str, recursively: bool = True, confirm_data: bool = True):

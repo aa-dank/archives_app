@@ -92,6 +92,27 @@ whose replay exceeds the whole budget can still prevent forward progress. Use th
 saved current-file/start-time information to investigate those cases; this release
 does not introduce a file-level resume cursor or skip a repeatedly slow file.
 
+File-location confirmation also saves its active location ID, relative file path,
+and check start time before filesystem I/O. Its `status_details` retains the
+existing confirmation/removal/error counters and adds `Locations Checked`,
+`Last Completed Location ID`, `Last Completed File`, elapsed time, and `Stop Reason`
+(`time_limit`, `no_locations`, or `failed`). Progress is refreshed before every
+check and after slow checks when at least 30 seconds have elapsed. Counters count
+committed checks; small tables can be revisited while the budget remains.
+
+Confirmation continues from the oldest `existence_confirmed` timestamps, with
+never-confirmed NULL values first and location ID breaking ties. It does not use
+the scraper's resume-directory selector. Missing-location removal, last-copy file
+cleanup, and unlinking historical archive-event file IDs commit together before
+progress is saved. Per-location errors roll back that location and remain in the
+summary; progress-save failures and RQ timeouts fail the task and propagate.
+Hard kills can leave `started`, with the last saved snapshot available. Deadline
+checks use monotonic time before each location and after filesystem checks, so a
+slow check returning after the budget cannot start a removal. A blocked check
+still relies on RQ's outer timeout. Empty location tables finish immediately;
+the route requires a positive duration and uses its full seconds plus 600 seconds
+for the RQ timeout, including durations longer than a day.
+
 ## Archive Search caching
 
 With `ARCHIVE_SEARCH_CACHE_ENABLED=true`, `/archives_search` and `/file_search`

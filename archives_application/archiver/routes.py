@@ -2544,6 +2544,8 @@ def confirm_db_file_locations():
             confirming_time = 10
             if utils.FlaskAppUtils.retrieve_request_param('confirming_time'):
                 confirming_time = int(utils.FlaskAppUtils.retrieve_request_param('confirming_time'))
+            if confirming_time <= 0:
+                return flask.Response("confirming_time must be a positive number of minutes", status=400)
             
             confirming_time = timedelta(minutes=confirming_time)
             confirm_params = {"archive_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
@@ -2551,7 +2553,7 @@ def confirm_db_file_locations():
             nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                             enqueued_function=confirm_file_locations_task,
                                                             task_kwargs=confirm_params,
-                                                            timeout=confirming_time.seconds + 600)
+                                                            timeout=int(confirming_time.total_seconds()) + 600)
             
             # prepare task enqueueing info for JSON serialization
             nq_results = utils.serializable_dict(nq_results)
