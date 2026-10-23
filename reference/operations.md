@@ -33,6 +33,16 @@ The Docker files record a development web/Redis stack with site-specific CIFS mo
 
 Backups are streamed to `db_backup_<timestamp>.sql.bz2.part` and renamed to `.sql.bz2` after successful completion. They contain a compressed plain SQL dump; test recovery into a separate database using PostgreSQL tools. Maintain separate backups of the archive shares: a database dump does not include document files.
 
+Backup tasks save `status_details.phase` at preparation, dump/compression,
+`pg_dump` exit waiting, publication, and completion. `time_updated` advances at
+these boundaries; there is no periodic heartbeat during a phase. Sizes, durations,
+and the exit code remain JSON numbers; errors and the redacted command remain
+structured JSON. Handled failures, including RQ timeouts, stop/reap `pg_dump`,
+close its pipes, and attempt partial-file removal before saving `failed` and
+propagating the exception to RQ. Cleanup errors are retained alongside the
+original failure. Hard termination can still leave a partial file and a `started`
+record showing the last committed phase. Backups restart from scratch on retry.
+
 Maintenance expires ordinary temporary files after **3 days**, Archive Search
 workbooks after **6 days** by default, timestamped database backups after **2
 days**, and task records according to the per-function map in

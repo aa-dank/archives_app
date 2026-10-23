@@ -1919,3 +1919,38 @@ blocked I/O still relies on RQ. Automatic resume and pending-child deduplication
 are deferred, so reruns may enqueue files whose earlier indexing jobs have not
 yet created location records. No live services, archive files, or deployed
 database were changed.
+
+---
+
+## Entry 063 - Persist database backup phases and report failures accurately
+**Date:** 2026-10-23
+**Author:** OpenAI Codex
+
+Database backups previously saved details only at completion, swallowed errors
+into a successful task record, and converted all results to strings. The backup
+task now commits preparation, dump/compression, process-exit waiting, publication,
+and completion phases through the shared task helpers. JSON preserves numeric
+sizes/durations/exit codes, command lists, and structured errors with tracebacks.
+Updates occur at phase boundaries; periodic metrics and heartbeats remain deferred.
+
+Handled failures, including RQ timeouts and phase-save failures, attempt process
+termination/reaping, stderr-thread joining, pipe closure, and partial-file removal
+before saving a failed task record and propagating the exception to RQ. Cleanup
+attempts retain their own errors without replacing the original task exception.
+A cleanup failure also fails an otherwise successful task; an already published
+backup is retained. Streaming bz2 compression, exit validation before atomic
+publication, filename format, route timeout, and retention policy are preserved.
+Affected runtime component: `main.main_tasks.db_backup_task`; no schema changes.
+
+Verification: full suite passed (195 tests, one opt-in Redis test skipped), and
+all 10 focused backup cases passed, including two added after full-suite
+collection. Coverage verifies committed phases before operations, compression
+round-trip, typed JSON, preparation/start/read/exit/publication/progress failures,
+RQ timeout propagation, cleanup ordering, and original-error preservation.
+Compilation and diff checks passed; existing deprecation warnings remain.
+
+Follow-on: deploy matching application/worker code and restart workers. Inspect
+backup phase and failure details alongside RQ status. Hard termination can still
+leave a partial file and a started record; retries create a fresh dump. Actual
+PostgreSQL backup/restore was not exercised, and no live services, archive files,
+or deployed database were changed.
