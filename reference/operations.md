@@ -113,6 +113,35 @@ still relies on RQ's outer timeout. Empty location tables finish immediately;
 the route requires a positive duration and uses its full seconds plus 600 seconds
 for the RQ timeout, including durations longer than a day.
 
+Location-specific scraping reports `Phase` (`validating`, `confirming_locations`,
+`discovering_files`, `complete`), current directory/file/location ID, elapsed time,
+and phase-specific counters in `status_details`. Confirmation reuses the atomic
+per-location helper and saves the active path before filesystem checks. Saves
+refresh after 30 seconds of returning work, at phase/directory transitions, and
+before/after enqueue calls. `Last Checked File`, `Last Completed Location ID`,
+`Last Enqueued File`, and `Child Task IDs` retain completed work diagnostics.
+`Files Enqueued to Add` advances only after a successful enqueue.
+
+The confirmation query matches the exact requested directory and, for recursive
+scans, its separator-delimited descendants; SQL wildcard characters in names are
+escaped. Nonrecursive scans restrict both confirmation and discovery to the
+selected directory. Archive-root scans support empty/NULL root-directory records.
+Confirmation uses bounded ID batches and a set of known paths for discovery
+membership checks. A missing path is removed from that set only after cleanup
+commits, so a file that reappears can be discovered again. With `confirm_data=False`,
+confirmation and known-path skipping remain disabled. Existing filename/extension
+exclusions and eligibility of empty files remain unchanged.
+
+A parent finishes when confirmation/discovery/enqueueing completes; indexing
+outcomes belong to the child tasks. Individual confirmation/enqueue errors stay
+in the summary with `Stop Reason=completed_with_errors`; clean completion uses
+`completed`. RQ timeouts, progress-save failures, and enumeration errors use the
+failed-task path and propagate. Invalid, unavailable, or outside-archive target
+directories fail before cleanup. A hard kill can leave the last saved phase and
+child IDs under status `started`. These snapshots do not implement automatic
+resume or deduplicate pending child jobs; a rerun can queue a file again before
+its earlier indexing job has created its location record.
+
 ## Archive Search caching
 
 With `ARCHIVE_SEARCH_CACHE_ENABLED=true`, `/archives_search` and `/file_search`

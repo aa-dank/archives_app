@@ -1877,3 +1877,45 @@ stop reasons. A blocked filesystem check still relies on RQ's outer timeout; a
 hard kill can leave `started` with the last saved snapshot. Successful operations
 remain committed and unfinished locations retain their older timestamps. No live
 services, archive files, or deployed database were changed.
+
+---
+
+## Entry 062 - Report location-specific scraping phases and queued children
+**Date:** 2026-10-22
+**Author:** OpenAI Codex
+
+Location-specific scraping now persists validation, confirmation, and discovery
+phases, active paths/location IDs, elapsed time, committed counters, and successful
+child indexing task IDs. Saves occur before filesystem checks, at phase/directory
+boundaries, after 30 seconds of returning work, and before/after enqueue calls.
+Enqueue counts advance only on success. Parent completion means confirmation and
+discovery/enqueueing completed; child indexing retains its own task status. Local
+errors produce a completed-with-errors summary; RQ timeouts, progress-save failures,
+and directory enumeration errors fail the parent and propagate.
+
+The confirmation phase reuses atomic per-location cleanup and reads bounded scalar
+ID batches across commits/deletions. A set replaces linear known-path membership
+checks. Paths leave that set only after a committed removal, allowing rediscovery
+if a file reappears. Directory scope now matches the exact directory plus optional
+separator-delimited descendants, escapes SQL wildcard characters in names, and
+honors nonrecursive mode in both phases. Archive-root scans support empty/NULL
+directory values. Invalid, outside-archive, and unavailable targets fail before
+metadata cleanup. Existing exclusions, empty-file eligibility, and disabled-
+confirmation behavior remain in place.
+
+Affected runtime components: location-specific scrape task and its existing
+confirmation helper. No schema, enqueue-route, or other worker-task changes.
+Verification: 187 tests passed, one opt-in Redis test skipped. New tests cover
+durable phase snapshots, heartbeat refresh, child status separation, prefix and
+wildcard scope, recursion/root handling, enqueue accounting, timeout and progress
+failure in both phases, enumeration/validation failure, atomic history rollback,
+reappearing files, deletion across the 1,000-row batch boundary, and a forcibly
+killed parent retaining its active file and queued-child IDs. Compilation and
+diff checks passed; existing deprecation warnings remain.
+
+Follow-on: deploy matching web/worker code and inspect parent phase/stop reason
+alongside child outcomes. Hard kills can leave `started` with committed snapshots;
+blocked I/O still relies on RQ. Automatic resume and pending-child deduplication
+are deferred, so reruns may enqueue files whose earlier indexing jobs have not
+yet created location records. No live services, archive files, or deployed
+database were changed.

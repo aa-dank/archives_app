@@ -445,124 +445,173 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
 
 
 def scrape_location_files_task(scrape_location: str, queue_id: str, recursively: bool = True, confirm_data: bool = True):
+    """Confirm a scoped location, then discover files and enqueue their indexing.
+
+    Phase/current-path snapshots describe this parent task, not child indexing
+    completion. Saves occur only between committed operations. Interrupted runs
+    retain diagnostics but do not automatically resume or deduplicate queued jobs.
     """
-    Reconcialiates the files in the database with the files in the scrape location. First, if confirm_data is True,
-    it checks if the files in the database are still in the scrape location. If they are not, it removes the relevant 
-    records. Then, it adds any files in the scrape location that are not in the database by enqueuing a task to add
-    the file to the database.
-    """
-    
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
-        file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
-        location_scrape_log = {"queue_id": queue_id,
-                               "Location": scrape_location,
-                               "Recursive": recursively,
-                               "Confirm Data": confirm_data,
-                               "Locations Missing": 0,
-                               "Files Records Removed": 0,
-                               "Files Confirmed": 0,
-                               "Files Enqueued to Add": 0,
-                               "Errors": []}
-        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db, task_result=location_scrape_log)
-        relevant_file_data_list = []
-        if confirm_data:
-            try:
-                location_db_dirs_list = utils.FileServerUtils.split_path(scrape_location)[file_server_root_index:]
-                query_dirs = os.path.join(*location_db_dirs_list)
-                archive_location = flask.current_app.config.get('ARCHIVES_LOCATION')
-                relevant_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories.startswith(query_dirs)).all()
-                for idx, location_record in enumerate(relevant_locations):
-                    try:
-                        filepath = os.path.join(archive_location, location_record.file_server_directories, location_record.filename)
-                        
-                        # if the file no longer exists, we delete the entry in the database
-                        if not os.path.exists(filepath):
-                            location_scrape_log["Locations Missing"] += 1
-                            file_id = location_record.file_id
-                            db.session.delete(location_record)
-                            db.session.commit()
-                            
-                            # if there are no other locations for this file, we delete entry in the files table
-                            other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
-                            if other_locations == []:
-                                
-                                # check for any archive events associated with this file. Update those events to remove their file_id.
-                                archive_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_id).all()
-                                if archive_events != []:
-                                    for event in archive_events:
-                                        event.file_id = None
-                                    db.session.commit()
-                                
-                                # delete the file entry in the database
-                                db.session.query(FileModel).filter(FileModel.id == file_id).delete()
-                                db.session.commit()
-                                location_scrape_log["Files Records Removed"] += 1
-                        
+        start_time = time.monotonic()
+        last_update = start_time
+        log = {"queue_id": queue_id, "Location": scrape_location,
+               "Recursive": recursively, "Confirm Data": confirm_data,
+               "Phase": "validating", "Current Directory": None,
+               "Current Location ID": None, "Current File": None, "Current File Started": None,
+               "Last Completed Location ID": None, "Last Checked File": None, "Last Enqueued File": None,
+               "Locations Checked": 0, "Locations Missing": 0, "Files Records Removed": 0,
+               "Files Confirmed": 0, "Directories Scanned": 0, "Files Examined": 0,
+               "Files Excluded": 0, "Files Already Known": 0, "Files Enqueued to Add": 0,
+               "Child Task IDs": [], "Errors": [], "Time Elapsed": "0s"}
+        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+
+        def save_progress(force=False):
+            """A failed save must reach task failure handling, not a per-file catch."""
+            nonlocal last_update
+            now = time.monotonic()
+            if force or now - last_update >= 30:
+                log["Time Elapsed"] = f"{now - start_time:.3f}s"
+                utils.RQTaskUtils.update_task_subroutine(sql_db=db, q_id=queue_id, status_details=log)
+                last_update = now
+
+        def record_error(error, directory, filename):
+            log["Errors"].append({"Phase": log["Phase"], "Location": directory,
+                                  "filename": filename, "Exception": str(error),
+                                  "Traceback": traceback.format_exc()})
+
+        def walk_error(error):
+            raise error
+
+        try:
+            archive_location = os.path.abspath(flask.current_app.config['ARCHIVES_LOCATION'])
+            scrape_location = os.path.abspath(scrape_location)
+            if os.path.commonpath([archive_location, scrape_location]) != archive_location:
+                raise ValueError("Scrape location must be inside the archive root")
+            if not os.path.isdir(scrape_location):
+                raise FileNotFoundError(f"Scrape location is unavailable: {scrape_location}")
+            query_dirs = os.path.relpath(scrape_location, archive_location)
+            if query_dirs == ".":
+                query_dirs = ""
+            known_paths = set()
+            if confirm_data:
+                log["Phase"] = "confirming_locations"
+                log["Current Directory"] = query_dirs or "."
+                save_progress(force=True)
+                locations = db.session.query(
+                    FileLocationModel.id, FileLocationModel.file_id,
+                    FileLocationModel.file_server_directories, FileLocationModel.filename,
+                )
+                column = FileLocationModel.file_server_directories
+                if query_dirs:
+                    scope = column == query_dirs
+                    if recursively:
+                        scope = scope | column.startswith(query_dirs + os.sep, autoescape=True)
+                    locations = locations.filter(scope)
+                elif not recursively:
+                    locations = locations.filter((column == "") | column.is_(None))
+
+                # Keyset batches tolerate commits/deletions without holding a
+                # server cursor open or loading every ORM row at once.
+                last_id = 0
+                while True:
+                    batch = locations.filter(FileLocationModel.id > last_id).order_by(
+                        FileLocationModel.id).limit(1000).all()
+                    if not batch:
+                        break
+                    known_paths.update((row.file_server_directories or "", row.filename) for row in batch)
+                    for location in batch:
+                        directory = location.file_server_directories or ""
+                        relative_path = os.path.join(directory, location.filename)
+                        log["Current Directory"] = directory or "."
+                        log["Current Location ID"] = location.id
+                        log["Current File"] = relative_path
+                        log["Current File Started"] = datetime.now().isoformat()
+                        save_progress(force=True)
+                        try:
+                            exists = os.path.exists(os.path.join(archive_location, relative_path))
+                            file_removed = _confirm_file_location(db, location, exists)
+                        except JobTimeoutException:
+                            raise
+                        except Exception as error:
+                            utils.FlaskAppUtils.attempt_db_rollback(db)
+                            record_error(error, directory, location.filename)
                         else:
-                            db.session.query(FileLocationModel).filter(FileLocationModel.id == location_record.id)\
-                                .update({"existence_confirmed": datetime.now()})
-                            db.session.commit()
-                            location_scrape_log["Files Confirmed"] += 1
-                    
-                    except Exception as e:
-                        utils.FlaskAppUtils.attempt_db_rollback(db)
-                        e_dict = {"Location": location_record.file_server_directories,
-                                "filename": location_record.filename,
-                                "Exception": str(e)}
-                        location_scrape_log["Errors"].append(e_dict)
+                            log["Locations Checked"] += 1
+                            log["Locations Missing"] += int(not exists)
+                            log["Files Records Removed"] += int(file_removed)
+                            log["Files Confirmed"] += int(exists)
+                            log["Last Completed Location ID"] = location.id
+                            log["Last Checked File"] = relative_path
+                            if not exists:
+                                known_paths.discard((directory, location.filename))
+                        save_progress()
+                    last_id = batch[-1].id
 
-                # populate list of file data that is already in the database        
-                relevant_file_data_list = [(location_record.file_server_directories, location_record.filename) for location_record in relevant_locations]
-
-            except Exception as e:
-                utils.FlaskAppUtils.attempt_db_rollback(db)
-                e_dict = {"Location": None,
-                          "filename": None,
-                          "Exception": str(e)}
-                location_scrape_log["Errors"].append(e_dict)
-     
-        # Iterate through the files in the scrape location and add them to the database if they are not already there
-        # by enqueuing a task to add the file to the database.
-        for root, _, files in os.walk(scrape_location):
-            
-            server_dirs_list = []
-            server_dirs = ""
-            if files:
-                server_dirs_list = utils.FileServerUtils.split_path(root)[file_server_root_index:]
-                server_dirs = os.path.join(*server_dirs_list)
-            
-            for file in files:
-                try:
-                    filepath = os.path.join(root, file)
-                    # If the file is excluded by one of the exclusion functions, move to next file.
+            log["Phase"] = "discovering_files"
+            log["Current Directory"] = query_dirs or "."
+            log["Current Location ID"] = None
+            log["Current File"] = None
+            log["Current File Started"] = None
+            save_progress(force=True)
+            for root, directories, files in os.walk(scrape_location, onerror=walk_error):
+                directories.sort()
+                if not recursively:
+                    directories.clear()
+                directory = os.path.relpath(root, archive_location)
+                if directory == ".":
+                    directory = ""
+                log["Directories Scanned"] += 1
+                log["Current Directory"] = directory or "."
+                log["Current File"] = None
+                log["Current File Started"] = None
+                save_progress(force=True)
+                for filename in sorted(files):
+                    filepath = os.path.join(root, filename)
+                    relative_path = os.path.join(directory, filename)
+                    log["Files Examined"] += 1
+                    log["Current File"] = relative_path
+                    log["Current File Started"] = datetime.now().isoformat()
                     if exclude_filenames(filepath) or exclude_extensions(filepath):
+                        log["Files Excluded"] += 1
+                        save_progress()
                         continue
-                    
-                    # If the file is already in our previous query results, we move to the next file.
-                    if confirm_data:                        
-                        if (server_dirs, file) in relevant_file_data_list:
-                            continue
-                    
-                    location_scrape_log["Files Enqueued to Add"] += 1
-                    add_file_params = {"filepath": filepath}
-                    utils.RQTaskUtils.enqueue_new_task(db=db,
-                                                       enqueued_function=add_file_to_db_task, 
-                                                       task_kwargs=add_file_params)
-                    
-                except Exception as e:
-                    e_dict = {"Location": root,
-                              "filename": file,
-                              "Exception": str(e),
-                              "Traceback": traceback.format_exc()}
-                    location_scrape_log["Errors"].append(e_dict)
-            
-            if scrape_location == root and not recursively:
-                break
-        
-        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=location_scrape_log)
-        return location_scrape_log
-    
+                    if confirm_data and (directory, filename) in known_paths:
+                        log["Files Already Known"] += 1
+                        save_progress()
+                        continue
+                    save_progress(force=True)
+                    try:
+                        result = utils.RQTaskUtils.enqueue_new_task(
+                            db=db, enqueued_function=add_file_to_db_task, task_kwargs={"filepath": filepath})
+                        child_id = result["task_id"]
+                    except JobTimeoutException:
+                        raise
+                    except Exception as error:
+                        utils.FlaskAppUtils.attempt_db_rollback(db)
+                        record_error(error, directory, filename)
+                    else:
+                        log["Files Enqueued to Add"] += 1
+                        log["Child Task IDs"].append(child_id)
+                        log["Last Enqueued File"] = relative_path
+                    save_progress(force=True)
+            log["Phase"] = "complete"
+            log["Stop Reason"] = "completed_with_errors" if log["Errors"] else "completed"
+            log["Current Directory"] = None
+            log["Current File"] = None
+            log["Current File Started"] = None
+        except Exception as error:
+            utils.FlaskAppUtils.attempt_db_rollback(db)
+            log["Stop Reason"] = "failed"
+            record_error(error, log["Current Directory"], log["Current File"])
+            log["Time Elapsed"] = f"{time.monotonic() - start_time:.3f}s"
+            utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            raise
+
+        log["Time Elapsed"] = f"{time.monotonic() - start_time:.3f}s"
+        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+        return log
+
 
 def consolidate_dirs_edit_task(user_target_path, user_destination_path, user_id, queue_id, removal_timeout = 1200, remove_target = True):
     """
