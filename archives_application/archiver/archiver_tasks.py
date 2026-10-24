@@ -224,9 +224,6 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
     """
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
-        start_time = time.monotonic()
-        deadline = start_time + scrape_time.total_seconds()
-        last_checkpoint = start_time
         scrape_log = {"Scrape Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
                       "This Start Location": start_location,
                       "Files Added": 0, "File Locations Added": 0,
@@ -234,7 +231,9 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
                       "Errors": [], "Time Elapsed": "0s",
                       "Current File": None, "Current File Started": None,
                       "Last Completed File": None}
-        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db, task_result=scrape_log)
+        progress = utils.WorkerTaskProgress(db, queue_id, scrape_log, clock=time.monotonic)
+        deadline = progress.start_time + scrape_time.total_seconds()
+        progress.start()
 
         def check_deadline():
             if time.monotonic() >= deadline:
@@ -242,18 +241,12 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
 
         def checkpoint(force=False):
             """Commit before slow file I/O and every 30 seconds during hashing."""
-            nonlocal last_checkpoint
-            now = time.monotonic()
-            if force or now - last_checkpoint >= 30:
-                scrape_log["Time Elapsed"] = f"{now - start_time:.3f}s"
-                try:
-                    utils.RQTaskUtils.update_task_subroutine(
-                        sql_db=db, q_id=queue_id, status_details=scrape_log)
-                except JobTimeoutException:
-                    raise
-                except Exception as error:
-                    raise ScrapeCheckpointError("Could not save scrape progress") from error
-                last_checkpoint = now
+            try:
+                progress.save(force=force)
+            except JobTimeoutException:
+                raise
+            except Exception as error:
+                raise ScrapeCheckpointError("Could not save scrape progress") from error
 
         def hash_progress():
             check_deadline()
@@ -319,15 +312,12 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
             utils.FlaskAppUtils.attempt_db_rollback(db)
             scrape_log["Stop Reason"] = "time_limit"
         except Exception as error:
-            utils.FlaskAppUtils.attempt_db_rollback(db)
             scrape_log["Stop Reason"] = "failed"
             scrape_log["Errors"].append({"Exception": str(error), "Traceback": traceback.format_exc()})
-            scrape_log["Time Elapsed"] = f"{time.monotonic() - start_time:.3f}s"
-            utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=scrape_log)
+            progress.fail()
             raise
 
-        scrape_log["Time Elapsed"] = f"{time.monotonic() - start_time:.3f}s"
-        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=scrape_log)
+        progress.complete()
         return scrape_log
 
 
@@ -362,25 +352,16 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
     """
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
-        start_time = time.monotonic()
-        deadline = start_time + confirming_time.total_seconds()
-        last_update = start_time
         log = {"Confirm Date": datetime.now().strftime(r"%m/%d/%Y, %H:%M:%S"),
                "Errors": [], "Locations Checked": 0, "Locations Missing": 0,
                "Files Removed": 0, "Files Confirmed": 0, "Time Elapsed": "0s",
                "Current Location ID": None, "Current File": None,
                "Current File Started": None, "Last Completed Location ID": None,
                "Last Completed File": None}
-        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+        progress = utils.WorkerTaskProgress(db, queue_id, log, clock=time.monotonic)
+        progress.start()
 
-        def save_progress(force=False):
-            """Save only at transaction boundaries; persistence errors stop the run."""
-            nonlocal last_update
-            now = time.monotonic()
-            if force or now - last_update >= 30:
-                log["Time Elapsed"] = f"{now - start_time:.3f}s"
-                utils.RQTaskUtils.update_task_subroutine(sql_db=db, q_id=queue_id, status_details=log)
-                last_update = now
+        deadline = progress.start_time + confirming_time.total_seconds()
 
         try:
             if confirming_time.total_seconds() <= 0:
@@ -403,7 +384,7 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
                     log["Current Location ID"] = location.id
                     log["Current File"] = relative_path
                     log["Current File Started"] = datetime.now().isoformat()
-                    save_progress(force=True)
+                    progress.save(force=True)
                     try:
                         exists = os.path.exists(os.path.join(archive_location, relative_path))
                         # A slow check must not start destructive database work
@@ -425,22 +406,19 @@ def confirm_file_locations_task(archive_location: str, confirming_time: timedelt
                         log["Files Confirmed"] += int(exists)
                         log["Last Completed Location ID"] = location.id
                         log["Last Completed File"] = relative_path
-                    save_progress()
+                    progress.save()
             log.setdefault("Stop Reason", "time_limit")
             if log["Stop Reason"] == "no_locations":
                 log["Current Location ID"] = None
                 log["Current File"] = None
                 log["Current File Started"] = None
         except Exception as error:
-            utils.FlaskAppUtils.attempt_db_rollback(db)
             log["Stop Reason"] = "failed"
             log["Errors"].append({"Exception": str(error), "Traceback": traceback.format_exc()})
-            log["Time Elapsed"] = f"{time.monotonic() - start_time:.3f}s"
-            utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            progress.fail()
             raise
 
-        log["Time Elapsed"] = f"{time.monotonic() - start_time:.3f}s"
-        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+        progress.complete()
         return log
 
 
@@ -453,8 +431,6 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
     """
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
-        start_time = time.monotonic()
-        last_update = start_time
         log = {"queue_id": queue_id, "Location": scrape_location,
                "Recursive": recursively, "Confirm Data": confirm_data,
                "Phase": "validating", "Current Directory": None,
@@ -464,16 +440,8 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                "Files Confirmed": 0, "Directories Scanned": 0, "Files Examined": 0,
                "Files Excluded": 0, "Files Already Known": 0, "Files Enqueued to Add": 0,
                "Child Task IDs": [], "Errors": [], "Time Elapsed": "0s"}
-        utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
-
-        def save_progress(force=False):
-            """A failed save must reach task failure handling, not a per-file catch."""
-            nonlocal last_update
-            now = time.monotonic()
-            if force or now - last_update >= 30:
-                log["Time Elapsed"] = f"{now - start_time:.3f}s"
-                utils.RQTaskUtils.update_task_subroutine(sql_db=db, q_id=queue_id, status_details=log)
-                last_update = now
+        progress = utils.WorkerTaskProgress(db, queue_id, log, clock=time.monotonic)
+        progress.start()
 
         def record_error(error, directory, filename):
             log["Errors"].append({"Phase": log["Phase"], "Location": directory,
@@ -495,9 +463,8 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                 query_dirs = ""
             known_paths = set()
             if confirm_data:
-                log["Phase"] = "confirming_locations"
                 log["Current Directory"] = query_dirs or "."
-                save_progress(force=True)
+                progress.set_phase("confirming_locations")
                 locations = db.session.query(
                     FileLocationModel.id, FileLocationModel.file_id,
                     FileLocationModel.file_server_directories, FileLocationModel.filename,
@@ -527,7 +494,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                         log["Current Location ID"] = location.id
                         log["Current File"] = relative_path
                         log["Current File Started"] = datetime.now().isoformat()
-                        save_progress(force=True)
+                        progress.save(force=True)
                         try:
                             exists = os.path.exists(os.path.join(archive_location, relative_path))
                             file_removed = _confirm_file_location(db, location, exists)
@@ -545,15 +512,14 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                             log["Last Checked File"] = relative_path
                             if not exists:
                                 known_paths.discard((directory, location.filename))
-                        save_progress()
+                        progress.save()
                     last_id = batch[-1].id
 
-            log["Phase"] = "discovering_files"
             log["Current Directory"] = query_dirs or "."
             log["Current Location ID"] = None
             log["Current File"] = None
             log["Current File Started"] = None
-            save_progress(force=True)
+            progress.set_phase("discovering_files")
             for root, directories, files in os.walk(scrape_location, onerror=walk_error):
                 directories.sort()
                 if not recursively:
@@ -565,7 +531,7 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                 log["Current Directory"] = directory or "."
                 log["Current File"] = None
                 log["Current File Started"] = None
-                save_progress(force=True)
+                progress.save(force=True)
                 for filename in sorted(files):
                     filepath = os.path.join(root, filename)
                     relative_path = os.path.join(directory, filename)
@@ -574,13 +540,13 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                     log["Current File Started"] = datetime.now().isoformat()
                     if exclude_filenames(filepath) or exclude_extensions(filepath):
                         log["Files Excluded"] += 1
-                        save_progress()
+                        progress.save()
                         continue
                     if confirm_data and (directory, filename) in known_paths:
                         log["Files Already Known"] += 1
-                        save_progress()
+                        progress.save()
                         continue
-                    save_progress(force=True)
+                    progress.save(force=True)
                     try:
                         result = utils.RQTaskUtils.enqueue_new_task(
                             db=db, enqueued_function=add_file_to_db_task, task_kwargs={"filepath": filepath})
@@ -594,22 +560,19 @@ def scrape_location_files_task(scrape_location: str, queue_id: str, recursively:
                         log["Files Enqueued to Add"] += 1
                         log["Child Task IDs"].append(child_id)
                         log["Last Enqueued File"] = relative_path
-                    save_progress(force=True)
+                    progress.save(force=True)
             log["Phase"] = "complete"
             log["Stop Reason"] = "completed_with_errors" if log["Errors"] else "completed"
             log["Current Directory"] = None
             log["Current File"] = None
             log["Current File Started"] = None
         except Exception as error:
-            utils.FlaskAppUtils.attempt_db_rollback(db)
             log["Stop Reason"] = "failed"
             record_error(error, log["Current Directory"], log["Current File"])
-            log["Time Elapsed"] = f"{time.monotonic() - start_time:.3f}s"
-            utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            progress.fail()
             raise
 
-        log["Time Elapsed"] = f"{time.monotonic() - start_time:.3f}s"
-        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+        progress.complete()
         return log
 
 

@@ -3,6 +3,7 @@
 import bz2
 import io
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -59,10 +60,15 @@ class FakeDump:
     def __init__(self, content=b"CREATE TABLE example (id integer);\n", return_code=0):
         self.content = content
         self.stdout = io.BytesIO(content)
-        self.stderr = io.BytesIO(b"pg_dump diagnostic\n")
+        self.diagnostics = None
         self.return_code = return_code
         self.running = True
         self.killed = False
+
+    def start(self, *args, **kwargs):
+        self.diagnostics = kwargs["stderr"]
+        self.diagnostics.write(b"pg_dump diagnostic\n")
+        return self
 
     def poll(self):
         return None if self.running else self.return_code
@@ -93,7 +99,7 @@ def test_phase_saves_are_committed_before_operations_and_results_remain_typed(ap
         assert "secret" not in json.dumps(read_task()[1])
         assert command[1].startswith("postgresql://")
         assert kwargs["env"]["PGPASSWORD"] == "secret"
-        return proc
+        return proc.start(command, **kwargs)
 
     def wait():
         assert read_task()[1]["phase"] in ("waiting_for_pg_dump", "publishing")
@@ -124,13 +130,13 @@ def test_phase_saves_are_committed_before_operations_and_results_remain_typed(ap
     assert isinstance(details["rename_seconds"], float)
     assert bz2.decompress(Path(details["backup_location"]).read_bytes()) == proc.content
     assert not list(Path(app.config["DATABASE_BACKUP_LOCATION"]).glob("*.part"))
-    assert proc.stdout.closed and proc.stderr.closed and not proc.killed
+    assert proc.stdout.closed and proc.diagnostics.closed and not proc.killed
 
 
 @pytest.mark.parametrize("failure", ["exit", "read", "timeout", "publish", "progress"])
 def test_failures_cleanup_before_saving_failed_and_propagate(app, monkeypatch, failure):
     proc = FakeDump(return_code=7 if failure == "exit" else 0)
-    monkeypatch.setattr(tasks.subprocess, "Popen", lambda *args, **kwargs: proc)
+    monkeypatch.setattr(tasks.subprocess, "Popen", proc.start)
     error = JobTimeoutException("backup timed out") if failure == "timeout" else OSError("injected failure")
     original_update = utils.RQTaskUtils.update_task_subroutine
     original_failed = utils.RQTaskUtils.failed_task_subroutine
@@ -145,7 +151,7 @@ def test_failures_cleanup_before_saving_failed_and_propagate(app, monkeypatch, f
 
     def save_failure(**kwargs):
         assert not proc.running
-        assert proc.stdout.closed and proc.stderr.closed
+        assert proc.stdout.closed and proc.diagnostics.closed
         assert not list(Path(app.config["DATABASE_BACKUP_LOCATION"]).iterdir())
         original_failed(**kwargs)
 
@@ -167,6 +173,7 @@ def test_failures_cleanup_before_saving_failed_and_propagate(app, monkeypatch, f
     assert isinstance(details["errors"], list) and details["errors"]
     assert "Traceback" in details["errors"][-1]["stack_trace"]
     assert details["phase"] != "complete"
+    assert details["stderr"] == "pg_dump diagnostic\n"
     assert proc.killed == (failure in ("read", "timeout", "progress"))
     if failure == "exit":
         assert details["return_code"] == 7
@@ -208,7 +215,7 @@ def test_dump_start_failure_is_failed_and_does_not_publish(app, monkeypatch):
 
 def test_cleanup_failure_after_publication_fails_task_and_retains_backup(app, monkeypatch):
     proc = FakeDump()
-    monkeypatch.setattr(tasks.subprocess, "Popen", lambda *args, **kwargs: proc)
+    monkeypatch.setattr(tasks.subprocess, "Popen", proc.start)
 
     def close():
         raise OSError("cannot close pipe")
@@ -218,15 +225,16 @@ def test_cleanup_failure_after_publication_fails_task_and_retains_backup(app, mo
         tasks.db_backup_task("backup")
     status, details, _ = read_task()
     assert status == "failed" and details["phase"] == "publishing"
+    assert len(details["errors"]) == 1
     assert details["errors"][0]["during"] == "cleanup"
     assert bz2.decompress(Path(details["backup_location"]).read_bytes()) == proc.content
-    assert proc.stderr.closed
+    assert proc.diagnostics.closed
 
 
 def test_cleanup_error_preserves_original_timeout_and_records_both_errors(app, monkeypatch):
     proc = FakeDump()
     error = JobTimeoutException("original timeout")
-    monkeypatch.setattr(tasks.subprocess, "Popen", lambda *args, **kwargs: proc)
+    monkeypatch.setattr(tasks.subprocess, "Popen", proc.start)
 
     def read(*args):
         raise error
@@ -241,6 +249,48 @@ def test_cleanup_error_preserves_original_timeout_and_records_both_errors(app, m
     assert raised.value is error
     status, details, _ = read_task()
     assert status == "failed"
+    assert len(details["errors"]) == 2
     assert any(item.get("during") == "cleanup" for item in details["errors"])
     assert details["errors"][-1]["error"] == "original timeout"
-    assert proc.killed and proc.stdout.closed and proc.stderr.closed
+    assert proc.killed and proc.stdout.closed and proc.diagnostics.closed
+
+
+def test_failed_status_save_preserves_original_task_exception(app, monkeypatch, caplog):
+    proc = FakeDump()
+    error = JobTimeoutException("original timeout")
+    monkeypatch.setattr(tasks.subprocess, "Popen", proc.start)
+
+    def read(*args):
+        raise error
+
+    def save_failure(**kwargs):
+        raise OSError("status database unavailable")
+
+    monkeypatch.setattr(proc.stdout, "read", read)
+    monkeypatch.setattr(utils.RQTaskUtils, "failed_task_subroutine", save_failure)
+    with pytest.raises(JobTimeoutException) as raised:
+        tasks.db_backup_task("backup")
+    assert raised.value is error
+    assert "Could not save failed worker task backup" in caplog.text
+    assert "status database unavailable" in caplog.text
+    assert read_task()[0] == "started"
+    assert proc.killed and proc.stdout.closed and proc.diagnostics.closed
+    assert not list(Path(app.config["DATABASE_BACKUP_LOCATION"]).iterdir())
+
+
+def test_real_subprocess_can_write_large_diagnostics_before_dump_output(app, monkeypatch):
+    real_popen = tasks.subprocess.Popen
+    diagnostics = "diagnostic\n" * 32768
+    content = b"SELECT 1;\n" * 1000
+
+    def popen(command, **kwargs):
+        # Exercise actual OS descriptors and process cleanup without PostgreSQL.
+        script = ("import sys; sys.stderr.write('diagnostic\\n' * 32768); "
+                  "sys.stdout.buffer.write(b'SELECT 1;\\n' * 1000)")
+        return real_popen([sys.executable, "-c", script], **kwargs)
+
+    monkeypatch.setattr(tasks.subprocess, "Popen", popen)
+    result = tasks.db_backup_task("backup")
+    assert read_task()[0] == "finished"
+    assert result["stderr"] == diagnostics
+    assert bz2.decompress(Path(result["backup_location"]).read_bytes()) == content

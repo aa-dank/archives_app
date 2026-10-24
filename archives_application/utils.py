@@ -12,6 +12,7 @@ import re
 import redis
 import subprocess
 import sys
+import time
 import traceback
 from datetime import datetime
 from flask_login import current_user
@@ -1332,6 +1333,61 @@ class RQTaskUtils:
                            "time_completed": now, "time_updated": now}
         sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(task_db_updates)
         sql_db.session.commit()
+
+
+class WorkerTaskProgress:
+    """Persist worker snapshots at explicit transaction boundaries.
+
+    This helper uses the caller's database session: saving commits, so callers
+    must first commit or roll back their work. It schedules no background writes.
+    Tasks own their result fields, checkpoint semantics, and error handling.
+    Set elapsed_key=None for tasks that maintain their own timing fields.
+    """
+
+    def __init__(self, sql_db, queue_id, details, *, clock=None, elapsed_key="Time Elapsed"):
+        self.db = sql_db
+        self.queue_id = queue_id
+        self.details = details
+        self.clock = clock if clock is not None else time.monotonic
+        self.elapsed_key = elapsed_key
+        self.start_time = self.clock()
+        self.last_update = self.start_time
+
+    def start(self):
+        RQTaskUtils.initiate_task_subroutine(
+            q_id=self.queue_id, sql_db=self.db, task_result=self.details)
+
+    def _refresh_elapsed(self, now):
+        if self.elapsed_key is not None:
+            self.details[self.elapsed_key] = f"{now - self.start_time:.3f}s"
+
+    def save(self, force=False):
+        """Save on demand or after 30 seconds of returning work; errors propagate."""
+        now = self.clock()
+        if force or now - self.last_update >= 30:
+            self._refresh_elapsed(now)
+            RQTaskUtils.update_task_subroutine(
+                sql_db=self.db, q_id=self.queue_id, status_details=self.details)
+            self.last_update = now
+
+    def set_phase(self, phase, *, key="Phase"):
+        self.details[key] = phase
+        self.save(force=True)
+
+    def complete(self):
+        self._refresh_elapsed(self.clock())
+        RQTaskUtils.complete_task_subroutine(
+            q_id=self.queue_id, sql_db=self.db, task_result=self.details)
+
+    def fail(self):
+        """Best-effort failure save; the caller must re-raise its original error."""
+        self._refresh_elapsed(self.clock())
+        try:
+            self.db.session.rollback()
+            RQTaskUtils.failed_task_subroutine(
+                q_id=self.queue_id, sql_db=self.db, task_result=self.details)
+        except Exception:
+            flask.current_app.logger.exception("Could not save failed worker task %s", self.queue_id)
 
 
 class ArchivesPathException(Exception):

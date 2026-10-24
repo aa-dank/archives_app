@@ -7,7 +7,7 @@ import os
 import re
 import subprocess
 import sys
-import threading
+import tempfile
 import time
 import traceback
 from datetime import datetime, timedelta
@@ -198,32 +198,27 @@ def restart_app_task(queue_id: str, delay: int = 0):
 
 
 def db_backup_task(queue_id: str):
-    """
-    Worker task for streaming pg_dump output into a compressed backup on the server.
-    Resources:
-    https://stackoverflow.com/questions/63299534/backup-postgres-from-python-on-win10
-    https://stackoverflow.com/questions/43380273/pg-dump-pg-restore-password-using-python-module-subprocess
-    https://medium.com/poka-techblog/5-different-ways-to-backup-your-postgresql-database-using-python-3f06cea4f51
-    :param queue_id: the id of the task in the RQ queue
-
-    """
+    """Stream a compressed dump, persist phases, and publish only after pg_dump succeeds."""
     part_path = None
     proc = None
-    stderr_thread = None
+    stderr_file = None
     with app.app_context():
         db = flask.current_app.extensions['sqlalchemy']
         backup_started_at = time.perf_counter()
         log = {"task_id": queue_id, "errors": [], "phase": "preparing",
                "started_at": datetime.now().isoformat()}
+        cleanup_errors = []
 
-        def save_phase(phase):
-            log["phase"] = phase
-            utils.RQTaskUtils.update_task_subroutine(sql_db=db, q_id=queue_id, status_details=log)
+        progress = utils.WorkerTaskProgress(
+            db, queue_id, log, clock=time.perf_counter, elapsed_key=None)
+
+        def read_stderr():
+            stderr_file.seek(0)
+            log["stderr"] = stderr_file.read().decode(errors="replace")
 
         def cleanup():
             # Attempt every cleanup step, retaining the original task exception.
             active_error = sys.exception()
-            cleanup_errors = []
 
             def attempt(operation):
                 try:
@@ -239,11 +234,11 @@ def db_backup_task(queue_id: str):
                         proc.kill()
                 attempt(stop_process)
                 attempt(proc.wait)
-            if stderr_thread is not None:
-                attempt(stderr_thread.join)
-            if proc is not None:
                 attempt(proc.stdout.close)
-                attempt(proc.stderr.close)
+            if stderr_file is not None:
+                if "stderr" not in log:
+                    attempt(read_stderr)
+                attempt(stderr_file.close)
             if part_path is not None:
                 def remove_partial():
                     try:
@@ -255,7 +250,7 @@ def db_backup_task(queue_id: str):
                 raise cleanup_errors[0]
 
         try:
-            utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            progress.start()
             try:
                 raw_db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
                 # Normalize the SQLAlchemy URL to remove the driver suffix so pg_dump accepts it
@@ -276,20 +271,11 @@ def db_backup_task(queue_id: str):
                 env = os.environ.copy()
                 env["PGPASSWORD"] = db_url.password or ""  # provide password non-interactively
 
-                save_phase("dumping_and_compressing")
-                proc = subprocess.Popen(db_backup_cmd,
-                                        stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE,
-                                        env=env)
-
-                stderr_chunks = []
-
-                def read_stderr():
-                    for chunk in iter(lambda: proc.stderr.read(8192), b""):
-                        stderr_chunks.append(chunk)
-
-                stderr_thread = threading.Thread(target=read_stderr)
-                stderr_thread.start()
+                # A file drains diagnostics without a pipe reader thread or pipe-buffer limit.
+                stderr_file = tempfile.TemporaryFile()
+                progress.set_phase("dumping_and_compressing", key="phase")
+                proc = subprocess.Popen(
+                    db_backup_cmd, stdout=subprocess.PIPE, stderr=stderr_file, env=env)
 
                 dump_and_compress_started_at = time.perf_counter()
                 uncompressed_size = 0
@@ -301,18 +287,15 @@ def db_backup_task(queue_id: str):
 
                 log["uncompressed_size"] = uncompressed_size
                 log["compressed_size"] = os.path.getsize(part_path)
-                save_phase("waiting_for_pg_dump")
+                progress.set_phase("waiting_for_pg_dump", key="phase")
                 return_code = proc.wait()
-                stderr_thread.join()
-                stderr = b"".join(stderr_chunks).decode(errors="replace")
-
                 log["return_code"] = return_code
-                log["stderr"] = stderr
+                read_stderr()
                 if return_code != 0:
                     raise RuntimeError(
-                        f"Backup command failed. pg_dump exited with code {return_code}:\n{stderr}")
+                        f"Backup command failed. pg_dump exited with code {return_code}:\n{log['stderr']}")
 
-                save_phase("publishing")
+                progress.set_phase("publishing", key="phase")
                 rename_started_at = time.perf_counter()
                 os.replace(part_path, destination_path)
                 log["rename_seconds"] = round(time.perf_counter() - rename_started_at, 3)
@@ -322,12 +305,12 @@ def db_backup_task(queue_id: str):
             log["phase"] = "complete"
             log["finished_at"] = datetime.now().isoformat()
             log["duration_seconds"] = round(time.perf_counter() - backup_started_at, 3)
-            utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            progress.complete()
         except Exception as error:
-            db.session.rollback()
             log["stop_reason"] = "failed"
-            log["errors"].append({"error": str(error), "stack_trace": traceback.format_exc()})
+            if not any(error is cleanup_error for cleanup_error in cleanup_errors):
+                log["errors"].append({"error": str(error), "stack_trace": traceback.format_exc()})
             log["duration_seconds"] = round(time.perf_counter() - backup_started_at, 3)
-            utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            progress.fail()
             raise
         return log

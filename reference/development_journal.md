@@ -1954,3 +1954,63 @@ backup phase and failure details alongside RQ status. Hard termination can still
 leave a partial file and a started record; retries create a fresh dump. Actual
 PostgreSQL backup/restore was not exercised, and no live services, archive files,
 or deployed database were changed.
+
+---
+
+## Entry 064 - Simplify backup diagnostics and preserve primary failures
+**Date:** 2026-10-23
+**Author:** OpenAI Codex
+
+Review of the backup progress changes identified unnecessary stderr-thread
+lifecycle handling and diagnostics lost when stdout processing failed. The backup
+task now directs stderr to an automatically removed temporary file and reads it
+after process exit or termination, retaining diagnostics on handled failures
+without a pipe reader thread. The worker needs a writable system temporary
+directory. Cleanup errors are recorded once. If rollback or failed-status
+persistence fails, the worker logs that additional error and propagates the
+original task exception to RQ; the database can retain its previous snapshot.
+
+Affected runtime component: `main.main_tasks.db_backup_task`. Phase boundaries,
+backup format/publication, route timeouts, and retention are preserved.
+Verification: full suite passed (199 tests, one opt-in Redis test skipped),
+including 12 backup cases covering a real subprocess writing diagnostics larger
+than a pipe buffer, retained diagnostics after timeout, cleanup error accounting,
+and failed-status persistence failure. Compilation and diff checks passed;
+existing deprecation warnings remain. No PostgreSQL backup/restore or live
+service changes were performed. Follow-on: deploy/restart workers and inspect
+both RQ errors and task records when persistence is unavailable.
+
+---
+
+## Entry 065 - Share worker progress persistence across long-running tasks
+**Date:** 2026-10-23
+**Author:** OpenAI Codex
+
+Review across the daily scraper, file-location confirmation, location-specific
+scraper, and backup found repeated progress timing and task lifecycle writes.
+These tasks now use `utils.WorkerTaskProgress` for initiation, explicit phase
+saves, 30-second throttling of returning archive work, elapsed-time refresh, and
+terminal status writes. Existing JSON fields and task-specific checkpoints,
+save boundaries, budgets, stop reasons, counters, child accounting, and resume
+policies remain local and preserved. Backup retains its numeric timing metrics
+and phase-only saves. Routes and the legacy RQ task helpers remain compatible.
+
+Handled task failures now share best-effort rollback and failed-status saving.
+If either fails, the additional error is logged and the original task exception
+still propagates to RQ. This extends the backup's failure-reporting safeguard to
+the archive tasks. Daily scrape checkpoint errors retain their dedicated fatal
+exception so hash callbacks cannot swallow persistence failures as file errors.
+Progress saves still commit the caller's session; callers must finish or roll
+back domain transactions before saving. No schema changes or background heartbeat
+thread were introduced.
+
+Affected runtime components: shared task utilities and the four task functions.
+Verification: full suite passed (203 tests, one opt-in Redis test skipped),
+including existing forced-termination, replay, transaction, and phase coverage.
+Added coverage for rolling back flushed, unfinished work before failure status
+commits, rollback/save failures preserving original RQ timeouts, and failed
+updates not postponing the next eligible snapshot. Compilation and diff checks
+passed; existing deprecation warnings remain. Follow-on: deploy matching
+application/worker code, restart workers, and inspect RQ alongside saved snapshots
+when failure reporting is unavailable. No live services, archive files, or
+deployed database were changed.

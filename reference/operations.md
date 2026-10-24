@@ -37,11 +37,16 @@ Backup tasks save `status_details.phase` at preparation, dump/compression,
 `pg_dump` exit waiting, publication, and completion. `time_updated` advances at
 these boundaries; there is no periodic heartbeat during a phase. Sizes, durations,
 and the exit code remain JSON numbers; errors and the redacted command remain
-structured JSON. Handled failures, including RQ timeouts, stop/reap `pg_dump`,
-close its pipes, and attempt partial-file removal before saving `failed` and
-propagating the exception to RQ. Cleanup errors are retained alongside the
-original failure. Hard termination can still leave a partial file and a `started`
-record showing the last committed phase. Backups restart from scratch on retry.
+structured JSON. Diagnostics are captured in an automatically removed temporary
+file using the worker's system temporary directory, avoiding a stderr-reader
+thread and retaining output on handled failures. Handled failures, including RQ
+timeouts, stop/reap `pg_dump`, close its output resources, and attempt partial-file
+removal before saving `failed` and propagating the exception to RQ. Cleanup errors
+are retained alongside the original failure. If the failed-status save itself
+fails, the worker logs that additional error and propagates the original task
+exception; the database may retain its last committed phase/status. Hard
+termination can still leave a partial file and a `started` record showing the
+last committed phase. Backups restart from scratch on retry.
 
 Maintenance expires ordinary temporary files after **3 days**, Archive Search
 workbooks after **6 days** by default, timestamped database backups after **2
@@ -64,6 +69,16 @@ save, `time_started` on task initiation, and `time_completed` on normal completi
 or explicitly handled failure. Timestamps follow the existing naive datetime
 convention; historical rows are not backfilled. Deploy and restart matching web
 and worker code together against the migrated schema.
+
+The daily scraper, file-location confirmation, location-specific scraper, and
+backup use `WorkerTaskProgress` for task lifecycle writes and explicit phase or
+progress saves. It retains the existing JSON fields and each task's save points;
+archive tasks share the 30-second interval for unforced updates, while backup
+continues to save only at phase boundaries. Progress writes commit the caller's
+session, so task work must be committed or rolled back before saving. A handled
+failure rolls back pending work before the failed-status save. If failure
+reporting itself fails, the worker logs the additional error and preserves the
+original exception for RQ; the database may retain its previous snapshot.
 
 The file scraper commits a directory checkpoint before processing each directory
 and saves the current file before its filesystem I/O. Hashing refreshes progress
