@@ -6,7 +6,7 @@ The system reflects this particular archive's folder structure, filing conventio
 
 | Web application | Data and search | Background work | File storage |
 | --- | --- | --- | --- |
-| Python 3.13+ · Flask | PostgreSQL · full-text search | Redis · RQ | Windows/SMB archives |
+| Python 3.14 · Flask | PostgreSQL · full-text search | Redis 6.2.20 · RQ | Windows/SMB archives |
 
 ## Context
 

@@ -2014,3 +2014,50 @@ passed; existing deprecation warnings remain. Follow-on: deploy matching
 application/worker code, restart workers, and inspect RQ alongside saved snapshots
 when failure reporting is unavailable. No live services, archive files, or
 deployed database were changed.
+
+---
+
+## Entry 066 - Align the development runtime with production Redis and refresh Python
+**Date:** 2026-10-26
+**Author:** OpenAI Codex
+
+The production host notes record Redis 6.2.20, while local WSL ran Redis 8.10.1
+and the old dependency lock selected redis-py 8.0.1. Constrained redis-py to the
+Redis-6.2-supported 5.x line (`>=5.3.1,<6`) and RQ to `>=2.12.0,<3`; the refreshed
+lock selects 5.3.1 and 2.12.0 respectively. The project and local app venv now
+target Python 3.14, selecting source-built 3.14.10. Refreshed the remaining
+dependencies, raised direct-library minimums to their tested installed versions,
+and regenerated the requirements export. Docker follows Python 3.14 and
+pins Redis 6.2.20. Affected components: dependency manifests, local Python/Redis
+runtime, Docker development stack, and future web/worker deployments. No app
+schema or archive-filesystem behavior changed.
+
+At the user's request, replaced the local Redis apt packages with exact
+6.2.20 versions and held `redis`, `redis-server`, and `redis-tools` against
+unplanned upgrades. Preserved 148 records (134 streams, 10 hashes, three sets,
+one sorted set), including values, stream IDs and expiration deadlines, by
+creating a Redis 6 snapshot rather than loading an incompatible Redis 8 dump.
+Verified the restored data and running service after replacement. Configuration,
+native/logical data, and snapshot backups are root-only under
+`/var/backups/archives-redis/20261026T160516`. The local default queue was empty.
+The original and intermediate local app venv backups were removed at the user's
+request after acceptance; the active `.venv` and its `.venv-python` interpreter
+directory were retained and the interpreter/package imports rechecked.
+
+Verification: 205 tests passed on Python 3.14.10 and Redis 6.2.20, including the
+live cache publication/TTL contract and new RQ forked-worker coverage for results,
+dependent jobs, failure recording and retries. Replaced a newer-client-only
+retry-inspection assertion with a behavioral single-attempt check. Dependency
+consistency, PDF create/read/render, and Python-3.14 binary-wheel resolution for
+all 138 installed packages against x86_64/glibc 2.34 passed. Existing deprecation
+warnings remain. The source tarball matched Python.org's published SHA256.
+
+Follow-on: perform the production update separately, checking the live host's
+package availability, architecture, uv version, service names, and application
+workflows. The local operator handoff is in the ignored
+`dev_files/environment_update_20261026.md`, outside the shared system references.
+Drain work and rebuild the app venv as ec2-user on the chosen Python 3.14.10
+interpreter, retaining Python 3.13 for Supervisor/other environments and rollback.
+Production was not updated; no deployed database or archive files were changed.
+Remove local Redis package holds only for an intentional coordinated version
+change. Repair the unrelated GitHub CLI apt signing-key failure separately.

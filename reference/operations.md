@@ -4,6 +4,14 @@ Operational responsibilities for the existing archives application include maint
 
 ## Web and worker processes
 
+Install web and worker dependencies from the same reviewed `uv.lock`, using
+the Python version selected by `.python-version`. The redis-py 5.x constraint
+supports Redis 6.2.20. Before replacing an environment, pause new enqueues and
+drain queued/active work, preserve the prior environment for rollback, and
+rebuild at its final path with `uv sync --locked`. Verify the actual interpreter
+and installed package versions on each host; repository requirements do not
+establish what a running deployment has installed.
+
 The Flask application is exposed as `run:app`; Gunicorn is included as its production WSGI server dependency. Executing `run.py` directly starts Flask with debug mode enabled. `worker.py` consumes RQ's `default` queue. Web queue, cache, and worker resolve one shared `REDIS_URL`: process environment first, explicit selected-JSON value second, then legacy host/port fallback. The worker reads the application's selected JSON file instead of using an independent localhost default. Apply any environment override consistently to all process roles.
 
 Web and worker processes rely on matching dependency versions, configuration files, and filesystem mounts. Their service accounts need access to the archives and inboxes, plus write access to the backup directory and `archives_application/static/temp_files/`. The supplied worker uses RQ's `Worker`; its entry point targets Linux/WSL rather than a native-Windows worker implementation.

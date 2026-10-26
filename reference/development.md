@@ -2,6 +2,11 @@
 
 Repository conventions and verification for maintaining the existing application.
 
+The repository targets Python 3.14, with the patch version selected by
+`.python-version`. Install dependencies from `uv.lock` with `uv sync --locked`.
+The redis-py 5.x constraint supports Redis 6.2.20; keep web and worker
+dependencies aligned when updating either environment.
+
 The existing regression suite requires the import-time configuration files described in [Configuration](configuration.md):
 
 ```bash

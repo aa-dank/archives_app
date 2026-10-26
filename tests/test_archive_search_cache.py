@@ -755,8 +755,18 @@ def test_backend_timeout_bytes_retry_and_error_contract():
     adapter = RedisCache.from_url("redis://localhost:6379/0?socket_timeout=99&decode_responses=True", 0.5)
     options = adapter.client.connection_pool.connection_kwargs
     assert options["socket_timeout"] == options["socket_connect_timeout"] == 0.5
-    assert options["decode_responses"] is False and options["retry"].get_retries() == 0
+    assert options["decode_responses"] is False
     import redis
+    attempts = []
+
+    def fail_once():
+        """Count attempts so the no-retry contract works across redis-py versions."""
+        attempts.append(True)
+        raise redis.ConnectionError("unavailable")
+
+    with pytest.raises(redis.ConnectionError):
+        options["retry"].call_with_retry(fail_once, lambda error: None)
+    assert len(attempts) == 1
     class BrokenClient:
         """Fail backend operations while retaining the adapter's public input checks."""
 
