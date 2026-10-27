@@ -2061,3 +2061,135 @@ interpreter, retaining Python 3.13 for Supervisor/other environments and rollbac
 Production was not updated; no deployed database or archive files were changed.
 Remove local Redis package holds only for an intentional coordinated version
 change. Repair the unrelated GitHub CLI apt signing-key failure separately.
+
+---
+
+## Entry 067 - Replace WSL Redis with Valkey and name the shared store generically
+**Date:** 2026-10-27
+**Author:** OpenAI Codex
+
+The intended production target is now Valkey `9.0.6-1.amzn2023.0.1`.
+Replaced WSL's Redis 6.2.20 with upstream signed Ubuntu 22.04 packages
+`valkey-server`/`valkey-tools` `9.0.6-1.jammy`, held at that version.
+The `valkey-server` systemd service serves loopback port 6379 and is enabled
+at boot. Its config/ACL, data, and logs use `/etc/valkey`, `/var/lib/valkey`,
+and `/var/log/valkey`. Preserved all 148 records (134 streams, 10 hashes,
+three sets, one sorted set), their values/stream IDs, eight expiration
+deadlines, ACL access, persistence schedule, 16 databases, and memory policy
+(`maxmemory 0`, `noeviction`). Redis packages were removed without purging
+their prior configuration/data. Root-only rollback backups, including the
+original snapshot, logical export, config/ACL, package files, and verification
+report, are under `/var/backups/archives-valkey/20261027T174528Z`.
+
+Application-owned settings/helpers, the cache adapter, diagnostics, tests,
+and current documentation now use key-value store terminology. The canonical
+setting is `KEY_VALUE_STORE_URL`, and the adapter is `KeyValueCache`.
+Process environment overrides JSON/class settings; within either source,
+the canonical name precedes legacy `REDIS_URL`. Legacy `REDIS_LOCATION` and
+`REDIS_PORT` remain the final fallback. Invalid explicit settings still fail
+without fallback. RQ and cache retain redis-py 5.3.1, `redis://`/`rediss://`
+URLs, and independent pools with existing timeout/TTL behavior. The admin
+`/test/see_config` response names the endpoint `key_value_store_url` instead
+of `redis_url`; `/test/rq` retains raw server INFO fields. Valkey's actual
+version is `valkey_version`; `redis_version` is a compatibility field.
+
+The ignored `test_config_wsl.json` now sets `KEY_VALUE_STORE_URL` to
+`redis://localhost:6379/0`. New environment setting `ARCHIVES_CONFIG_FILE`
+selects that file for both web and worker before import; the default remains
+`deploy_app_config.json`. The deployment config and production host were not
+modified. Docker development now uses `valkey/valkey:9.0.6-alpine` and passes
+the container service endpoint through the canonical environment setting.
+Affected components: app/worker initialization, cache adapter, queue error
+messages/admin diagnostics, development Compose stack, and local host service.
+No database schema or archive-filesystem changes.
+
+Verification: 224 tests passed against WSL Valkey, including live atomic cache
+publication/expiry and forked RQ results, dependencies, failures, and retries.
+Added precedence/legacy compatibility and selected-file startup coverage.
+The two live contracts passed again after making the RQ test remove its result
+streams and worker metadata. All original values and expiration deadlines were
+rechecked after saving and restarting Valkey. Signed repository metadata and
+package SHA256s, dependency lock/installed-package consistency, Python compilation,
+and diff checks passed. The actual WSL JSON also passed app/worker/cache connection
+and disposable byte/TTL/delete smoke checks. Existing deprecation warnings remain. Docker was not
+built. An initial cutover settings check hit Valkey's retired `dynamic-hz`
+directive and automatically restored Redis; the corrected attempt succeeded.
+
+Follow-on: start local web and worker with
+`ARCHIVES_CONFIG_FILE=test_config_wsl.json`. Perform production installation,
+configuration migration, and its authentication/TLS/network/workflow checks
+separately. Keep the Valkey package holds until an intentional update, and use
+the pre-migration Redis snapshot if rolling back: Valkey 9 snapshots must not
+be loaded into Redis 6.2. Current operations/setup details are in
+`reference/operations.md`; historical journal entries remain unchanged.
+
+---
+
+## Entry 068 - Require key-value store configuration without Redis aliases
+**Date:** 2026-10-27
+**Author:** OpenAI Codex
+
+At the user's direction, removed the compatibility fallbacks introduced in
+Entry 067. App, cache, and worker now require `KEY_VALUE_STORE_URL`, with the
+process environment taking precedence over JSON/class configuration.
+`REDIS_URL`, `REDIS_LOCATION`, and `REDIS_PORT` cannot supply or override the
+endpoint. Missing, blank, or invalidly typed required settings fail startup;
+an invalid environment value cannot fall back to the file. Current configuration,
+operations, development, and feature documentation reflect this contract.
+
+Affected runtime components: shared endpoint resolver and app/worker configuration
+loaders. The WSL JSON already uses the required key. The deployment JSON and
+production host remain untouched; migrate that file before running this code,
+or supply `KEY_VALUE_STORE_URL` consistently in every process environment.
+The default selected filename remains `deploy_app_config.json`, so local startup
+and tests must explicitly select `ARCHIVES_CONFIG_FILE=test_config_wsl.json`.
+RQ's redis-py client and protocol URL schemes remain unchanged. No service,
+database, archive-filesystem, or stored queue/cache data changes in this follow-up.
+
+Verification: regression coverage checks rejection of Redis-only configuration
+and environment settings, both JSON loaders, ignored obsolete environment
+overrides across app/cache/worker, required-value validation, and selected-file
+startup. Full suite: 209 passed, with the two opt-in live-service checks skipped.
+Python compilation and diff checks passed; existing deprecation warnings remain.
+Follow-on operational work is the separate deployment configuration migration
+before adopting this code.
+
+---
+
+## Entry 069 - Upgrade redis-py for the Valkey 9 runtime
+**Date:** 2026-10-27
+**Author:** OpenAI Codex
+
+Upgraded redis-py from 5.3.1 to 8.1.0 in the local app venv, dependency manifest,
+lockfile, and generated requirements export. The supported dependency range is
+now `redis>=8.1.0,<9`; RQ stays at 2.12.0. Resolution removed the now-unused
+transitive PyJWT dependency and otherwise retained existing package versions.
+This replaces the client restriction originally chosen for Redis 6.2; the
+target is Valkey 9.0.6 on WSL and the intended Amazon Linux production host.
+
+New shared `key_value_store.rq_connection_from_url` initializes web producers
+and workers with explicit RESP2, byte responses, and zero automatic command
+retries, avoiding implicit redis-py 8 default changes and replayed queue writes.
+Queue read/connect timeout defaults and TCP keepalive remain as before; URL
+transport/auth/TLS/timeouts still apply, and RQ extends worker read timeouts
+for blocking dequeue. The client owns and closes its pool. Cache clients retain
+their separate bounded RESP2 pools, no-retry behavior, and existing TTL policy.
+Affected runtime components: local Python environment, dependency artifacts,
+web queue initialization, and worker connection initialization. No service,
+schema, archive-filesystem, or stored-data migration was performed.
+
+Verification: all 214 tests passed against local Valkey 9.0.6 on Python 3.14.10.
+Live checks cover cache atomic publication/expiry, forked RQ results/dependencies,
+failure/retry handling, and a worker staying on the same blocked connection
+beyond five seconds before completing a newly enqueued job. Additional coverage
+verifies byte/protocol/retry policy across all roles, URL transport options,
+and a failed queue write attempted only once. Actual WSL app/worker/cache
+connections passed RESP2/PING/server-version smoke checks; the original key
+count remains 148 after test cleanup. Dependency lock/installed consistency,
+Python compilation, and diff checks passed. Existing deprecation warnings remain.
+Docker and the Amazon Linux production host were not exercised.
+
+Follow-on: deploy the reviewed lock with matching web/worker code and restart
+both process roles after the separate production Valkey/configuration setup.
+Run the live contracts and actual network/authentication/TLS workflow checks
+there before adoption; do not re-resolve dependencies independently on that host.

@@ -19,7 +19,7 @@ from archives_application import app_config
 from archives_application.archiver import archive_search as search
 from archives_application.archiver import archive_search_cache as caching
 from archives_application.archiver import routes
-from archives_application.cache import CacheUnavailable, RedisCache, positive_integer
+from archives_application.cache import CacheUnavailable, KeyValueCache, positive_integer
 from archives_application.models import ArchiveSearchRunModel, UserModel
 
 
@@ -70,12 +70,12 @@ class MemoryCache:
 
 
 class TestConfig:
-    """Enable cache policy with SQLite telemetry and a lazy, unused Redis connection."""
+    """Enable cache policy with SQLite telemetry and a lazy, unused key-value connection."""
     SECRET_KEY = "archive-search-cache-test"
     SQLALCHEMY_DATABASE_URI = "sqlite://"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     GOOGLE_CLIENT_ID = "cache-test-client"
-    REDIS_URL = "redis://localhost:6379/0"
+    KEY_VALUE_STORE_URL = "redis://localhost:6379/0"
     WTF_CSRF_ENABLED = False
     ARCHIVE_SEARCH_CACHE_ENABLED = True
     CACHE_NAMESPACE = "test:archives"
@@ -91,7 +91,7 @@ def environment(monkeypatch, tmp_path):
     monkeypatch.setattr(caching, "utc_now", lambda: clock.now)
     monkeypatch.setattr(search, "utc_now", lambda: clock.now)
     app = create_app(TestConfig)
-    assert isinstance(app.extensions["cache"], RedisCache)
+    assert isinstance(app.extensions["cache"], KeyValueCache)
     app.extensions["cache"] = backend
     monkeypatch.setattr(search.utils.FlaskAppUtils, "create_temp_filepath",
                         lambda filename, **kwargs: str(tmp_path / filename))
@@ -521,7 +521,7 @@ def test_backend_connection_option_overflow_is_cache_unavailable(operation):
         """Simulate an OS timeout conversion outside the representable numeric range."""
         raise OverflowError("socket timeout cannot be represented")
 
-    adapter = RedisCache(SimpleNamespace(get=overflow, set=overflow, delete=overflow))
+    adapter = KeyValueCache(SimpleNamespace(get=overflow, set=overflow, delete=overflow))
     with pytest.raises(CacheUnavailable):
         if operation == "set":
             adapter.set("key", b"value", 1)
@@ -729,12 +729,12 @@ def test_workbook_publication_is_atomic_and_collision_safe(environment, monkeypa
 
 
 @pytest.mark.parametrize("setting,value", [
-    ("ARCHIVE_SEARCH_CACHE_ENABLED", "False"), ("REDIS_URL", None), ("REDIS_URL", "invalid"),
-    ("REDIS_URL", "redis://localhost:6379/1"), ("CACHE_NAMESPACE", " "),
-    ("REDIS_URL", "redis://localhost:6379/0?unsupported=yes"),
-    ("REDIS_URL", "rediss://localhost:6379/0?ssl_cert_reqs=invalid"),
-    ("REDIS_URL", "redis://localhost:6379/0?cache_config=1"),
-    ("REDIS_URL", "redis://localhost:6379/0?cache=1"),
+    ("ARCHIVE_SEARCH_CACHE_ENABLED", "False"), ("KEY_VALUE_STORE_URL", None), ("KEY_VALUE_STORE_URL", "invalid"),
+    ("KEY_VALUE_STORE_URL", "redis://localhost:6379/1"), ("CACHE_NAMESPACE", " "),
+    ("KEY_VALUE_STORE_URL", "redis://localhost:6379/0?unsupported=yes"),
+    ("KEY_VALUE_STORE_URL", "rediss://localhost:6379/0?ssl_cert_reqs=invalid"),
+    ("KEY_VALUE_STORE_URL", "redis://localhost:6379/0?cache_config=1"),
+    ("KEY_VALUE_STORE_URL", "redis://localhost:6379/0?cache=1"),
     ("CACHE_TIMEOUT_SECONDS", False), ("CACHE_TIMEOUT_SECONDS", 0), ("CACHE_TIMEOUT_SECONDS", float("inf")),
     ("CACHE_MAX_ENTRY_BYTES", True), ("ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS", 432000),
 ])
@@ -752,7 +752,7 @@ def test_startup_invalid_configuration_disables_without_connecting(setting, valu
 
 def test_backend_timeout_bytes_retry_and_error_contract():
     """Enforce bounded byte operations and preserve the distinction between backend and caller errors."""
-    adapter = RedisCache.from_url("redis://localhost:6379/0?socket_timeout=99&decode_responses=True", 0.5)
+    adapter = KeyValueCache.from_url("redis://localhost:6379/0?socket_timeout=99&decode_responses=True", 0.5)
     options = adapter.client.connection_pool.connection_kwargs
     assert options["socket_timeout"] == options["socket_connect_timeout"] == 0.5
     assert options["decode_responses"] is False
@@ -781,7 +781,7 @@ def test_backend_timeout_bytes_retry_and_error_contract():
         def delete(self, key):
             """Simulate an unavailable backend during deletion."""
             raise redis.ConnectionError()
-    broken = RedisCache(BrokenClient())
+    broken = KeyValueCache(BrokenClient())
     with pytest.raises(CacheUnavailable):
         broken.get("key")
     with pytest.raises(CacheUnavailable):

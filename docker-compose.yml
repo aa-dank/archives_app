@@ -5,7 +5,9 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      - redis
+      - valkey
+    environment:
+      KEY_VALUE_STORE_URL: redis://valkey:6379/0
     volumes:
       - .:/app/archives_app
     ports:
@@ -17,5 +19,5 @@ services:
       mount -t cifs -o "username=adankert,password=1156h!GH,domain=ppcou,vers=1.0" //ppdo-fs05.ppcou.ucsc.edu/Cannon_Scans /app/Data/Cannon_Scans
       flask run --host=0.0.0.0 --port=5000 --reload"
     privileged: true
-  redis:
-    image: "redis:6.2.20-alpine"
+  valkey:
+    image: "valkey/valkey:9.0.6-alpine"

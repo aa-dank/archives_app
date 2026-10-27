@@ -6,7 +6,7 @@ The system reflects this particular archive's folder structure, filing conventio
 
 | Web application | Data and search | Background work | File storage |
 | --- | --- | --- | --- |
-| Python 3.14 · Flask | PostgreSQL · full-text search | Redis 6.2.20 · RQ | Windows/SMB archives |
+| Python 3.14 · Flask | PostgreSQL · full-text search | Valkey 9 · RQ | Windows/SMB archives |
 
 ## Context
 
@@ -31,13 +31,13 @@ flowchart LR
     Client[Browser or integration] --> App[Flask application]
     App --> DB[(PostgreSQL index)]
     App --> Files[SMB archives]
-    App --> Queue[(Redis queue)]
+    App --> Queue[(Valkey queue)]
     Queue --> Worker[RQ worker]
     Worker --> DB
     Worker --> Files
 ```
 
-Flask serves the web interface and HTTP APIs through five blueprints: `archiver`, `project_tools`, `users`, `timekeeper`, and `main`. SQLAlchemy models represent files and their locations, projects, CAANs, contracts, accounts, and task history. Redis/RQ carries indexing, reconciliation, and maintenance work to a separate worker.
+Flask serves the web interface and HTTP APIs through five blueprints: `archiver`, `project_tools`, `users`, `timekeeper`, and `main`. SQLAlchemy models represent files and their locations, projects, CAANs, contracts, accounts, and task history. Valkey/RQ carries indexing, reconciliation, and maintenance work to a separate worker.
 
 Archive search runs in the web process against PostgreSQL. The associated ingestion and synchronization services supply extracted text, search chunks, detected dates, and project/contract business data. Database migrations are maintained in `business_services_db`; this application maintains archive file and project-location records and presents the shared data.
 

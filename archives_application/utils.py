@@ -1256,7 +1256,7 @@ class RQTaskUtils:
             task = flask.current_app.q.enqueue_call(**enqueue_call_kwargs)
 
         except redis.exceptions.ConnectionError:
-            raise ConnectionError("Failed to connect to the Redis instance. Please ensure that the Redis server is running and accessible.")
+            raise ConnectionError("Failed to connect to the key-value store. Please ensure that the service is running and accessible.")
 
         now = datetime.now()
         new_task_record = WorkerTaskModel(task_id=job_id,

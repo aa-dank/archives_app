@@ -4,10 +4,10 @@ import os
 import flask
 import glob
 import logging
-import redis
 import rq
 import warnings
 import archives_application.app_config as app_config
+from archives_application.key_value_store import rq_connection_from_url
 import pandas as pd
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
@@ -32,7 +32,7 @@ google_creds_json = r'google_client_secret.json'
 # These lines are used to set the config file for the app. If it is not set correctly,
 # the first error will LIKELY be issues with connecting to the database.
 #config_json = next(glob.iglob('test_config*'), None)  # get the first test_config file
-config_json = r'deploy_app_config.json'
+config_json = os.environ.get('ARCHIVES_CONFIG_FILE', 'deploy_app_config.json')
 
 def create_app(config_class=app_config.json_to_config_factory(google_creds_path=google_creds_json,
                                                               config_json_path=config_json)):
@@ -67,7 +67,7 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     app.config.from_object(config_class)
     # Use the worker's same resolution policy, including late environment
     # overrides and explicit configuration classes supplied by callers/tests.
-    app.config['REDIS_URL'] = app_config.resolve_redis_url(app.config)
+    app.config['KEY_VALUE_STORE_URL'] = app_config.resolve_key_value_store_url(app.config)
     app.config.setdefault('FILE_INFO_TEXT_WINDOW_CHARS', 10000)
     app.config.setdefault('FILE_INFO_DATE_MENTION_LIMIT', 50)
     app_config.configure_cache(app)
@@ -94,8 +94,8 @@ def create_app(config_class=app_config.json_to_config_factory(google_creds_path=
     # Create Oauth client for using google services
     app.config['google_auth_client'] = WebApplicationClient(config_class.GOOGLE_CLIENT_ID)
 
-    # add redis queue for asynchronous tasks
-    app.q = rq.Queue(connection=redis.from_url(app.config.get("REDIS_URL")))
+    # RQ uses redis-py for both Valkey and Redis protocol connections.
+    app.q = rq.Queue(connection=rq_connection_from_url(app.config["KEY_VALUE_STORE_URL"]))
 
     # add blueprints
     # https://flask.palletsprojects.com/en/1.1.x/blueprints/

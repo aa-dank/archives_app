@@ -22,11 +22,11 @@ class TestConfig:
     SQLALCHEMY_DATABASE_URI = "sqlite://"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     GOOGLE_CLIENT_ID = "location-scrape-test-client"
-    REDIS_URL = "redis://localhost:6379/0"
+    KEY_VALUE_STORE_URL = "redis://localhost:6379/0"
 
 
 class FakeQueue:
-    """Keep real child task SQL writes without connecting to Redis."""
+    """Keep real child task SQL writes without connecting to the key-value store."""
 
     def __init__(self):
         self.calls = []

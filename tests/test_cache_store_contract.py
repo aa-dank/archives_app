@@ -1,4 +1,4 @@
-"""Opt-in disposable-key check against an explicitly selected Redis service."""
+"""Opt-in disposable-key check against an explicitly selected key-value service."""
 
 import json
 import os
@@ -9,17 +9,17 @@ from uuid import uuid4
 import pytest
 import redis
 
-from archives_application.cache import RedisCache
+from archives_application.cache import KeyValueCache
 
 
-def test_redis_atomic_publication_and_independent_ttls():
+def test_store_atomic_publication_and_independent_ttls():
     """Check a selected real backend with disposable keys, independent expiry, and concurrent atomic writes."""
     url = os.environ.get("ARCHIVES_CACHE_TEST_URL")
     socket = os.environ.get("ARCHIVES_CACHE_TEST_SOCKET")
     if not url and not socket:
-        pytest.skip("Set ARCHIVES_CACHE_TEST_URL for a selected disposable Redis-compatible service")
-    adapter = (RedisCache.from_url(url, 0.5) if url else
-               RedisCache(redis.Redis(unix_socket_path=socket, socket_timeout=0.5, socket_connect_timeout=0.5)))
+        pytest.skip("Set ARCHIVES_CACHE_TEST_URL for a selected disposable Valkey/Redis service")
+    adapter = (KeyValueCache.from_url(url, 0.5) if url else
+               KeyValueCache(redis.Redis(unix_socket_path=socket, socket_timeout=0.5, socket_connect_timeout=0.5)))
     prefix = f"archives-cache-contract:{uuid4().hex}"
     short, longer, atomic = (prefix + suffix for suffix in (":short", ":long", ":atomic"))
     payloads = [json.dumps({"generation": i, "data": str(i) * 8192}).encode() for i in range(2)]

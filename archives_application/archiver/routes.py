@@ -2388,7 +2388,7 @@ def scrape_files():
                 return flask.Response("scrape_time must be a positive number of minutes", status=400)
             scrape_time = timedelta(minutes=scrape_time)
             # Create our own job id to pass to the task so it can manipulate and query its own representation 
-            # in the database and Redis.
+            # in the database and key-value store.
             scrape_job_id = f"{scrape_file_data_task.__name__}_{datetime.now().strftime(r'%Y%m%d%H%M%S')}" 
             scrape_params = {"archives_location": flask.current_app.config.get("ARCHIVES_LOCATION"),
                              "start_location": scrape_location,
@@ -2397,7 +2397,7 @@ def scrape_files():
                              "scrape_time": scrape_time,
                              "queue_id": scrape_job_id}
             
-            # set the result_ttl to 12 hours (43200 seconds) so that the results are not deleted from Redis
+            # set the result_ttl to 12 hours (43200 seconds) so that the results are not deleted from the key-value store
             nq_call_kwargs = {'result_ttl': 43200}
             nq_results = utils.RQTaskUtils.enqueue_new_task(db=db,
                                                             enqueued_function=scrape_file_data_task,
@@ -2412,7 +2412,7 @@ def scrape_files():
         except Exception as e:
             mssg = "Error enqueuing task"
             if e.__class__.__name__ == "ConnectionError":
-                mssg = "Error connecting to Redis. Is Redis running?"
+                mssg = "Error connecting to the key-value store. Is the service running?"
             return utils.FlaskAppUtils.api_exception_subroutine(response_message=mssg, thrown_exception=e)   
         
     return flask.Response("Unauthorized", status=401)
@@ -2564,7 +2564,7 @@ def confirm_db_file_locations():
         except Exception as e:
             mssg = "Error enqueuing task"
             if e.__class__.__name__ == "ConnectionError":
-                mssg = "Error connecting to Redis. Is Redis running?"
+                mssg = "Error connecting to the key-value store. Is the service running?"
             return utils.FlaskAppUtils.api_exception_subroutine(response_message=mssg, thrown_exception=e)
     
     return flask.Response("Unauthorized", status=401)

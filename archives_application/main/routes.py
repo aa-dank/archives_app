@@ -411,7 +411,7 @@ def get_app_config():
         "directory_choices": flask.current_app.config.get("DIRECTORY_CHOICES"),
         "server_change_files_limit": flask.current_app.config.get("SERVER_CHANGE_FILES_LIMIT"),
         "server_change_data_limit": flask.current_app.config.get("SERVER_CHANGE_DATA_LIMIT"),
-        "redis_url": flask.current_app.config.get("REDIS_URL"),
+        "key_value_store_url": flask.current_app.config.get("KEY_VALUE_STORE_URL"),
         "user_archives_location": flask.current_app.config.get("USER_ARCHIVES_LOCATION"),
         "app_workers_restart_command": flask.current_app.config.get("APP_WORKERS_RESTART_COMMAND"),
         "app_restart_command": flask.current_app.config.get("APP_RESTART_COMMAND")
@@ -421,19 +421,18 @@ def get_app_config():
 @main.route("/test/rq", methods=['GET', 'POST'])
 @utils.FlaskAppUtils.roles_required(['ADMIN'])
 def test_rq_connection():
-    """Tests the connection to the RQ (Redis Queue) task queue.
+    """Test the connection to RQ's shared key-value store.
 
     Returns:
         Response: A JSON response indicating the status of the RQ connection.
     """
     try:
-        redis_client = flask.current_app.q.connection
-        redis_client.ping()
-        redis_info = redis_client.info()
-        return redis_info
+        store_client = flask.current_app.q.connection
+        store_client.ping()
+        return store_client.info()
     
     except Exception as e:
-        m = "Error connecting to the redis queue: "
+        m = "Error connecting to the task queue's key-value store: "
         return utils.FlaskAppUtils.web_exception_subroutine(flash_message=m, thrown_exception=e, app_obj=flask.current_app)
     
 @main.route("/test/file_server_access")

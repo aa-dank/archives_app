@@ -21,7 +21,7 @@ class TestConfig:
     SQLALCHEMY_DATABASE_URI = "sqlite://"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     GOOGLE_CLIENT_ID = "scrape-progress-test-client"
-    REDIS_URL = "redis://localhost:6379/0"
+    KEY_VALUE_STORE_URL = "redis://localhost:6379/0"
     USER_ARCHIVES_LOCATION = r"N:\Archives"
 
 

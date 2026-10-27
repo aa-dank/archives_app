@@ -36,20 +36,20 @@ def positive_integer(value, name: str) -> int:
     return value
 
 
-class RedisCache:
-    """Adapt Redis GET/SET EX/DEL to byte storage with atomic per-key publication.
+class KeyValueCache:
+    """Adapt Valkey/Redis GET/SET EX/DEL to atomic byte storage using redis-py.
 
     Connection failures use CacheUnavailable, while invalid write values and
     lifetimes remain caller errors. The adapter never chooses an entry's TTL.
     """
 
     def __init__(self, client) -> None:
-        """Wrap a reusable Redis client; this constructor performs no network I/O."""
+        """Wrap a reusable client; this constructor performs no network I/O."""
         self.client = client
 
     @classmethod
     def from_url(cls, url: str, timeout_seconds: float) -> Self:
-        """Build one lazy, bounded pool from a standalone Redis/TLS endpoint.
+        """Build one lazy, bounded pool from a standalone RESP/TLS endpoint.
 
         Namespaces replace logical-database selection. URL options cannot
         enable retries or change the byte/timeout contract. Invalid connection
@@ -96,7 +96,7 @@ class RedisCache:
             raise CacheUnavailable("Cache read failed") from error
 
     def set(self, key: str, value: bytes, ttl_seconds: int) -> None:
-        """Validate the value/lifetime, then atomically write bytes with Redis EX."""
+        """Validate the value/lifetime, then atomically write bytes with SET EX."""
         positive_integer(ttl_seconds, "ttl_seconds")
         if not isinstance(value, bytes):
             raise TypeError("Cache values must be bytes")

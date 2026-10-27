@@ -5,14 +5,23 @@ Operational responsibilities for the existing archives application include maint
 ## Web and worker processes
 
 Install web and worker dependencies from the same reviewed `uv.lock`, using
-the Python version selected by `.python-version`. The redis-py 5.x constraint
-supports Redis 6.2.20. Before replacing an environment, pause new enqueues and
+the Python version selected by `.python-version`. The reviewed versions are
+redis-py 8.1.0 and RQ 2.12.0 for Valkey 9.0.6 on both Ubuntu/WSL and the intended
+Amazon Linux host. Before replacing an environment, pause new enqueues and
 drain queued/active work, preserve the prior environment for rollback, and
 rebuild at its final path with `uv sync --locked`. Verify the actual interpreter
 and installed package versions on each host; repository requirements do not
 establish what a running deployment has installed.
 
-The Flask application is exposed as `run:app`; Gunicorn is included as its production WSGI server dependency. Executing `run.py` directly starts Flask with debug mode enabled. `worker.py` consumes RQ's `default` queue. Web queue, cache, and worker resolve one shared `REDIS_URL`: process environment first, explicit selected-JSON value second, then legacy host/port fallback. The worker reads the application's selected JSON file instead of using an independent localhost default. Apply any environment override consistently to all process roles.
+The Flask application is exposed as `run:app`; Gunicorn is included as its production WSGI server dependency. Executing `run.py` directly starts Flask with debug mode enabled. `worker.py` consumes RQ's `default` queue. Web queue, cache, and worker require one shared `KEY_VALUE_STORE_URL`. The process environment overrides the JSON/class value; Redis-named aliases and host/port fallbacks are unsupported. The worker reads the application's selected JSON file instead of using an independent localhost default. Apply any environment override consistently to all process roles.
+
+`key_value_store.rq_connection_from_url` supplies the same connection policy for
+web producers and workers: byte responses, RESP2, and no automatic command
+retries. Queue connect/read timeouts retain their prior unlimited defaults;
+explicit URL timeouts still apply, and RQ raises the worker read timeout as
+needed for blocking dequeue. This avoids adopting redis-py 8's protocol/timeout
+defaults implicitly. The cache retains its separate RESP2 pool, bounded
+cache-specific timeouts, and no-retry behavior.
 
 Web and worker processes rely on matching dependency versions, configuration files, and filesystem mounts. Their service accounts need access to the archives and inboxes, plus write access to the backup directory and `archives_application/static/temp_files/`. The supplied worker uses RQ's `Worker`; its entry point targets Linux/WSL rather than a native-Windows worker implementation.
 
@@ -25,7 +34,41 @@ Process-supervisor, reverse-proxy, and scheduling configuration live outside thi
 
 Archive search runs synchronously in the web process. Large unscoped content queries can require longer server/proxy timeouts. Text extraction, chunk population, and project/contract synchronization are responsibilities of the associated ingestion and synchronization services. Database schema and migrations are maintained in `business_services_db`; this app does not migrate the database at startup. In particular, the generated `file_content_fts_chunks.search_vector` column used by content queries is not mapped in this app's ORM, so `db.create_all()` does not reproduce the complete database schema.
 
-The Docker files record a development web/Redis stack with site-specific CIFS mounts. They do not include PostgreSQL, an RQ-worker service, or a maintenance scheduler. They should not be read as a complete description of the deployed infrastructure.
+The Docker files record a development web/Valkey stack with site-specific CIFS mounts. They do not include PostgreSQL, an RQ-worker service, or a maintenance scheduler. They should not be read as a complete description of the deployed infrastructure.
+
+### WSL Valkey service
+
+The Ubuntu 22.04 development host uses upstream `valkey-server` and `valkey-tools`
+`9.0.6-1.jammy`, matching the upstream version in the intended Amazon Linux
+`9.0.6-1.amzn2023.0.1` target. These are distribution-specific builds.
+The signed apt repository is the Valkey 9.0 channel under
+`https://download.valkey.io/packaging/valkey-9.0/deb/ubuntu2204/`.
+Both Valkey packages are held for intentional version changes.
+
+Redis packages were removed without purging their prior configuration/data.
+The systemd service is `valkey-server`; its configuration, ACL, data, and log
+are under `/etc/valkey/`, `/var/lib/valkey/`, and `/var/log/valkey/`.
+It listens on loopback port 6379 and retains the prior persistence schedule,
+16 databases, unlimited configured memory (`maxmemory 0`), and `noeviction` policy.
+Check the real version with `valkey-cli INFO server`: use `valkey_version`,
+because `redis_version` is a compatibility field.
+
+Start web and worker from the repository root with the same file selection:
+
+```bash
+ARCHIVES_CONFIG_FILE=test_config_wsl.json .venv/bin/python run.py
+ARCHIVES_CONFIG_FILE=test_config_wsl.json .venv/bin/python worker.py
+```
+
+The WSL file sets `KEY_VALUE_STORE_URL` to `redis://localhost:6379/0`.
+The deployment file and production service are unchanged; migrate the deployment
+file to `KEY_VALUE_STORE_URL` before using it with this code, or supply that
+setting in every process environment. Root-only migration
+backups are under `/var/backups/archives-valkey/20261027T174528Z`, including the
+original Redis snapshot, configuration, ACL, package record, and logical export.
+The original Redis `.deb` files are saved in its `redis-packages/` subdirectory.
+Restore a pre-migration snapshot for Redis rollback; do not feed a Valkey 9
+snapshot back to Redis 6.2.
 
 ## Administrative tools
 
@@ -199,8 +242,8 @@ No database schema change or cache migration is needed. Disabling the flag and
 restarting restores fresh browser searches without deleting entries or files.
 
 The local `test_config_wsl.json` and `deploy_app_config.json` were opted in on
-2026-10-13. Both now explicitly set the shared `REDIS_URL` to
-`redis://localhost:6379/0`, preserving their previous endpoint, with independent cache clients and the distinct
+2026-10-13. Both files record the endpoint
+`redis://localhost:6379/0`; WSL uses `KEY_VALUE_STORE_URL`, while the unchanged deployment file still requires migration from its unsupported key. The configurations retain independent cache clients and the distinct
 `archives:wsl:dataset1` / `archives:deploy:dataset1` namespaces. See
 [Configuration](configuration.md#archive-search-cache-and-workbook-retention)
 for the complete override record. These ignored JSON files are local settings;
@@ -217,7 +260,7 @@ the consumer and must advance when result interpretation or ranking changes.
 Workbooks live in the existing temporary directory on a single host, or a shared
 volume mounted at the same path on every serving host. Verify web/worker write
 and cleanup access and this storage layout before enabling caching. A shared
-Redis cache does not make another host's local downloads available. Completed
+shared cache does not make another host's local downloads available. Completed
 XLSX files publish through same-directory staging and atomic rename; workbook
 references use generation IDs so an older export cannot replace a newer result.
 Files are shared artifacts and are never added to a viewer's logout-deletion
@@ -226,7 +269,7 @@ the original Coverage timestamp and result expiration. The replacement file has
 its own publication age. Downloads continue to serve retained files after the
 result expires; a normal search at expiration runs fresh.
 
-The five-day lifetime and five-MiB per-entry cap do not bound aggregate Redis
+The five-day lifetime and five-MiB per-entry cap do not bound aggregate key-value store
 memory. The selected deployment shares this service with RQ, so verify spare
 capacity and queue-safe resource/eviction behavior. A separate bounded cache
 service would require a later configuration split. No global memory limit or
@@ -234,7 +277,7 @@ queue eviction policy is set by these application settings. The offline analysis
 [feature spec](archive_search_cache_feature_spec.md#verification-and-acceptance)
 found a peak of 50 successful browser searches per five days and estimated
 256–441 MiB with overhead/headroom; 512 MiB is a conservative planning allowance,
-not expected usage or a request to alter an existing Redis limit.
+not expected usage or a request to alter an existing service limit.
 
 The 26 locally retained example workbooks total 2,259,171 bytes, average 86,891
 bytes, and peak at 1,032,493 bytes. A rough six-day allowance of 60 generations
@@ -245,20 +288,26 @@ Refreshes, concurrent misses, failed reference writes, and manual deletion can
 create extra files. Confirm capacity beyond other temporary artifacts and refine
 both cache and disk allowances from actual traffic after rollout.
 
-Before enabling on the selected deployment, run the disposable-key Redis
-contract check with `ARCHIVES_CACHE_TEST_URL` set to that endpoint:
+Before enabling on the selected deployment, run the cache and RQ contract checks
+with `ARCHIVES_CACHE_TEST_URL` and `ARCHIVES_RQ_TEST_URL` set to that endpoint:
 
 ```bash
-.venv/bin/pytest -q tests/test_cache_redis_contract.py
+.venv/bin/pytest -q tests/test_cache_store_contract.py tests/test_rq_store_contract.py
 ```
 
 This opt-in test uses unique `archives-cache-contract:<uuid>` keys, checks
 independent TTLs and complete atomic publication, and deletes only its own keys.
 It does not change server configuration. The test-only
-`ARCHIVES_CACHE_TEST_SOCKET` option supports a disposable local Redis service;
+`ARCHIVES_CACHE_TEST_SOCKET` option supports a disposable local key-value service;
 neither test variable is an application configuration setting. Validate TLS,
 authentication, network access, and shared workbook storage on the actual
 deployment separately.
+The RQ check uses a unique test queue and verifies forked execution, dependent
+jobs, results, and failure/retry handling. It deletes its own jobs and queue;
+select a disposable service when avoiding all test metadata on a shared server.
+An additional check keeps a real worker blocked beyond five seconds on the
+same connection and then verifies that a newly enqueued job completes. These
+live RQ checks need `CLIENT LIST` access to identify the blocking connection.
 
 Application `archive_search_cache` log events distinguish lookup hit/miss,
 refresh, malformed/oversized payloads, backend failure, serialization and write
@@ -284,7 +333,7 @@ size/outcome logs and temporary-disk use, then adjust limits from measured data.
 | Import fails with a missing config/OAuth JSON file | Run from the repository root and supply both selected JSON files; loading happens at import time. |
 | Database connection error | Verify `Sqalchemy_Database_Location`, database name, credentials, string port/SSL values, network access, and URI encoding. |
 | Missing relation, column, `vector` type, or `search_vector` | Confirm the canonical database migrations/extensions are installed. This app does not migrate the database at startup. |
-| Jobs remain queued | Confirm a worker listens on `default`, loads the same selected JSON file, and has the same `REDIS_URL` environment override as the web process. |
+| Jobs remain queued | Confirm a worker listens on `default`, loads the same selected JSON file, and has the same `KEY_VALUE_STORE_URL` environment override as the web process. |
 | File edit fails or paths point to the wrong place | Confirm mounts, service-account permissions, and the correspondence between app and user archive roots. Use the configured user-path prefix. |
 | Content search misses a known document | Check extraction status and chunk coverage; run location/index maintenance if metadata is stale. Filename indexing does not imply text extraction. |
 | Project/CAAN searches have no archive scope | Check synchronized relationships and recorded `projects.file_server_location`; confirm project locations when appropriate. |

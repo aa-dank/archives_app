@@ -22,8 +22,8 @@ dependencies = [
     "pymupdf>=2.0",
     "pgvector>=0.5.1",
     "python-dateutil>=3.0.0",
-    # Redis 6.2.20 in production is supported by redis-py 5.x, not 6+.
-    "redis>=5.3.1,<6",
+    # RQ's RESP client for Valkey; keep the tested client line aligned across roles.
+    "redis>=8.1.0,<9",
     "requests>=2.34.2",
     "rq>=2.12.0,<3",
     "seaborn>=0.13.2",
