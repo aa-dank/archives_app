@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from flask_login import current_user
 from functools import wraps
 from pathlib import Path, PureWindowsPath
@@ -28,6 +28,12 @@ from archives_application.models import WorkerTaskModel, UserModel
 
 class RequestParameterValidationError(ValueError):
     """Raised when a request parameter cannot be parsed as its requested type."""
+
+
+def spreadsheet_download_name(stem: str) -> str:
+    """Name an XLSX download using its report stem and the current UTC time."""
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{stem}_{timestamp}.xlsx"
 
 
 def contains_unicode(text):

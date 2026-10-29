@@ -632,7 +632,7 @@ def endpoints_index():
                 # Send the Excel file as a response
                 return flask.send_file(
                     output,
-                    download_name='endpoints.xlsx',  # Use 'attachment_filename' if using Flask < 2.0
+                    download_name=utils.spreadsheet_download_name("endpoints"),
                     as_attachment=True,
                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )

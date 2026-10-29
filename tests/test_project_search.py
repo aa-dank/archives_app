@@ -1,5 +1,6 @@
 from decimal import Decimal
 from io import BytesIO
+import re
 
 from openpyxl import load_workbook
 import pytest
@@ -81,7 +82,10 @@ def client(app):
 
 
 def test_empty_form_and_public_parameter_validation(client):
-    assert client.get("/project_search").status_code == 200
+    response = client.get("/project_search")
+    assert response.status_code == 200
+    assert b'href="/project_search/export/all"' in response.data
+    assert b"Download all results" not in response.data
     assert client.get("/project_search?caan=7199").status_code == 400
     assert client.get("/project_search?query=x&query=y").status_code == 400
     assert client.get("/project_search/export").status_code == 400
@@ -186,6 +190,10 @@ def test_html_result_limit_is_applied_after_stable_ranking(app):
 def test_export_flattens_contracts_and_neutralizes_formula_text(client):
     response = client.get("/project_search/export?query=1000")
     assert response.status_code == 200
+    assert re.search(
+        r"filename=project_search_\d{8}T\d{6}Z\.xlsx",
+        response.headers["Content-Disposition"],
+    )
     workbook = load_workbook(BytesIO(response.data), data_only=False)
     assert workbook.sheetnames == ["Projects and contracts", "Search information", "Column guide"]
     projects_sheet = workbook["Projects and contracts"]
@@ -237,3 +245,64 @@ def test_export_flattens_contracts_and_neutralizes_formula_text(client):
         assert column in guide
     assert "Partial" in guide["Total Original Contract(s) Cost"]
     assert "CAAN" in guide["Search match location"]
+
+
+def test_full_export_includes_all_projects_and_contracts_beyond_html_limit(app, client):
+    with app.app_context():
+        db.session.add_all(
+            ProjectModel(id=100 + index, number=f"9{index:03d}", name=f"Project {index}")
+            for index in range(301)
+        )
+        db.session.commit()
+
+    # The full-export URL ignores search criteria, including the current filters.
+    response = client.get("/project_search/export/all?query=1000&status=closed")
+    assert response.status_code == 200
+    assert re.search(
+        r"filename=all_projects_and_contracts_\d{8}T\d{6}Z\.xlsx",
+        response.headers["Content-Disposition"],
+    )
+    workbook = load_workbook(BytesIO(response.data), data_only=False)
+    assert workbook.sheetnames == ["Projects and contracts", "Search information", "Column guide"]
+    sheet = workbook["Projects and contracts"]
+    rows = list(sheet.iter_rows(min_row=2, values_only=True))
+    assert len(rows) == 305
+    assert len({row[-2] for row in rows}) == 304
+    assert rows[0][2] == "'=Formula project"
+    assert rows[0][14] is None  # Retain projects without contracts.
+    assert [row[14] for row in rows if row[-2] == 3] == ["A-2", "A-10"]
+    assert all(row[-3] == "All projects" and row[-1] == "—" for row in rows)
+    assert rows[-1][0] == 304
+    assert sheet.freeze_panes == "A2"
+    assert sheet["D2"].hyperlink.target.endswith("/project_info?project_id=1")
+    info = dict(workbook["Search information"].iter_rows(min_row=2, values_only=True))
+    assert info["Export scope"] == "All projects and linked contracts"
+    assert info["Query"] is None
+    assert info["Status"] == "any"
+    assert info["Total matched projects"] == 304
+    assert info["Total exported rows"] == 305
+
+
+def test_full_export_of_empty_database_is_valid(app, client):
+    with app.app_context():
+        ContractModel.query.delete()
+        ProjectCaanModel.query.delete()
+        ProjectModel.query.delete()
+        db.session.commit()
+
+    response = client.get("/project_search/export/all")
+    assert response.status_code == 200
+    workbook = load_workbook(BytesIO(response.data))
+    assert workbook["Projects and contracts"].max_row == 1
+    info = dict(workbook["Search information"].iter_rows(min_row=2, values_only=True))
+    assert info["Total matched projects"] == 0
+    assert info["Total exported rows"] == 0
+
+
+@pytest.mark.parametrize("url", [
+    "/project_search?query=1000", "/project_search?query=does-not-exist",
+])
+def test_full_export_link_is_independent_of_search_state(client, url):
+    response = client.get(url)
+    assert response.status_code == 200
+    assert b'href="/project_search/export/all"' in response.data

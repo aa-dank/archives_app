@@ -2753,8 +2753,7 @@ def dir_contents_summary_download():
         if not recursive_files_df.empty and 'Size Bytes' in recursive_files_df.columns:
             recursive_files_df.sort_values(by='Size Bytes', ascending=False, inplace=True)
 
-        timestamp = datetime.now().strftime(r'%Y%m%d%H%M%S')
-        filename = f"dir_contents_summary_{timestamp}.xlsx"
+        filename = utils.spreadsheet_download_name("dir_contents_summary")
         output = io.BytesIO()
 
         with pd.ExcelWriter(output, engine='openpyxl') as writer:

@@ -2193,3 +2193,48 @@ Follow-on: deploy the reviewed lock with matching web/worker code and restart
 both process roles after the separate production Valkey/configuration setup.
 Run the live contracts and actual network/authentication/TLS workflow checks
 there before adoption; do not re-resolve dependencies independently on that host.
+
+---
+
+## Entry 070 - Full project workbook export and timestamped spreadsheet downloads
+**Date:** 2026-10-28
+**Author:** OpenAI Codex
+
+Added an always-visible Export all projects and linked contracts link on Project
+Search. Its public `/project_search/export/all` download ignores search criteria
+and reuses the existing workbook sheets, columns, formatting, formula protection,
+and batched project iteration. Every project appears, with one row per linked
+contract or one blank-contract row when there are none. Unlinked contracts remain
+outside this project-based export. Full exports identify their scope in Search
+information and use All projects as the ranking band. Filtered exports still
+require active criteria; HTML results retain their 300-project display limit.
+
+Added a shared UTC filename helper using `YYYYMMDDTHHMMSSZ`. Project-search,
+full-project, directory-summary, endpoints-index, and archivist archived-files
+downloads now include the export timestamp, retaining report names and existing
+archivist date ranges. Archive Search keeps its already-timestamped download IDs
+and retention behavior. Affected components: project-search routes, workbook
+builder and template, shared utilities, and spreadsheet download routes in main,
+archiver, and timekeeper. No database or archive-filesystem mutations.
+
+Verification: focused project-search and spreadsheet/shareable-URL tests passed,
+covering full export beyond 300 projects, contract expansion and natural ordering,
+projects without contracts, empty-database exports, filter-independent links,
+formula protection, UTC download filenames, and workbook structure. Full suite:
+217 passed, three opt-in live-service tests skipped; existing deprecation warnings
+remain. Changed Python files compile, the template parses, and diff checks pass.
+Follow-on: check full-export latency with production-sized data and visually check the link
+on wide and narrow screens; no browser screenshot was captured in this environment.
+No migration or configuration change is required.
+
+---
+
+## Entry 071 - Put search links first in navigation
+**Date:** 2026-10-28
+**Author:** OpenAI Codex
+
+Reordered File Server Tools navigation to begin with Archive Search, CAAN Search,
+and Project Search. The remaining links retain their existing order. Affected
+runtime component: the shared `layout.html` template. Verification: rendered the
+layout and checked link order for anonymous and authenticated users; diff checks
+passed. No operational follow-on is required.

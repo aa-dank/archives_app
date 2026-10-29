@@ -1,6 +1,6 @@
 # Project Search Feature Specification
 
-Last updated: 2026-09-21
+Last updated: 2026-10-28
 
 ## Purpose
 
@@ -357,7 +357,11 @@ No filesystem calls, `ServerEdit`, RQ tasks, or database writes are permitted in
 
 ### Spreadsheet export
 
-Add an on-demand, public `GET /project_search/export` route that accepts the same validated search criteria as the HTML route. The **Download all results** control appears only on a non-empty HTML result page and invokes this route with that page's query and filters. It must reject unknown or repeated parameters, require an active query or filter, and create no database or filesystem records beyond the temporary downloadable workbook. The export is a direct download rather than a background job because the current project table contains approximately 10,000 rows and the expected matching sets are substantially smaller. It requires no login and intentionally supports bulk export of the public project and contract data described below. Do not impose a feature-specific result-row cap; apply the deployment's ordinary public-route or proxy rate limits if present.
+Add an on-demand, public `GET /project_search/export` route that accepts the same validated search criteria as the HTML route. The **Download all results** control appears only on a non-empty HTML result page and invokes this route with that page's query and filters. It must reject unknown or repeated parameters, require an active query or filter, and create no database or filesystem records beyond the temporary downloadable workbook. The export is a direct download rather than a background job; the current project table contains approximately 10,000 rows. Measure full-export latency on production-sized data before considering queued generation. It requires no login and intentionally supports bulk export of the public project and contract data described below. Do not impose a feature-specific result-row cap; apply the deployment's ordinary public-route or proxy rate limits if present.
+
+Also offer a public `GET /project_search/export/all` route through an **Export all projects and linked contracts (XLSX)** link beside the search form, including on blank and no-results pages. This explicit full-export route ignores query parameters and exports every project and its directly linked contracts, ordered by normalized project number and project ID. It uses the same sheets, columns, styling, formula protection, and project-without-contract row as the filtered export. Contracts without a linked project are outside this project-based workbook. The HTML page remains limited to 300 projects, and `/project_search/export` still requires active criteria.
+
+Both project export downloads append a UTC timestamp to their filenames: `project_search_YYYYMMDDTHHMMSSZ.xlsx` or `all_projects_and_contracts_YYYYMMDDTHHMMSSZ.xlsx`. The Search information sheet records an Export scope of Search results or All projects and linked contracts. Full-export rows use All projects as their ranking band. Other newly generated spreadsheet downloads use the same shared filename helper; Archive Search retains its existing timestamped workbook identifiers.
 
 Sanitize spreadsheet cell values that could be interpreted as formulas before writing database-backed text to XLSX. The workbook must contain a `Projects and contracts` sheet, a `Search information` sheet, and a `Column guide` sheet. The Search information sheet records the query/filter state, canonical full Project Search results URL, export timestamp, total matched-project count, and total exported-row count. The Column guide gives short definitions for the ranking and match-source columns, project-level and contract-level costs and counts, and file-server-location fields.
 
@@ -546,7 +550,8 @@ Test:
 - null and blank archive-root handling;
 - blank `query` with default filters renders the empty form, while blank `query` with an active filter searches;
 - top-300 limit detection and consistent project ordering between HTML and spreadsheet output;
-- public export authorization, active-criteria enforcement, and absence of an export control on blank or no-results pages;
+- public export authorization, active-criteria enforcement for filtered exports, and availability of the separate full-export link in every search-page state;
+- full export beyond the HTML limit, ignored search criteria, empty-database output, and timestamped download filenames;
 - project-contract row expansion, including one blank-contract row for a project with no contracts and inclusion of non-matching linked contracts;
 - user-facing archive-location conversion and prevention of raw database-path disclosure;
 - match-source labeling;
