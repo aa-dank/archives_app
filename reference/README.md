@@ -24,7 +24,7 @@ These documents explain feature design and its original constraints. Features ha
 | [Project Information](project_info_feature_spec.md) | Project/CAAN/contract relationships, archive counts, and contract presentation. |
 | [File Information API](file_info_api_spec.md) | File identity and path selectors, authentication, text, dates, and location response contracts. |
 | [Archive Search](user_search_feature_spec.md) | Original file-search design: scopes, canonical results, text coverage, and exports. Later API and telemetry work extends this design. |
-| [Archive Search caching](archive_search_cache_feature_spec.md) | Opt-in five-day browser result caching, per-entry lifetimes, workbook reuse and retention, Redis-compatible storage boundary, and extension conventions for future data/files. |
+| [Archive Search caching](archive_search_cache_feature_spec.md) | Opt-in five-day browser result caching, per-entry lifetimes, workbook reuse and retention, key-value storage boundary, and extension conventions for future data/files. |
 
 ## Research and historical context
 

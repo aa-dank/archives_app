@@ -41,7 +41,7 @@ def confirm_project_locations_task(queue_id: str, projects_list: Optional[list] 
         progress_update = lambda log: utils.RQTaskUtils.update_task_subroutine(
             q_id=queue_id,
             sql_db=db,
-            task_results=log
+            status_details=log
         )
 
         try:

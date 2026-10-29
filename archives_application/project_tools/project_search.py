@@ -428,7 +428,7 @@ COLUMN_GUIDE_ENTRIES = (
     ),
     (
         "Ranking band",
-        "The highest-priority matching category used to order this project in the results. Filter-only result means the project matched filters without a search query.",
+        "The highest-priority matching category used to order this project in the results. Filter-only result means the project matched filters without a search query. All projects indicates an unfiltered full export.",
     ),
     (
         "database index",
@@ -598,8 +598,9 @@ def _project_export_values(result: ProjectSearchResult, rank: int, user_archives
     )
 
 
-def _trailing_project_export_values(result: ProjectSearchResult):
-    return result.ranking_band, result.project.id, result.matched_in
+def _trailing_project_export_values(result: ProjectSearchResult, *, all_projects=False):
+    ranking_band = "All projects" if all_projects else result.ranking_band
+    return ranking_band, result.project.id, result.matched_in
 
 
 def _contract_export_values(contract: ContractModel | None):
@@ -613,9 +614,13 @@ def _chunks(iterator, chunk_size: int):
         yield chunk
 
 
-def build_export_workbook(state: ProjectSearchState, user_archives_location: str | None) -> BytesIO:
+def build_export_workbook(
+    state: ProjectSearchState, user_archives_location: str | None, *, all_projects=False
+) -> BytesIO:
     """Build a write-only XLSX workbook for every matching project and contract."""
-    if not state.is_active:
+    if all_projects:
+        state = parse_request({})
+    elif not state.is_active:
         raise ProjectSearchValidationError("Supply a search query or at least one active filter.")
 
     workbook = Workbook(write_only=True)
@@ -651,7 +656,7 @@ def build_export_workbook(state: ProjectSearchState, user_archives_location: str
                 row_values = (
                     project_values
                     + _contract_export_values(contract)
-                    + _trailing_project_export_values(result)
+                    + _trailing_project_export_values(result, all_projects=all_projects)
                 )
                 projects_sheet.append(tuple(
                     _data_cell(
@@ -685,6 +690,10 @@ def build_export_workbook(state: ProjectSearchState, user_archives_location: str
         information_sheet,
         "File server location",
         {"any": "Any", "yes": "Known", "no": "Unknown"}[state.has_archive_location],
+    ))
+    information_sheet.append(_information_row(
+        information_sheet, "Export scope",
+        "All projects and linked contracts" if all_projects else "Search results",
     ))
     information_sheet.append(_information_row(
         information_sheet, "Export timestamp (UTC)", datetime.now(timezone.utc).isoformat()

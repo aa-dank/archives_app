@@ -41,6 +41,7 @@
     </details>
     <button class="btn btn-outline-info" id="project-search-button" type="submit">Search projects</button>
   </form>
+  <p class="mt-3 mb-0"><a href="{{ url_for('project_tools.project_search_export_all') }}">Export all projects and linked contracts (XLSX)</a></p>
 </div>
 
 {% if state.is_active %}

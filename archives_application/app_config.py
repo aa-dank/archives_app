@@ -8,7 +8,7 @@ import os
 import pathlib
 import tomllib
 
-from archives_application.cache import RedisCache, positive_integer
+from archives_application.cache import KeyValueCache, positive_integer
 
 
 CACHE_DEFAULTS = {
@@ -51,24 +51,23 @@ def configure_cache(app) -> None:
         namespace = app.config["CACHE_NAMESPACE"]
         if not isinstance(namespace, str) or not namespace.strip():
             raise ValueError("CACHE_NAMESPACE must be a nonempty environment/dataset prefix")
-        url = app.config.get("REDIS_URL")
+        url = app.config.get("KEY_VALUE_STORE_URL")
         if not isinstance(url, str) or not url.strip():
-            raise ValueError("REDIS_URL is required when caching is enabled")
+            raise ValueError("KEY_VALUE_STORE_URL is required when caching is enabled")
         positive_integer(app.config["CACHE_MAX_ENTRY_BYTES"], "CACHE_MAX_ENTRY_BYTES")
         timeout = app.config["CACHE_TIMEOUT_SECONDS"]
         if (type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0):
             raise ValueError("CACHE_TIMEOUT_SECONDS must be a positive finite number")
         try:
-            app.extensions["cache"] = RedisCache.from_url(url, timeout)
+            app.extensions["cache"] = KeyValueCache.from_url(url, timeout)
         except (ValueError, TypeError, OverflowError):
             # URL parsing errors can contain credentials. Report only the setting.
-            raise ValueError("REDIS_URL is invalid for the Redis-compatible cache adapter") from None
+            raise ValueError("KEY_VALUE_STORE_URL is invalid for the key-value cache adapter") from None
     except (ValueError, TypeError, OverflowError) as error:
         app.logger.error("archive_search_cache state=disabled reason=invalid_configuration detail=%s", error)
         return
     app.logger.info("archive_search_cache state=enabled namespace=%s ttl_seconds=%s",
                     namespace, ttl)
-
 
 def retrieve_app_version():
     """
@@ -114,51 +113,40 @@ def assemble_postgresql_url(host, db_name, username, password="", port="", diale
 
     return uri
 
-
-def assemble_redis_url(redis_location, redis_port):
-    """Build the legacy host/port queue URL for configuration compatibility."""
-    return'redis://' + redis_location + ":" + redis_port
-
-
-def resolve_redis_url(config, environ=None) -> str:
+def resolve_key_value_store_url(config, environ=None) -> str:
     """Resolve the one endpoint shared by the cache, web queue, and RQ worker.
 
-    Environment REDIS_URL takes precedence over explicit JSON/class REDIS_URL.
-    Older configurations may still supply REDIS_LOCATION/REDIS_PORT. An explicit
-    empty or invalidly typed URL is a configuration error, never a silent fallback.
+    Only KEY_VALUE_STORE_URL is recognized. Process environment takes precedence
+    over JSON/class values. An explicit empty or invalidly typed URL is a
+    configuration error, never a silent fallback.
     Return the URL without logging credentials or changing its connection options.
     """
     environment = os.environ if environ is None else environ
-    if "REDIS_URL" in environment:
-        url = environment["REDIS_URL"]
-    elif "REDIS_URL" in config:
-        url = config["REDIS_URL"]
-    elif config.get("REDIS_LOCATION"):
-        url = assemble_redis_url(config["REDIS_LOCATION"], config.get("REDIS_PORT"))
-    else:
-        raise ValueError("REDIS_URL is required for the shared Redis connection")
-    if not isinstance(url, str) or not url.strip():
-        raise ValueError("REDIS_URL must be a nonempty string")
-    return url.strip()
+    for source in (environment, config):
+        if "KEY_VALUE_STORE_URL" in source:
+            url = source["KEY_VALUE_STORE_URL"]
+            if not isinstance(url, str) or not url.strip():
+                raise ValueError("KEY_VALUE_STORE_URL must be a nonempty string")
+            return url.strip()
+    raise ValueError("KEY_VALUE_STORE_URL is required for the shared key-value store connection")
 
 
-def redis_url_from_config_file(config_json_path: str) -> str:
+def key_value_store_url_from_config_file(config_json_path: str) -> str:
     """Load the worker's shared endpoint from the selected VALUE/DESCRIPTION JSON.
 
-    Use the same resolver as app initialization so environment overrides and
-    legacy fallback cannot send the producer and worker to different services.
+    Use the same resolver as app initialization so environment overrides
+    cannot send the producer and worker to different services.
     This helper reads connection configuration without creating an app or queue.
     """
     with open(config_json_path) as config_file:
         entries = json.load(config_file)
-    return resolve_redis_url({key: entry["VALUE"] for key, entry in entries.items()})
-
+    return resolve_key_value_store_url({key: entry["VALUE"] for key, entry in entries.items()})
 
 def json_to_config_factory(google_creds_path: str, config_json_path: str):
     """Build a Flask configuration class from described JSON values and OAuth inputs.
 
     Unwrap VALUE entries, assemble the existing database URI, and resolve the
-    shared Redis endpoint using the same precedence as the worker and app factory.
+    shared key-value endpoint using the same precedence as the worker and app factory.
     DESCRIPTION entries remain in the source JSON for the configuration editor.
 
     :param config_json_path: Selected application JSON file.
@@ -185,15 +173,14 @@ def json_to_config_factory(google_creds_path: str, config_json_path: str):
                                                                         ssl=config_dict["POSTGRESQL_SSL"])
     config_dict['CONFIG_JSON_PATH'] = config_json_path
 
-    # Resolve the shared endpoint once; legacy host/port cannot overwrite an
-    # explicit URL, and environment overrides apply to web and worker alike.
-    config_dict['REDIS_URL'] = resolve_redis_url(config_dict)
+    # Resolve the shared endpoint once, applying environment overrides to
+    # web and worker alike.
+    config_dict['KEY_VALUE_STORE_URL'] = resolve_key_value_store_url(config_dict)
 
     # The DynamicServerConfig class is created dynamically using Python's type() function, which takes three arguments:
     # the name of the class, a tuple of parent classes (empty in this case), and a dictionary of attributes and their
     # values, the config_dict here.
     return type("DynamicServerConfig", (), config_dict)
-
 
 def setup_sql_logging(log_filepath):
     """

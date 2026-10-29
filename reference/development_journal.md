@@ -1747,7 +1747,7 @@ original secrets and require restricted storage until deliberately retired.
 
 ---
 
-## Entry 058 - Interactive Plotly archiving dashboard
+## Entry 058A - Interactive Plotly archiving dashboard
 **Date:** 2026-10-20
 **Author:** OpenAI Codex
 
@@ -1809,3 +1809,497 @@ local chart initializer and restart web processes; confirm browser access to
 the Plotly CDN and measure the real PostgreSQL query
 and browser performance before adding caching. Docker build validation remains
 outstanding because Docker Desktop WSL integration is unavailable here.
+
+---
+
+## Entry 058 - Align worker task model with migrated schema
+**Date:** 2026-10-22
+**Author:** OpenAI Codex
+
+Following external database revision `8e2b7c4d9a10`, added nullable
+`time_started`/`time_updated` model fields and switched task JSON references from
+`task_results` to `status_details`. Affected components: task model, queue/status
+helpers, project-location progress updates, and scrape resume reads. Timestamp
+population, checkpointing, timeout handling, and file reconciliation are deferred;
+existing task behavior and completed-scrape selection are preserved.
+
+Verification: 130 tests passed, one opt-in Redis test skipped; isolated SQLite
+checks against the migrated column layout verified lifecycle JSON writes and
+unpopulated new timestamps. Compilation and `git diff --check` passed. Existing
+pandas warnings remain. Follow-on: deploy and restart matching web/worker code
+together against the migrated database. No services or database were changed.
+
+---
+
+## Entry 059 - Persist scrape progress and resume interrupted runs
+**Date:** 2026-10-22
+**Author:** OpenAI Codex
+
+Daily scrapes could exceed their cooperative budget inside a directory and lose
+their in-memory resume summary on worker termination. The existing task row now
+saves the inclusive relative directory checkpoint before processing it, the current
+file/start time before I/O, and progress every 30 seconds during returning hash
+reads. Shared task helpers populate `time_started`/`time_updated`; terminal helpers
+also retain their existing completion timestamps. Resume selects the newest
+non-test scraper checkpoint by enqueue time/ID even when the task was interrupted
+or failed. Explicit starts retain precedence and Windows paths use mount mapping;
+missing saved directories replay their nearest existing ancestor.
+
+Monotonic deadlines are checked during traversal, between files, and between hash
+chunks; partial hashes are discarded and RQ timeout exceptions propagate after a
+failed-task save. File/hash and path reconciliation commit together. Existing paths
+are associated with the observed content even when its hash is new or already
+known elsewhere, making sequential replay safe without creating new locations.
+Existing duplicate locations and obsolete content/history are left in place.
+Traversal makes one circular pass, includes archive-root files, preserves existing
+exclusions, and fails on directory enumeration errors. Completion records whether
+the budget expired or the pass finished; a finished pass resets the checkpoint to
+the root. Positive durations use `total_seconds()` plus the existing 300-second
+RQ buffer, including durations longer than a day.
+
+Affected runtime components: scrape task/traversal, scrape route/resume selector,
+shared hashing and queue/status helpers. No additional schema migration or service
+changes. Verification: 148 tests passed and one opt-in Redis test skipped. New
+coverage includes a forcibly killed child against disposable on-disk SQLite,
+durable recovery without skipped sibling files or new duplicate locations,
+partial-file deadline/replay, 30-second heartbeat persistence, RQ timeout handling,
+atomic rollback, changed-content reconciliation, exclusions, circular traversal,
+invalid/test/unrelated checkpoint filtering, missing directories, seek deadlines,
+enumeration failure, timestamp lifecycle, explicit Windows starts, and multi-day
+timeouts. Compilation and diff checks passed; existing pandas/SQLAlchemy
+deprecation warnings remain.
+
+Follow-on: restart matching web/worker processes and monitor the first daily run's
+saved current file, elapsed time, timestamps, and stop reason. Hard kills can still
+leave `started`; checkpoints survive. Blocked SMB calls cannot observe deadlines
+until they return. Directory replay deliberately retries every file, so a file or
+directory taking longer than the whole budget still needs investigation; no
+file-level cursor, concurrent-scrape coordination, or slow-file skipping was added.
+
+---
+
+## Entry 060 - Review scrape transaction and checkpoint boundaries
+**Date:** 2026-10-22
+**Author:** OpenAI Codex
+
+Review found that heartbeat persistence failures inside hashing could be caught
+as ordinary file errors, allowing the run to continue. Checkpoint failures now
+stop processing and use the existing failed-task save, retaining the retry
+directory and original exception cause. Seeking a saved directory now prunes
+earlier branches until wraparound, avoiding redundant SMB subtree enumeration
+while preserving circular traversal order and inclusive replay.
+
+Extracted the per-file content/location transaction into a focused helper that
+returns committed counter increments, centralized traversal setup, and flattened
+the hash-read loop. Existing file reconciliation and hashing results are preserved.
+Affected runtime components: scrape traversal/checkpoint handling and shared hash
+helper; no schema or configuration changes.
+
+Verification: 151 tests passed, one opt-in Redis test skipped. Added failure
+injection during hashing and after file commit, and an exact circular-order test
+that verifies seeking visits only checkpoint ancestors. Existing forced-kill,
+replay, deadline, and rollback coverage passed. Compilation and diff checks
+passed; existing deprecation warnings remain. Follow-on: deploy matching web and
+worker code and investigate checkpoint-storage failures when reported. No live
+services, archives, or deployed database were changed.
+
+---
+
+## Entry 061 - Persist file-location confirmation progress
+**Date:** 2026-10-22
+**Author:** OpenAI Codex
+
+File-location confirmation previously saved its summary only at completion.
+It now saves the active location ID, relative path, and check start time before
+filesystem I/O, plus committed counters, last completed location/path, elapsed
+time, and a stop reason. Progress refreshes before each check and after returning
+checks when 30 seconds have elapsed; the existing task helpers maintain timestamps.
+Continuation remains driven by `existence_confirmed`, with never-confirmed NULLs
+first and ID breaking ties, rather than a separate cursor. Bounded scalar batches
+avoid ORM expiration/reloads on each progress commit. Empty tables finish without
+spinning through the whole budget.
+
+Missing-location removal, last-location canonical-file cleanup, and archive-event
+file-ID unlinking now commit as one transaction before progress saves. Counters
+advance only after commit; individual location failures roll back and remain in
+the summary. RQ timeouts and progress-save failures propagate through failed-task
+handling. Monotonic budget checks also run after filesystem checks, preventing
+late-returning checks from starting removals. The route rejects nonpositive
+durations and uses full duration seconds plus the existing 600-second RQ buffer.
+
+Affected runtime components: confirmation task, its per-location transaction
+helper, and enqueue route. Existing removal policy is preserved; no filesystem
+mutations, schema changes, or changes to other worker tasks were introduced.
+Verification: 166 tests passed, one opt-in Redis test skipped. New coverage checks
+durable snapshots before I/O, post-commit counter refresh, atomic cleanup/rollback
+with archive history, remaining-copy preservation, timeout and save failure,
+oldest/NULL ordering, empty-table termination, multi-day timeout handling, and a
+forcibly killed child whose next run selects the unfinished location first.
+Compilation and diff checks passed; existing deprecation warnings remain.
+
+Follow-on: deploy matching web/worker code and inspect confirmation snapshots and
+stop reasons. A blocked filesystem check still relies on RQ's outer timeout; a
+hard kill can leave `started` with the last saved snapshot. Successful operations
+remain committed and unfinished locations retain their older timestamps. No live
+services, archive files, or deployed database were changed.
+
+---
+
+## Entry 062 - Report location-specific scraping phases and queued children
+**Date:** 2026-10-22
+**Author:** OpenAI Codex
+
+Location-specific scraping now persists validation, confirmation, and discovery
+phases, active paths/location IDs, elapsed time, committed counters, and successful
+child indexing task IDs. Saves occur before filesystem checks, at phase/directory
+boundaries, after 30 seconds of returning work, and before/after enqueue calls.
+Enqueue counts advance only on success. Parent completion means confirmation and
+discovery/enqueueing completed; child indexing retains its own task status. Local
+errors produce a completed-with-errors summary; RQ timeouts, progress-save failures,
+and directory enumeration errors fail the parent and propagate.
+
+The confirmation phase reuses atomic per-location cleanup and reads bounded scalar
+ID batches across commits/deletions. A set replaces linear known-path membership
+checks. Paths leave that set only after a committed removal, allowing rediscovery
+if a file reappears. Directory scope now matches the exact directory plus optional
+separator-delimited descendants, escapes SQL wildcard characters in names, and
+honors nonrecursive mode in both phases. Archive-root scans support empty/NULL
+directory values. Invalid, outside-archive, and unavailable targets fail before
+metadata cleanup. Existing exclusions, empty-file eligibility, and disabled-
+confirmation behavior remain in place.
+
+Affected runtime components: location-specific scrape task and its existing
+confirmation helper. No schema, enqueue-route, or other worker-task changes.
+Verification: 187 tests passed, one opt-in Redis test skipped. New tests cover
+durable phase snapshots, heartbeat refresh, child status separation, prefix and
+wildcard scope, recursion/root handling, enqueue accounting, timeout and progress
+failure in both phases, enumeration/validation failure, atomic history rollback,
+reappearing files, deletion across the 1,000-row batch boundary, and a forcibly
+killed parent retaining its active file and queued-child IDs. Compilation and
+diff checks passed; existing deprecation warnings remain.
+
+Follow-on: deploy matching web/worker code and inspect parent phase/stop reason
+alongside child outcomes. Hard kills can leave `started` with committed snapshots;
+blocked I/O still relies on RQ. Automatic resume and pending-child deduplication
+are deferred, so reruns may enqueue files whose earlier indexing jobs have not
+yet created location records. No live services, archive files, or deployed
+database were changed.
+
+---
+
+## Entry 063 - Persist database backup phases and report failures accurately
+**Date:** 2026-10-23
+**Author:** OpenAI Codex
+
+Database backups previously saved details only at completion, swallowed errors
+into a successful task record, and converted all results to strings. The backup
+task now commits preparation, dump/compression, process-exit waiting, publication,
+and completion phases through the shared task helpers. JSON preserves numeric
+sizes/durations/exit codes, command lists, and structured errors with tracebacks.
+Updates occur at phase boundaries; periodic metrics and heartbeats remain deferred.
+
+Handled failures, including RQ timeouts and phase-save failures, attempt process
+termination/reaping, stderr-thread joining, pipe closure, and partial-file removal
+before saving a failed task record and propagating the exception to RQ. Cleanup
+attempts retain their own errors without replacing the original task exception.
+A cleanup failure also fails an otherwise successful task; an already published
+backup is retained. Streaming bz2 compression, exit validation before atomic
+publication, filename format, route timeout, and retention policy are preserved.
+Affected runtime component: `main.main_tasks.db_backup_task`; no schema changes.
+
+Verification: full suite passed (195 tests, one opt-in Redis test skipped), and
+all 10 focused backup cases passed, including two added after full-suite
+collection. Coverage verifies committed phases before operations, compression
+round-trip, typed JSON, preparation/start/read/exit/publication/progress failures,
+RQ timeout propagation, cleanup ordering, and original-error preservation.
+Compilation and diff checks passed; existing deprecation warnings remain.
+
+Follow-on: deploy matching application/worker code and restart workers. Inspect
+backup phase and failure details alongside RQ status. Hard termination can still
+leave a partial file and a started record; retries create a fresh dump. Actual
+PostgreSQL backup/restore was not exercised, and no live services, archive files,
+or deployed database were changed.
+
+---
+
+## Entry 064 - Simplify backup diagnostics and preserve primary failures
+**Date:** 2026-10-23
+**Author:** OpenAI Codex
+
+Review of the backup progress changes identified unnecessary stderr-thread
+lifecycle handling and diagnostics lost when stdout processing failed. The backup
+task now directs stderr to an automatically removed temporary file and reads it
+after process exit or termination, retaining diagnostics on handled failures
+without a pipe reader thread. The worker needs a writable system temporary
+directory. Cleanup errors are recorded once. If rollback or failed-status
+persistence fails, the worker logs that additional error and propagates the
+original task exception to RQ; the database can retain its previous snapshot.
+
+Affected runtime component: `main.main_tasks.db_backup_task`. Phase boundaries,
+backup format/publication, route timeouts, and retention are preserved.
+Verification: full suite passed (199 tests, one opt-in Redis test skipped),
+including 12 backup cases covering a real subprocess writing diagnostics larger
+than a pipe buffer, retained diagnostics after timeout, cleanup error accounting,
+and failed-status persistence failure. Compilation and diff checks passed;
+existing deprecation warnings remain. No PostgreSQL backup/restore or live
+service changes were performed. Follow-on: deploy/restart workers and inspect
+both RQ errors and task records when persistence is unavailable.
+
+---
+
+## Entry 065 - Share worker progress persistence across long-running tasks
+**Date:** 2026-10-23
+**Author:** OpenAI Codex
+
+Review across the daily scraper, file-location confirmation, location-specific
+scraper, and backup found repeated progress timing and task lifecycle writes.
+These tasks now use `utils.WorkerTaskProgress` for initiation, explicit phase
+saves, 30-second throttling of returning archive work, elapsed-time refresh, and
+terminal status writes. Existing JSON fields and task-specific checkpoints,
+save boundaries, budgets, stop reasons, counters, child accounting, and resume
+policies remain local and preserved. Backup retains its numeric timing metrics
+and phase-only saves. Routes and the legacy RQ task helpers remain compatible.
+
+Handled task failures now share best-effort rollback and failed-status saving.
+If either fails, the additional error is logged and the original task exception
+still propagates to RQ. This extends the backup's failure-reporting safeguard to
+the archive tasks. Daily scrape checkpoint errors retain their dedicated fatal
+exception so hash callbacks cannot swallow persistence failures as file errors.
+Progress saves still commit the caller's session; callers must finish or roll
+back domain transactions before saving. No schema changes or background heartbeat
+thread were introduced.
+
+Affected runtime components: shared task utilities and the four task functions.
+Verification: full suite passed (203 tests, one opt-in Redis test skipped),
+including existing forced-termination, replay, transaction, and phase coverage.
+Added coverage for rolling back flushed, unfinished work before failure status
+commits, rollback/save failures preserving original RQ timeouts, and failed
+updates not postponing the next eligible snapshot. Compilation and diff checks
+passed; existing deprecation warnings remain. Follow-on: deploy matching
+application/worker code, restart workers, and inspect RQ alongside saved snapshots
+when failure reporting is unavailable. No live services, archive files, or
+deployed database were changed.
+
+---
+
+## Entry 066 - Align the development runtime with production Redis and refresh Python
+**Date:** 2026-10-26
+**Author:** OpenAI Codex
+
+The production host notes record Redis 6.2.20, while local WSL ran Redis 8.10.1
+and the old dependency lock selected redis-py 8.0.1. Constrained redis-py to the
+Redis-6.2-supported 5.x line (`>=5.3.1,<6`) and RQ to `>=2.12.0,<3`; the refreshed
+lock selects 5.3.1 and 2.12.0 respectively. The project and local app venv now
+target Python 3.14, selecting source-built 3.14.10. Refreshed the remaining
+dependencies, raised direct-library minimums to their tested installed versions,
+and regenerated the requirements export. Docker follows Python 3.14 and
+pins Redis 6.2.20. Affected components: dependency manifests, local Python/Redis
+runtime, Docker development stack, and future web/worker deployments. No app
+schema or archive-filesystem behavior changed.
+
+At the user's request, replaced the local Redis apt packages with exact
+6.2.20 versions and held `redis`, `redis-server`, and `redis-tools` against
+unplanned upgrades. Preserved 148 records (134 streams, 10 hashes, three sets,
+one sorted set), including values, stream IDs and expiration deadlines, by
+creating a Redis 6 snapshot rather than loading an incompatible Redis 8 dump.
+Verified the restored data and running service after replacement. Configuration,
+native/logical data, and snapshot backups are root-only under
+`/var/backups/archives-redis/20261026T160516`. The local default queue was empty.
+The original and intermediate local app venv backups were removed at the user's
+request after acceptance; the active `.venv` and its `.venv-python` interpreter
+directory were retained and the interpreter/package imports rechecked.
+
+Verification: 205 tests passed on Python 3.14.10 and Redis 6.2.20, including the
+live cache publication/TTL contract and new RQ forked-worker coverage for results,
+dependent jobs, failure recording and retries. Replaced a newer-client-only
+retry-inspection assertion with a behavioral single-attempt check. Dependency
+consistency, PDF create/read/render, and Python-3.14 binary-wheel resolution for
+all 138 installed packages against x86_64/glibc 2.34 passed. Existing deprecation
+warnings remain. The source tarball matched Python.org's published SHA256.
+
+Follow-on: perform the production update separately, checking the live host's
+package availability, architecture, uv version, service names, and application
+workflows. The local operator handoff is in the ignored
+`dev_files/environment_update_20261026.md`, outside the shared system references.
+Drain work and rebuild the app venv as ec2-user on the chosen Python 3.14.10
+interpreter, retaining Python 3.13 for Supervisor/other environments and rollback.
+Production was not updated; no deployed database or archive files were changed.
+Remove local Redis package holds only for an intentional coordinated version
+change. Repair the unrelated GitHub CLI apt signing-key failure separately.
+
+---
+
+## Entry 067 - Replace WSL Redis with Valkey and name the shared store generically
+**Date:** 2026-10-27
+**Author:** OpenAI Codex
+
+The intended production target is now Valkey `9.0.6-1.amzn2023.0.1`.
+Replaced WSL's Redis 6.2.20 with upstream signed Ubuntu 22.04 packages
+`valkey-server`/`valkey-tools` `9.0.6-1.jammy`, held at that version.
+The `valkey-server` systemd service serves loopback port 6379 and is enabled
+at boot. Its config/ACL, data, and logs use `/etc/valkey`, `/var/lib/valkey`,
+and `/var/log/valkey`. Preserved all 148 records (134 streams, 10 hashes,
+three sets, one sorted set), their values/stream IDs, eight expiration
+deadlines, ACL access, persistence schedule, 16 databases, and memory policy
+(`maxmemory 0`, `noeviction`). Redis packages were removed without purging
+their prior configuration/data. Root-only rollback backups, including the
+original snapshot, logical export, config/ACL, package files, and verification
+report, are under `/var/backups/archives-valkey/20261027T174528Z`.
+
+Application-owned settings/helpers, the cache adapter, diagnostics, tests,
+and current documentation now use key-value store terminology. The canonical
+setting is `KEY_VALUE_STORE_URL`, and the adapter is `KeyValueCache`.
+Process environment overrides JSON/class settings; within either source,
+the canonical name precedes legacy `REDIS_URL`. Legacy `REDIS_LOCATION` and
+`REDIS_PORT` remain the final fallback. Invalid explicit settings still fail
+without fallback. RQ and cache retain redis-py 5.3.1, `redis://`/`rediss://`
+URLs, and independent pools with existing timeout/TTL behavior. The admin
+`/test/see_config` response names the endpoint `key_value_store_url` instead
+of `redis_url`; `/test/rq` retains raw server INFO fields. Valkey's actual
+version is `valkey_version`; `redis_version` is a compatibility field.
+
+The ignored `test_config_wsl.json` now sets `KEY_VALUE_STORE_URL` to
+`redis://localhost:6379/0`. New environment setting `ARCHIVES_CONFIG_FILE`
+selects that file for both web and worker before import; the default remains
+`deploy_app_config.json`. The deployment config and production host were not
+modified. Docker development now uses `valkey/valkey:9.0.6-alpine` and passes
+the container service endpoint through the canonical environment setting.
+Affected components: app/worker initialization, cache adapter, queue error
+messages/admin diagnostics, development Compose stack, and local host service.
+No database schema or archive-filesystem changes.
+
+Verification: 224 tests passed against WSL Valkey, including live atomic cache
+publication/expiry and forked RQ results, dependencies, failures, and retries.
+Added precedence/legacy compatibility and selected-file startup coverage.
+The two live contracts passed again after making the RQ test remove its result
+streams and worker metadata. All original values and expiration deadlines were
+rechecked after saving and restarting Valkey. Signed repository metadata and
+package SHA256s, dependency lock/installed-package consistency, Python compilation,
+and diff checks passed. The actual WSL JSON also passed app/worker/cache connection
+and disposable byte/TTL/delete smoke checks. Existing deprecation warnings remain. Docker was not
+built. An initial cutover settings check hit Valkey's retired `dynamic-hz`
+directive and automatically restored Redis; the corrected attempt succeeded.
+
+Follow-on: start local web and worker with
+`ARCHIVES_CONFIG_FILE=test_config_wsl.json`. Perform production installation,
+configuration migration, and its authentication/TLS/network/workflow checks
+separately. Keep the Valkey package holds until an intentional update, and use
+the pre-migration Redis snapshot if rolling back: Valkey 9 snapshots must not
+be loaded into Redis 6.2. Current operations/setup details are in
+`reference/operations.md`; historical journal entries remain unchanged.
+
+---
+
+## Entry 068 - Require key-value store configuration without Redis aliases
+**Date:** 2026-10-27
+**Author:** OpenAI Codex
+
+At the user's direction, removed the compatibility fallbacks introduced in
+Entry 067. App, cache, and worker now require `KEY_VALUE_STORE_URL`, with the
+process environment taking precedence over JSON/class configuration.
+`REDIS_URL`, `REDIS_LOCATION`, and `REDIS_PORT` cannot supply or override the
+endpoint. Missing, blank, or invalidly typed required settings fail startup;
+an invalid environment value cannot fall back to the file. Current configuration,
+operations, development, and feature documentation reflect this contract.
+
+Affected runtime components: shared endpoint resolver and app/worker configuration
+loaders. The WSL JSON already uses the required key. The deployment JSON and
+production host remain untouched; migrate that file before running this code,
+or supply `KEY_VALUE_STORE_URL` consistently in every process environment.
+The default selected filename remains `deploy_app_config.json`, so local startup
+and tests must explicitly select `ARCHIVES_CONFIG_FILE=test_config_wsl.json`.
+RQ's redis-py client and protocol URL schemes remain unchanged. No service,
+database, archive-filesystem, or stored queue/cache data changes in this follow-up.
+
+Verification: regression coverage checks rejection of Redis-only configuration
+and environment settings, both JSON loaders, ignored obsolete environment
+overrides across app/cache/worker, required-value validation, and selected-file
+startup. Full suite: 209 passed, with the two opt-in live-service checks skipped.
+Python compilation and diff checks passed; existing deprecation warnings remain.
+Follow-on operational work is the separate deployment configuration migration
+before adopting this code.
+
+---
+
+## Entry 069 - Upgrade redis-py for the Valkey 9 runtime
+**Date:** 2026-10-27
+**Author:** OpenAI Codex
+
+Upgraded redis-py from 5.3.1 to 8.1.0 in the local app venv, dependency manifest,
+lockfile, and generated requirements export. The supported dependency range is
+now `redis>=8.1.0,<9`; RQ stays at 2.12.0. Resolution removed the now-unused
+transitive PyJWT dependency and otherwise retained existing package versions.
+This replaces the client restriction originally chosen for Redis 6.2; the
+target is Valkey 9.0.6 on WSL and the intended Amazon Linux production host.
+
+New shared `key_value_store.rq_connection_from_url` initializes web producers
+and workers with explicit RESP2, byte responses, and zero automatic command
+retries, avoiding implicit redis-py 8 default changes and replayed queue writes.
+Queue read/connect timeout defaults and TCP keepalive remain as before; URL
+transport/auth/TLS/timeouts still apply, and RQ extends worker read timeouts
+for blocking dequeue. The client owns and closes its pool. Cache clients retain
+their separate bounded RESP2 pools, no-retry behavior, and existing TTL policy.
+Affected runtime components: local Python environment, dependency artifacts,
+web queue initialization, and worker connection initialization. No service,
+schema, archive-filesystem, or stored-data migration was performed.
+
+Verification: all 214 tests passed against local Valkey 9.0.6 on Python 3.14.10.
+Live checks cover cache atomic publication/expiry, forked RQ results/dependencies,
+failure/retry handling, and a worker staying on the same blocked connection
+beyond five seconds before completing a newly enqueued job. Additional coverage
+verifies byte/protocol/retry policy across all roles, URL transport options,
+and a failed queue write attempted only once. Actual WSL app/worker/cache
+connections passed RESP2/PING/server-version smoke checks; the original key
+count remains 148 after test cleanup. Dependency lock/installed consistency,
+Python compilation, and diff checks passed. Existing deprecation warnings remain.
+Docker and the Amazon Linux production host were not exercised.
+
+Follow-on: deploy the reviewed lock with matching web/worker code and restart
+both process roles after the separate production Valkey/configuration setup.
+Run the live contracts and actual network/authentication/TLS workflow checks
+there before adoption; do not re-resolve dependencies independently on that host.
+
+---
+
+## Entry 070 - Full project workbook export and timestamped spreadsheet downloads
+**Date:** 2026-10-28
+**Author:** OpenAI Codex
+
+Added an always-visible Export all projects and linked contracts link on Project
+Search. Its public `/project_search/export/all` download ignores search criteria
+and reuses the existing workbook sheets, columns, formatting, formula protection,
+and batched project iteration. Every project appears, with one row per linked
+contract or one blank-contract row when there are none. Unlinked contracts remain
+outside this project-based export. Full exports identify their scope in Search
+information and use All projects as the ranking band. Filtered exports still
+require active criteria; HTML results retain their 300-project display limit.
+
+Added a shared UTC filename helper using `YYYYMMDDTHHMMSSZ`. Project-search,
+full-project, directory-summary, endpoints-index, and archivist archived-files
+downloads now include the export timestamp, retaining report names and existing
+archivist date ranges. Archive Search keeps its already-timestamped download IDs
+and retention behavior. Affected components: project-search routes, workbook
+builder and template, shared utilities, and spreadsheet download routes in main,
+archiver, and timekeeper. No database or archive-filesystem mutations.
+
+Verification: focused project-search and spreadsheet/shareable-URL tests passed,
+covering full export beyond 300 projects, contract expansion and natural ordering,
+projects without contracts, empty-database exports, filter-independent links,
+formula protection, UTC download filenames, and workbook structure. Full suite:
+217 passed, three opt-in live-service tests skipped; existing deprecation warnings
+remain. Changed Python files compile, the template parses, and diff checks pass.
+Follow-on: check full-export latency with production-sized data and visually check the link
+on wide and narrow screens; no browser screenshot was captured in this environment.
+No migration or configuration change is required.
+
+---
+
+## Entry 071 - Put search links first in navigation
+**Date:** 2026-10-28
+**Author:** OpenAI Codex
+
+Reordered File Server Tools navigation to begin with Archive Search, CAAN Search,
+and Project Search. The remaining links retain their existing order. Affected
+runtime component: the shared `layout.html` template. Verification: rendered the
+layout and checked link order for anonymous and authenticated users; diff checks
+passed. No operational follow-on is required.

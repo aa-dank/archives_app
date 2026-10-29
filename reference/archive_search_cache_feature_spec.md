@@ -14,6 +14,10 @@ timeouts, namespaces, and consumer lifetimes remain; the original separate
 `CACHE_URL` setting is retired. Environment overrides apply to every role, and
 legacy host/port configuration remains a compatibility fallback.
 
+**Naming update, 2026-10-27:** The canonical shared setting is now
+`KEY_VALUE_STORE_URL` for Valkey and other compatible stores. This is the only
+supported connection key; Redis-named aliases and host/port fallbacks are removed.
+
 ## Purpose and selected design
 
 Reuse completed Archive Search results for up to five days so repeated searches
@@ -25,7 +29,7 @@ Implement caching for the browser workflow at `/archives_search` and its
 release. Give the shared search service an explicit cache policy so a later API
 change can adopt caching without changing the browser implementation.
 
-Use a small, reusable key-value storage interface with a Redis-compatible
+Use a small, reusable key-value storage interface with a Valkey/Redis-compatible
 implementation. Store structured search data as versioned JSON. Reuse existing
 temporary Excel workbooks through a separate artifact reference associated with
 each cached result generation. Retain Archive Search workbooks for six days by
@@ -195,24 +199,24 @@ disable caching; do not use zero to mean either disabled or never-expiring.
 ### Client and backend integration
 
 Register a separate cache client in `app.extensions`, using the shared resolved
-`REDIS_URL` and cache-specific timeouts. Construct one
+`KEY_VALUE_STORE_URL` and cache-specific timeouts. Construct one
 connection pool per application process and reuse it across requests.
 Do not access the cache through `app.q.connection` or change queue behavior or
 eviction settings. Resolve the same endpoint consistently for web/cache/worker:
-environment `REDIS_URL`, then explicit JSON/class `REDIS_URL`, then legacy
-`REDIS_LOCATION`/`REDIS_PORT`. An explicit URL must not be overwritten by legacy
-fields, and an invalid explicit value must not silently fall back.
+environment `KEY_VALUE_STORE_URL`, then explicit JSON/class `KEY_VALUE_STORE_URL`.
+An invalid explicit value must not silently fall back. No other connection
+setting names or host/port fallbacks are supported.
 Caching must work without requiring an RQ worker.
 
 The first backend uses ordinary `GET`, `SET` with expiration, and `DEL`.
-Use a namespaced key prefix rather than Redis logical-database selection.
+Use a namespaced key prefix rather than key-value store logical-database selection.
 Do not require Redis modules, RedisJSON, Lua, keyspace notifications, or
 multi-key transactions.
 
 This command subset is supported by
 [Amazon ElastiCache for Valkey/Redis OSS](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/SupportedCommands.html).
 A migration may still require TLS, authentication, network, and cluster-client
-configuration. The adapter owns those changes; plain Redis and AWS clients must
+configuration. The adapter owns those changes; Valkey/Redis and AWS clients must
 not be assumed interchangeable for every deployment topology.
 
 Implement only the backend needed for the current deployment. Keep cluster-aware
@@ -487,12 +491,12 @@ Use the existing JSON `VALUE`/`DESCRIPTION` format and documented defaults:
 | `ARCHIVE_SEARCH_CACHE_ENABLED` | `false` | Opt in to browser search/result and workbook-reference caching. |
 | `ARCHIVE_SEARCH_CACHE_TTL_SECONDS` | `432000` | Search consumer's default lifetime of five days; positive integer, resolved per generation. |
 | `ARCHIVE_SEARCH_WORKBOOK_RETENTION_SECONDS` | `518400` | Workbook cleanup threshold of six days; greater than the effective search-cache lifetime. |
-| `REDIS_URL` | Shared connection setting | Endpoint for cache, web queue, and worker; resolve environment, explicit JSON/class, or legacy host/port, preserving supported TLS/auth options. |
+| `KEY_VALUE_STORE_URL` | Shared connection setting | Endpoint for cache, web queue, and worker; resolve environment or explicit JSON/class, preserving supported TLS/auth options. |
 | `CACHE_NAMESPACE` | Unset | Required nonempty environment/dataset prefix when enabled. |
 | `CACHE_TIMEOUT_SECONDS` | `0.5` | Positive connect/read timeout; bounded cache operations. |
 | `CACHE_MAX_ENTRY_BYTES` | `5242880` | Maximum encoded entry size, initially 5 MiB. |
 
-Require a resolved `REDIS_URL` and `CACHE_NAMESPACE` when enabling the feature.
+Require a resolved `KEY_VALUE_STORE_URL` and `CACHE_NAMESPACE` when enabling the feature.
 Future consumers define separate default-lifetime settings when implemented;
 there is no shared `CACHE_TTL_SECONDS` that governs all cached data and files.
 The cache and queue intentionally use the same resolved service URL; the cache
@@ -509,7 +513,7 @@ searches remain usable, with caching skipped.
 
 TTL and an entry-size limit do not bound aggregate service memory. The rollout
 must assign a cache memory budget and an eviction policy suitable for disposable
-entries. Prefer an independently bounded cache deployment; if sharing a Redis
+entries. Prefer an independently bounded cache deployment; if sharing a key-value
 service with RQ, verify resource/eviction behavior separately. Key namespaces,
 separate clients, and logical databases do not provide memory isolation.
 Do not change queue eviction settings as part of this feature.
@@ -551,7 +555,7 @@ This specification-only change requires no journal entry.
 Use a deterministic in-memory backend only for automated tests, with a
 controllable UTC clock. It is not a production cache or outage fallback.
 Keep a small real-backend contract check for TTL and atomic entry publication
-against the selected Redis-compatible service before enabling production.
+against the selected Valkey/Redis-compatible service before enabling production.
 
 Required automated coverage:
 
@@ -625,7 +629,7 @@ the workbooks omit some IDs and snippet highlight tags.
 Workbook-calibrated rough allowances, including a factor of two for
 overhead/headroom, range from about 256 to 441 MiB under those assumptions.
 A 512 MiB service allowance remains a conservative planning value, subject to
-available capacity beyond existing Redis/RQ usage; it is not expected memory
+available capacity beyond existing key-value store/RQ usage; it is not expected memory
 consumption or a directive to change a shared service limit.
 
 Refine limits from actual serialized-size/cache logs after

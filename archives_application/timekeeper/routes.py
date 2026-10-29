@@ -922,7 +922,9 @@ def archiving_dashboard(archiver_id):
                 output.seek(0)
                 start_str = start_date.strftime('%Y%m%d')
                 end_str = end_date.strftime('%Y%m%d')
-                download_name = f"{archiver_name}_archived_files_{start_str}_to_{end_str}.xlsx"
+                download_name = utils.spreadsheet_download_name(
+                    f"{archiver_name}_archived_files_{start_str}_to_{end_str}"
+                )
                 return flask.send_file(
                     output,
                     download_name=download_name,

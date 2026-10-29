@@ -11,7 +11,7 @@ This is a Flask application for managing a Windows/SMB-backed archives file serv
 - `python worker.py` starts the RQ worker; run it alongside the app for queued jobs.
 - `docker compose up --build` runs the development stack using the provided Docker files.
 
-Postgres and Redis must be available locally or through Docker. The app also expects environment/config files such as `test_config*.json` and Google OAuth secrets.
+Postgres and a Valkey/Redis-compatible key-value store must be available locally or through Docker. The app also expects environment/config files such as `test_config*.json` and Google OAuth secrets.
 
 ## Coding Style & Naming Conventions
 

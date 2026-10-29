@@ -1,6 +1,6 @@
 """Regression coverage for calendar-day metrics and the interactive dashboard."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 import json
 import re
@@ -100,7 +100,7 @@ class TestConfig:
     SQLALCHEMY_DATABASE_URI = "sqlite://"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     GOOGLE_CLIENT_ID = "archiving-charts-test-client"
-    REDIS_URL = "redis://localhost:6379/0"
+    KEY_VALUE_STORE_URL = "redis://localhost:6379/0"
     WTF_CSRF_ENABLED = False
     ARCHIVES_LOCATION = "/srv/archives"
     USER_ARCHIVES_LOCATION = r"Z:\Archives"
@@ -186,9 +186,17 @@ def test_dashboard_chart_boundaries_shared_bundle_totals_and_no_temp_files(app, 
 def test_export_uses_same_inclusive_dates_and_preserves_columns_and_paths(app):
     client = app.test_client()
     login(client)
+    before = datetime.now(timezone.utc).replace(microsecond=0)
     response = submit(client, export_spreadsheet="Export Spreadsheet")
+    after = datetime.now(timezone.utc)
     assert response.status_code == 200
-    assert "20261010_to_20261011.xlsx" in response.headers["Content-Disposition"]
+    match = re.search(
+        r"filename=Pat_archived_files_20261010_to_20261011_(\d{8}T\d{6}Z)\.xlsx",
+        response.headers["Content-Disposition"],
+    )
+    assert match
+    timestamp = datetime.strptime(match[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+    assert before <= timestamp <= after
     rows = list(load_workbook(BytesIO(response.data)).active.values)
     headers = rows[0]
     assert not {"id", "archivist_id", "file_id", "document_date"}.intersection(headers)

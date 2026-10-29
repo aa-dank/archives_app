@@ -12,8 +12,9 @@ import re
 import redis
 import subprocess
 import sys
+import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from flask_login import current_user
 from functools import wraps
 from pathlib import Path, PureWindowsPath
@@ -27,6 +28,12 @@ from archives_application.models import WorkerTaskModel, UserModel
 
 class RequestParameterValidationError(ValueError):
     """Raised when a request parameter cannot be parsed as its requested type."""
+
+
+def spreadsheet_download_name(stem: str) -> str:
+    """Name an XLSX download using its report stem and the current UTC time."""
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{stem}_{timestamp}.xlsx"
 
 
 def contains_unicode(text):
@@ -1147,7 +1154,7 @@ class FilesUtils:
         return converted_path
 
     @staticmethod
-    def get_hash(filepath, hash_algo=hashlib.sha1):
+    def get_hash(filepath, hash_algo=hashlib.sha1, check_progress=None):
         """
         Compute a cryptographic (or checksum) hash digest of a file's byte content.
 
@@ -1159,6 +1166,8 @@ class FilesUtils:
             filepath (str | os.PathLike): Path to the file whose contents will be hashed.
             hash_algo (Callable[[], 'hashlib._Hash']): A zero-argument callable returning a hash object
                 supporting .update(bytes) and .hexdigest(). Defaults to hashlib.sha1.
+            check_progress (Callable[[], None] | None): Optional progress/deadline callback.
+                Called before each read and before returning; exceptions abort the hash.
 
         Returns:
             str: The hexadecimal string digest of the file contents.
@@ -1175,26 +1184,27 @@ class FilesUtils:
             '3b1f6a9b7b2d...'
 
         Performance Notes:
-            - Chunk size is currently 1024 bytes; adjust if profiling shows benefit for large files.
+            - Reads use 1024 bytes normally, or 1 MiB with a progress callback to
+              keep deadline/heartbeat overhead small for large scrape inputs.
             - The function streams the file; memory footprint remains small regardless of file size.
 
         Security Notes:
             - SHA-1 is no longer recommended for collision resistance in security-sensitive contexts.
               Prefer hashlib.sha256 or stronger for integrity/security validation.
         """
-        def chunk_reader(fobj, chunk_size=1024):
-            """ Generator that reads a file in chunks of bytes """
-            while True:
-                chunk = fobj.read(chunk_size)
-                if not chunk:
-                    return
-                yield chunk
-
+        chunk_size = 1024 * 1024 if check_progress is not None else 1024
         hashobj = hash_algo()
-        with open(filepath, "rb") as f:
-            for chunk in chunk_reader(f):
+        with open(filepath, "rb") as stream:
+            while True:
+                if check_progress is not None:
+                    check_progress()
+                chunk = stream.read(chunk_size)
+                if not chunk:
+                    break
                 hashobj.update(chunk)
 
+        if check_progress is not None:
+            check_progress()
         return hashobj.hexdigest()
 
 
@@ -1252,14 +1262,16 @@ class RQTaskUtils:
             task = flask.current_app.q.enqueue_call(**enqueue_call_kwargs)
 
         except redis.exceptions.ConnectionError:
-            raise ConnectionError("Failed to connect to the Redis instance. Please ensure that the Redis server is running and accessible.")
+            raise ConnectionError("Failed to connect to the key-value store. Please ensure that the service is running and accessible.")
 
+        now = datetime.now()
         new_task_record = WorkerTaskModel(task_id=job_id,
-                                          time_enqueued=str(datetime.now()),
+                                          time_enqueued=now,
+                                          time_updated=now,
                                           origin=task.origin,
                                           function_name=enqueued_function.__name__,
                                           status="queued",
-                                          task_results=task_info)
+                                          status_details=task_info)
         db.session.add(new_task_record)
         db.session.commit()
         results = task.__dict__
@@ -1267,15 +1279,15 @@ class RQTaskUtils:
         return results
     
     @staticmethod
-    def update_task_subroutine(sql_db, q_id, new_status=None, task_results=None):
+    def update_task_subroutine(sql_db, q_id, new_status=None, status_details=None):
         """
         Updates the status of a task in the database.
         :param task_id: the id of the task to be updated
         :param new_status: the new status of the task
         """
-        task_db_updates = {}
-        if task_results:
-            task_db_updates["task_results"] = task_results
+        task_db_updates = {"time_updated": datetime.now()}
+        if status_details is not None:
+            task_db_updates["status_details"] = status_details
         
         if new_status:
             task_db_updates["status"] = new_status
@@ -1284,7 +1296,7 @@ class RQTaskUtils:
         sql_db.session.commit()
 
     @staticmethod
-    def initiate_task_subroutine(q_id, sql_db, task_result={}):
+    def initiate_task_subroutine(q_id, sql_db, task_result=None):
         """
         Updates the database to indicate that the task has started. 
         This is meant to be called at the begining of a task sent to the rq worker.
@@ -1292,7 +1304,9 @@ class RQTaskUtils:
         :param sql_db: the database object
         :param start_task_db_updates: dictionary of updates to be made to the database
         """
-        start_task_db_updates = {"status": 'started', "task_results": task_result}
+        now = datetime.now()
+        start_task_db_updates = {"status": 'started', "status_details": task_result if task_result is not None else {},
+                                "time_started": now, "time_updated": now}
         sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(start_task_db_updates)
         sql_db.session.commit()
 
@@ -1305,7 +1319,9 @@ class RQTaskUtils:
         :param sql_db: the database object
         """
         # update the database to indicate that the task has completed
-        task_db_updates = {"status": 'finished', "task_results": task_result, "time_completed":datetime.now()}
+        now = datetime.now()
+        task_db_updates = {"status": 'finished', "status_details": task_result,
+                           "time_completed": now, "time_updated": now}
         sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(task_db_updates)
         sql_db.session.commit()
 
@@ -1318,9 +1334,66 @@ class RQTaskUtils:
         :param sql_db: the database object
         :param task_result: dicionary data from the task having run
         """
-        task_db_updates = {"status": 'failed', "task_results": task_result, "time_completed":datetime.now()}
+        now = datetime.now()
+        task_db_updates = {"status": 'failed', "status_details": task_result,
+                           "time_completed": now, "time_updated": now}
         sql_db.session.query(WorkerTaskModel).filter(WorkerTaskModel.task_id == q_id).update(task_db_updates)
         sql_db.session.commit()
+
+
+class WorkerTaskProgress:
+    """Persist worker snapshots at explicit transaction boundaries.
+
+    This helper uses the caller's database session: saving commits, so callers
+    must first commit or roll back their work. It schedules no background writes.
+    Tasks own their result fields, checkpoint semantics, and error handling.
+    Set elapsed_key=None for tasks that maintain their own timing fields.
+    """
+
+    def __init__(self, sql_db, queue_id, details, *, clock=None, elapsed_key="Time Elapsed"):
+        self.db = sql_db
+        self.queue_id = queue_id
+        self.details = details
+        self.clock = clock if clock is not None else time.monotonic
+        self.elapsed_key = elapsed_key
+        self.start_time = self.clock()
+        self.last_update = self.start_time
+
+    def start(self):
+        RQTaskUtils.initiate_task_subroutine(
+            q_id=self.queue_id, sql_db=self.db, task_result=self.details)
+
+    def _refresh_elapsed(self, now):
+        if self.elapsed_key is not None:
+            self.details[self.elapsed_key] = f"{now - self.start_time:.3f}s"
+
+    def save(self, force=False):
+        """Save on demand or after 30 seconds of returning work; errors propagate."""
+        now = self.clock()
+        if force or now - self.last_update >= 30:
+            self._refresh_elapsed(now)
+            RQTaskUtils.update_task_subroutine(
+                sql_db=self.db, q_id=self.queue_id, status_details=self.details)
+            self.last_update = now
+
+    def set_phase(self, phase, *, key="Phase"):
+        self.details[key] = phase
+        self.save(force=True)
+
+    def complete(self):
+        self._refresh_elapsed(self.clock())
+        RQTaskUtils.complete_task_subroutine(
+            q_id=self.queue_id, sql_db=self.db, task_result=self.details)
+
+    def fail(self):
+        """Best-effort failure save; the caller must re-raise its original error."""
+        self._refresh_elapsed(self.clock())
+        try:
+            self.db.session.rollback()
+            RQTaskUtils.failed_task_subroutine(
+                q_id=self.queue_id, sql_db=self.db, task_result=self.details)
+        except Exception:
+            flask.current_app.logger.exception("Could not save failed worker task %s", self.queue_id)
 
 
 class ArchivesPathException(Exception):

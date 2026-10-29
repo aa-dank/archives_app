@@ -6,8 +6,10 @@ import flask_sqlalchemy
 import os
 import re
 import subprocess
-import threading
+import sys
+import tempfile
 import time
+import traceback
 from datetime import datetime, timedelta
 from typing import Dict
 from sqlalchemy.engine import make_url
@@ -196,100 +198,119 @@ def restart_app_task(queue_id: str, delay: int = 0):
 
 
 def db_backup_task(queue_id: str):
-    """
-    Worker task for streaming pg_dump output into a compressed backup on the server.
-    Resources:
-    https://stackoverflow.com/questions/63299534/backup-postgres-from-python-on-win10
-    https://stackoverflow.com/questions/43380273/pg-dump-pg-restore-password-using-python-module-subprocess
-    https://medium.com/poka-techblog/5-different-ways-to-backup-your-postgresql-database-using-python-3f06cea4f51
-    :param queue_id: the id of the task in the RQ queue
-
-    """
+    """Stream a compressed dump, persist phases, and publish only after pg_dump succeeds."""
     part_path = None
     proc = None
-    stderr_thread = None
+    stderr_file = None
     with app.app_context():
-        log = {"task_id": queue_id, "errors": []}
+        db = flask.current_app.extensions['sqlalchemy']
+        backup_started_at = time.perf_counter()
+        log = {"task_id": queue_id, "errors": [], "phase": "preparing",
+               "started_at": datetime.now().isoformat()}
+        cleanup_errors = []
+
+        progress = utils.WorkerTaskProgress(
+            db, queue_id, log, clock=time.perf_counter, elapsed_key=None)
+
+        def read_stderr():
+            stderr_file.seek(0)
+            log["stderr"] = stderr_file.read().decode(errors="replace")
+
+        def cleanup():
+            # Attempt every cleanup step, retaining the original task exception.
+            active_error = sys.exception()
+
+            def attempt(operation):
+                try:
+                    operation()
+                except Exception as error:
+                    cleanup_errors.append(error)
+                    log["errors"].append({"error": str(error), "stack_trace": traceback.format_exc(),
+                                          "during": "cleanup"})
+
+            if proc is not None:
+                def stop_process():
+                    if proc.poll() is None:
+                        proc.kill()
+                attempt(stop_process)
+                attempt(proc.wait)
+                attempt(proc.stdout.close)
+            if stderr_file is not None:
+                if "stderr" not in log:
+                    attempt(read_stderr)
+                attempt(stderr_file.close)
+            if part_path is not None:
+                def remove_partial():
+                    try:
+                        os.remove(part_path)
+                    except FileNotFoundError:
+                        pass
+                attempt(remove_partial)
+            if cleanup_errors and active_error is None:
+                raise cleanup_errors[0]
+
         try:
-            db = flask.current_app.extensions['sqlalchemy']
-            utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-            backup_started_at = time.perf_counter()
-            log["started_at"] = datetime.now().isoformat()
-            raw_db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
-            # Normalize the SQLAlchemy URL to remove the driver suffix so pg_dump accepts it
-            db_url = make_url(raw_db_url).set(drivername="postgresql")
-            db_url_for_pg_dump = db_url.render_as_string(hide_password=False)
-            timestamp = datetime.now().strftime(DB_BACKUP_FILE_TIMESTAMP_FORMAT)
+            progress.start()
+            try:
+                raw_db_url = flask.current_app.config.get("SQLALCHEMY_DATABASE_URI")
+                # Normalize the SQLAlchemy URL to remove the driver suffix so pg_dump accepts it
+                db_url = make_url(raw_db_url).set(drivername="postgresql")
+                db_url_for_pg_dump = db_url.render_as_string(hide_password=False)
+                timestamp = datetime.now().strftime(DB_BACKUP_FILE_TIMESTAMP_FORMAT)
 
-            postgres_executable_location = flask.current_app.config.get("POSTGRESQL_EXECUTABLES_LOCATION")
-            pg_dump_bin = f"{postgres_executable_location or ''}pg_dump"
-            db_backup_cmd = [pg_dump_bin, db_url_for_pg_dump]
-            log["backup_command"] = [pg_dump_bin, db_url.render_as_string(hide_password=True)]
+                postgres_executable_location = flask.current_app.config.get("POSTGRESQL_EXECUTABLES_LOCATION")
+                pg_dump_bin = f"{postgres_executable_location or ''}pg_dump"
+                db_backup_cmd = [pg_dump_bin, db_url_for_pg_dump]
+                log["backup_command"] = [pg_dump_bin, db_url.render_as_string(hide_password=True)]
 
-            db_backup_destination = flask.current_app.config.get("DATABASE_BACKUP_LOCATION")
-            destination_path = os.path.join(db_backup_destination, f"{DB_BACKUP_FILE_PREFIX}{timestamp}.sql.bz2")
-            part_path = f"{destination_path}.part"
-            log["backup_location"] = destination_path
+                db_backup_destination = flask.current_app.config.get("DATABASE_BACKUP_LOCATION")
+                destination_path = os.path.join(db_backup_destination, f"{DB_BACKUP_FILE_PREFIX}{timestamp}.sql.bz2")
+                part_path = f"{destination_path}.part"
+                log["backup_location"] = destination_path
 
-            env = os.environ.copy()
-            env["PGPASSWORD"] = db_url.password or ""  # provide password non-interactively
+                env = os.environ.copy()
+                env["PGPASSWORD"] = db_url.password or ""  # provide password non-interactively
 
-            proc = subprocess.Popen(db_backup_cmd,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE,
-                                    env=env)
+                # A file drains diagnostics without a pipe reader thread or pipe-buffer limit.
+                stderr_file = tempfile.TemporaryFile()
+                progress.set_phase("dumping_and_compressing", key="phase")
+                proc = subprocess.Popen(
+                    db_backup_cmd, stdout=subprocess.PIPE, stderr=stderr_file, env=env)
 
-            stderr_chunks = []
+                dump_and_compress_started_at = time.perf_counter()
+                uncompressed_size = 0
+                with bz2.open(part_path, "wb", compresslevel=9) as bz_out:
+                    for chunk in iter(lambda: proc.stdout.read(1024 * 1024), b""):
+                        uncompressed_size += len(chunk)
+                        bz_out.write(chunk)
+                log["dump_and_compress_seconds"] = round(time.perf_counter() - dump_and_compress_started_at, 3)
 
-            def read_stderr():
-                for chunk in iter(lambda: proc.stderr.read(8192), b""):
-                    stderr_chunks.append(chunk)
+                log["uncompressed_size"] = uncompressed_size
+                log["compressed_size"] = os.path.getsize(part_path)
+                progress.set_phase("waiting_for_pg_dump", key="phase")
+                return_code = proc.wait()
+                log["return_code"] = return_code
+                read_stderr()
+                if return_code != 0:
+                    raise RuntimeError(
+                        f"Backup command failed. pg_dump exited with code {return_code}:\n{log['stderr']}")
 
-            stderr_thread = threading.Thread(target=read_stderr)
-            stderr_thread.start()
-
-            dump_and_compress_started_at = time.perf_counter()
-            uncompressed_size = 0
-            with bz2.open(part_path, "wb", compresslevel=9) as bz_out:
-                for chunk in iter(lambda: proc.stdout.read(1024 * 1024), b""):
-                    uncompressed_size += len(chunk)
-                    bz_out.write(chunk)
-            log["dump_and_compress_seconds"] = round(time.perf_counter() - dump_and_compress_started_at, 3)
-
-            return_code = proc.wait()
-            stderr_thread.join()
-            stderr = b"".join(stderr_chunks).decode(errors="replace")
-
-            if return_code != 0:
-                raise Exception(
-                    f"Backup command failed. pg_dump exited with code {return_code}:\n{stderr}")
-
-            rename_started_at = time.perf_counter()
-            os.replace(part_path, destination_path)
-            log["rename_seconds"] = round(time.perf_counter() - rename_started_at, 3)
-            part_path = None
-            log["stderr"] = stderr
-            log["uncompressed_size"] = uncompressed_size
-            log["compressed_size"] = os.path.getsize(destination_path)
+                progress.set_phase("publishing", key="phase")
+                rename_started_at = time.perf_counter()
+                os.replace(part_path, destination_path)
+                log["rename_seconds"] = round(time.perf_counter() - rename_started_at, 3)
+                part_path = None
+            finally:
+                cleanup()
+            log["phase"] = "complete"
             log["finished_at"] = datetime.now().isoformat()
             log["duration_seconds"] = round(time.perf_counter() - backup_started_at, 3)
-
-        except Exception as e:
-            # log stack trace and error message
-            log["errors"].append({"error": str(e), "stack_trace": str(e.__traceback__)})
-        finally:
-            if proc and proc.poll() is None:
-                proc.kill()
-                proc.wait()
-            if stderr_thread:
-                stderr_thread.join()
-            if part_path and os.path.exists(part_path):
-                try:
-                    os.remove(part_path)
-                except Exception as cleanup_error:
-                    log["errors"].append({"error": str(cleanup_error), "stack_trace": str(cleanup_error.__traceback__)})
-
-
-        log = {k: str(val) for k, val in log.items() if hasattr(val, '__str__')} # Convert all values to strings to avoid JSON serialization errors
-        utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=log)
+            progress.complete()
+        except Exception as error:
+            log["stop_reason"] = "failed"
+            if not any(error is cleanup_error for cleanup_error in cleanup_errors):
+                log["errors"].append({"error": str(error), "stack_trace": traceback.format_exc()})
+            log["duration_seconds"] = round(time.perf_counter() - backup_started_at, 3)
+            progress.fail()
+            raise
         return log

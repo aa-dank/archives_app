@@ -231,22 +231,25 @@ def project_search():
 
 
 @project_tools.route("/project_search/export", methods=["GET"])
-def project_search_export():
-    """Download all public project-search matches as a flattened XLSX workbook."""
+@project_tools.route(
+    "/project_search/export/all", methods=["GET"],
+    endpoint="project_search_export_all", defaults={"all_projects": True},
+)
+def project_search_export(all_projects=False):
+    """Download matching projects, or explicitly all projects, as an XLSX workbook."""
     try:
-        state = project_search_service.parse_request(flask.request.args)
-        if not state.is_active:
-            raise project_search_service.ProjectSearchValidationError(
-                "Supply a search query or at least one active filter."
-            )
+        state = project_search_service.parse_request({} if all_projects else flask.request.args)
         workbook = project_search_service.build_export_workbook(
             state,
             flask.current_app.config.get("USER_ARCHIVES_LOCATION"),
+            all_projects=all_projects,
         )
         return flask.send_file(
             workbook,
             as_attachment=True,
-            download_name="project_search.xlsx",
+            download_name=utils.spreadsheet_download_name(
+                "all_projects_and_contracts" if all_projects else "project_search"
+            ),
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
     except project_search_service.ProjectSearchValidationError as error:
