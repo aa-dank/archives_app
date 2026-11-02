@@ -3308,7 +3308,7 @@ def scrape_location():
         if form.validate_on_submit() or (not form_request and request_is_authenticated):
             # Get parameters from form or request
             if form_request:
-                scrape_location_path = form.scrape_location.data
+                scrape_location_path = form.target_path.data
                 recursive = form.recursive.data
             else:
                 scrape_location_path = utils.FlaskAppUtils.retrieve_request_param('scrape_location')

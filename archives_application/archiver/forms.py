@@ -278,15 +278,15 @@ class DirContentsSummaryForm(FlaskForm):
 
 
 class ScrapeLocationForm(FlaskForm):
-    scrape_location = StringField('Scrape Location', validators=[DataRequired()])
+    target_path = StringField('Target Path', validators=[DataRequired()])
     recursive = SelectField('Recursive', choices=[('True', 'True'), ('False', 'False')], default='True')
     submit = SubmitField('Scrape')
 
-    def validate_scrape_location(self, scrape_location):
+    def validate_target_path(self, target_path):
         """
-        Ensures that the scraping location exists
+        Ensures that the scraping location exists and is a directory.
         """
-        path_validation_subroutine(scrape_location, path_type="dir", require_user_mount=True)
+        path_validation_subroutine(target_path, path_type="dir", require_user_mount=True)
 
 
 class ServerChangeForm(FlaskForm):
