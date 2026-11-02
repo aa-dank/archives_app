@@ -128,6 +128,48 @@ h1, h2, h3, h4, h5, h6 {
   border-top: 1px solid #dee2e6;
 }
 
+.upload-form-intro {
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  border: 1px solid #dfe6eb;
+  border-radius: 0.25rem;
+  background: #f8fafb;
+}
+
+.upload-form-cluster {
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+  border: 1px solid #dfe6eb;
+  border-radius: 0.25rem;
+  background: #ffffff;
+}
+
+.upload-form-cluster-title {
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #e6ebef;
+}
+
+.upload-choice-block {
+  padding: 1rem;
+  border: 1px solid #e6ebef;
+  border-radius: 0.25rem;
+  background: #fafcfd;
+}
+
+.upload-choice-heading {
+  margin-bottom: 0.9rem;
+  color: #35759a;
+  font-weight: 600;
+}
+
+.upload-choice-divider {
+  margin: 0.85rem 0;
+  text-align: center;
+  font-weight: 700;
+  color: #6c757d;
+}
+
 .article-title {
   color: #444444;
 }

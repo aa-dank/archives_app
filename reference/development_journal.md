@@ -2303,3 +2303,26 @@ and Project Search. The remaining links retain their existing order. Affected
 runtime component: the shared `layout.html` template. Verification: rendered the
 layout and checked link order for anonymous and authenticated users; diff checks
 passed. No operational follow-on is required.
+
+---
+
+## Entry 072 - Upload form visual grouping and destination-choice cues
+**Date:** 2026-11-02
+**Author:** OpenAI Codex
+
+Updated Upload File and Inbox Item archiving forms to improve clarity without
+changing validation or archive behavior. Upload File now uses two visually
+grouped sections (File Details and Archive Destination) instead of a double
+horizontal rule. Both forms now present destination choice as Option A
+(Project Number + Filing Code) versus Option B (Direct destination path) with
+an explicit OR divider and concise helper text; Inbox Item keeps shorter copy
+for experienced users. Document details on Inbox Item now use the same card
+style grouping as Upload File for consistent scanning. Upload File also now
+includes the Filing code guide link so both workflows expose the same quick
+reference.
+
+Affected runtime components: Upload File and Inbox Item templates, plus shared
+CSS for form grouping/choice presentation.
+Verification: template parse and diff review confirmed unchanged field names,
+error-display wiring, and submit behavior. Changes are presentational and
+copy-only with no database, API, or filesystem behavior change.
