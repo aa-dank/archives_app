@@ -2326,3 +2326,50 @@ CSS for form grouping/choice presentation.
 Verification: template parse and diff review confirmed unchanged field names,
 error-display wiring, and submit behavior. Changes are presentational and
 copy-only with no database, API, or filesystem behavior change.
+
+---
+
+## Entry 073 - Plotly contract schedule timeline on Project Info
+**Date:** 2026-11-02
+**Author:** OpenAI Codex
+
+Replaced the single-contract Project Info duration strip with an interactive
+Plotly date-axis timeline. Calendar-day bars start at NTP and distinguish
+original duration from approved extensions when the existing reconciliation
+rules permit; otherwise the current-duration fallback remains. Zero-day
+extensions retain their text value without an empty legend entry. Distinct
+milestone rows show recorded NTP, expected end, and actual completion alongside
+explicitly labeled original/current duration-derived end references. Conflicting
+recorded ends do not stretch bars or replace source dates. A dotted today line
+uses the application-local date at page generation when neither completion nor
+termination is recorded.
+
+Retained duration components, source-date text, completion variance, and
+consistency warnings for printing, accessibility, and script-load failure.
+Partial schedules show only supported dates; all-missing dates and zero/multiple
+contract views load no chart scripts. Figure construction is isolated in
+`project_tools/contract_timeline.py` and called only by HTML page preparation;
+the project-info API retains its existing data and schema. Shared CDN settings
+now live in `plotting.py`, and `static/plotly_charts.js` initializes both this
+timeline and the archiving dashboard from safely serialized figure data.
+
+Affected components: Project Info page preparation/template/CSS, shared chart
+embedding, and dashboard script wiring. Updated the project-info feature and
+development references. No dependencies, database schema, archive filesystem,
+Docker configuration, or synchronization behavior changed.
+
+Verification: 251 regression tests passed, with three opt-in service checks
+skipped. Fifteen new cases cover duration/date arithmetic, negative and
+inconsistent components, coincident endpoints, zero extensions, completion and
+termination, missing dates, conditional CDN loading, preserved warnings, and API
+isolation. Python compilation, JavaScript syntax, all Jinja template parses,
+and diff checks passed; existing dependency deprecation warnings remain.
+Chromium checks with the live CDN passed at 1440px and 390px for standard,
+completed/coincident, negative-extension, inconsistent, partial, and empty
+schedules, plus both dashboard figures. Verified hover, legend controls,
+zoom/reset, responsive sizing, one CDN request per chart page, and no JavaScript
+errors. Blocking the CDN retained the text summary and showed a chart-load error.
+Screenshots and browser reports are in ignored
+`dev_files/contract_timeline_validation`. Follow-on: deploy the Python,
+template/CSS, and renamed shared initializer together and restart web processes;
+retain browser access to the already-used Plotly CDN. No migration is required.

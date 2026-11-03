@@ -10,6 +10,8 @@ from sqlalchemy.orm import selectinload
 
 from archives_application import db, utils
 from archives_application.models import FileLocationModel, ProjectModel
+from archives_application.plotting import PLOTLY_CDN_URL
+from .contract_timeline import build_contract_timeline
 
 
 class ProjectInfoValidationError(ValueError):
@@ -555,7 +557,7 @@ def _status(value: bool | None, true_label: str, false_label: str) -> str:
 
 
 def project_context(project, user_archives_location: str | None) -> dict:
-    """Prepare only presentation-neutral page data; this function never touches SMB."""
+    """Prepare page data and its optional schedule figure without touching SMB."""
     archive_data = project_archive_data(project, user_archives_location)
     contracts = list(project.contracts)
     contract_state = "none" if not contracts else "single" if len(contracts) == 1 else "multiple"
@@ -575,6 +577,8 @@ def project_context(project, user_archives_location: str | None) -> dict:
         "contract_count": len(contracts),
         "contract_groups": [],
         "contract_schedule": None,
+        "contract_timeline": None,
+        "plotly_js_url": PLOTLY_CDN_URL,
         "other_contract_dates": [],
         "multiple_contract_column_groups": MULTIPLE_CONTRACT_COLUMN_GROUPS,
         "multiple_contract_rows": [],
@@ -582,6 +586,7 @@ def project_context(project, user_archives_location: str | None) -> dict:
     if contract_state == "single":
         context["contract_groups"] = contract_fields(contracts[0])
         context["contract_schedule"] = contract_schedule(contracts[0])
+        context["contract_timeline"] = build_contract_timeline(contracts[0], context["contract_schedule"])
         context["other_contract_dates"] = other_contract_dates(contracts[0])
     elif contract_state == "multiple":
         context["multiple_contract_rows"] = multiple_contract_table(contracts)

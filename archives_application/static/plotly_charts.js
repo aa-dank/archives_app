@@ -1,12 +1,12 @@
 /* Shared initialization; the versioned Plotly CDN bundle must load first. */
 "use strict";
 
-document.querySelectorAll(".archiving-chart-data").forEach(function (source) {
+document.querySelectorAll("script[data-plotly-chart]").forEach(function (source) {
     const container = document.getElementById(source.dataset.chartId);
     function showError(error) {
         container.textContent = "The chart could not load. Please reload the page.";
         container.setAttribute("role", "alert");
-        console.error("Could not render archiving chart", error);
+        console.error("Could not render chart", error);
     }
     try {
         const figure = JSON.parse(source.textContent);

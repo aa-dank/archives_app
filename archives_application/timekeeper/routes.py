@@ -10,7 +10,8 @@ from flask_login import login_required, current_user
 from sqlalchemy import func
 
 from .forms import TimekeepingForm, TimeSheetForm, TimeKeeperAdminForm
-from .charts import PLOTLY_CDN_URL, date_bounds, dashboard_chart
+from .charts import date_bounds, dashboard_chart
+from archives_application.plotting import PLOTLY_CDN_URL
 from archives_application import utils
 from archives_application.models import UserModel, TimekeeperEventModel, ArchivedFileModel, db
 

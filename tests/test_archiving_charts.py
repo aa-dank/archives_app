@@ -13,9 +13,10 @@ import pytest
 
 from archives_application import create_app, db
 from archives_application.models import ArchivedFileModel, UserModel
+from archives_application.plotting import PLOTLY_CDN_URL
 from archives_application.timekeeper import routes
 from archives_application.timekeeper.charts import (
-    PLOTLY_CDN_URL, aggregate_bars, build_daily_metrics, build_metrics_figure, dashboard_chart, date_bounds,
+    aggregate_bars, build_daily_metrics, build_metrics_figure, dashboard_chart, date_bounds,
 )
 from archives_application.timekeeper.forms import TimeSheetForm
 
@@ -176,7 +177,7 @@ def test_dashboard_chart_boundaries_shared_bundle_totals_and_no_temp_files(app, 
     assert individual["data"][2]["y"] == pytest.approx([2/7, 3/7])
     assert b"archived (all time): 5" in response.data
     assert response.text.count(f'src="{PLOTLY_CDN_URL}"') == 1
-    assert response.text.index(f'src="{PLOTLY_CDN_URL}"') < response.text.index('src="/static/archiving_charts.js"')
+    assert response.text.index(f'src="{PLOTLY_CDN_URL}"') < response.text.index('src="/static/plotly_charts.js"')
     assert "<img" not in response.text
     assert "Open image in new tab" not in response.text
     with client.session_transaction() as session:

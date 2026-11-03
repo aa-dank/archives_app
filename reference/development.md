@@ -35,14 +35,17 @@ The app version comes from `pyproject.toml`. `requirements.txt` is a generated e
 uv export --locked --no-dev --format requirements-txt --no-hashes -o requirements.txt
 ```
 
-The archiving dashboard loads one shared Plotly.js bundle from Plotly's CDN.
+The archiving dashboard and single-contract project schedule load Plotly.js
+from Plotly's CDN only when a figure is present. Shared CDN settings live in
+`archives_application/plotting.py`, and `static/plotly_charts.js` initializes
+the safely serialized figures on both pages.
 Its explicit JavaScript version comes from the installed Python package's
 `get_plotlyjs_version()`, so upgrading the locked Python dependency updates the
 CDN reference automatically. When updating Plotly, sync and verify:
 
 ```bash
 uv sync --locked
-uv run --locked pytest tests/test_archiving_charts.py
+uv run --locked pytest tests/test_archiving_charts.py tests/test_contract_timeline.py
 ```
 
 Commit the lockfile and requirements export with dependency changes and restart

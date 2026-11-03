@@ -25,7 +25,7 @@
                 <h6 id="{{ chart.id }}-heading">{{ chart.title }}</h6>
                 {% if chart.figure %}
                 <div id="{{ chart.id }}" class="archiving-chart" aria-labelledby="{{ chart.id }}-heading"></div>
-                <script type="application/json" class="archiving-chart-data" data-chart-id="{{ chart.id }}">{{ chart.figure|tojson }}</script>
+                <script type="application/json" class="archiving-chart-data" data-plotly-chart data-chart-id="{{ chart.id }}">{{ chart.figure|tojson }}</script>
                 <noscript><p>Enable JavaScript to view this activity chart.</p></noscript>
                 {% else %}
                 <p class="text-muted">No archiving activity in the selected date range.</p>
@@ -98,6 +98,6 @@
 {% block scripts %}
     {% if charts|selectattr('figure')|list %}
     <script defer src="{{ plotly_js_url }}"></script>
-    <script defer src="{{ url_for('static', filename='archiving_charts.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='plotly_charts.js') }}"></script>
     {% endif %}
 {% endblock scripts %}

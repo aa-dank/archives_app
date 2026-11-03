@@ -328,26 +328,30 @@ a[aria-expanded="false"] .collapse-toggle-icon {
   display: block;
 }
 
-.contract-schedule-bar {
-  display: flex;
-  height: 1.2rem;
-  overflow: hidden;
+.contract-timeline {
+  width: 100%;
+  min-width: 0;
+  height: 460px;
   margin-bottom: 1rem;
-  border: 1px solid #49697e;
-  border-radius: 0.25rem;
-  background: #d8e1e7;
 }
 
-.contract-schedule-segment-original {
-  background: #5f788a;
+.contract-schedule-references {
+  margin-bottom: 1rem;
 }
 
-.contract-schedule-segment-change-order {
-  background: #d39e00;
-}
+@media (max-width: 575.98px) {
+  .contract-schedule-dates {
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
 
-.contract-schedule-segment-current {
-  background: #5f788a;
+  .contract-schedule-dates div:last-child {
+    text-align: left;
+  }
+
+  .contract-timeline {
+    height: 500px;
+  }
 }
 
 .contract-schedule-components dd {

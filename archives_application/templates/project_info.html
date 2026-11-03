@@ -99,20 +99,26 @@
 
             <section class="contract-schedule mt-4" aria-labelledby="contract-schedule-heading">
                 <h3 class="h4" id="contract-schedule-heading">Contract schedule</h3>
-                {% if contract_schedule.has_schedule_dates %}
-                    <div class="contract-schedule-dates">
-                        <div><strong>Notice to proceed</strong><time datetime="{{ contract_schedule.ntp_start.isoformat() }}">{{ contract_schedule.ntp_start_display }}</time></div>
-                        <div><strong>Current expected end</strong><time datetime="{{ contract_schedule.expected_end.isoformat() }}">{{ contract_schedule.expected_end_display }}</time></div>
-                    </div>
-                    {% if contract_schedule.bar_segments %}
-                    <div class="contract-schedule-bar" aria-label="Contractual schedule duration">
-                        {% for segment in contract_schedule.bar_segments %}
-                        <span class="contract-schedule-segment contract-schedule-segment-{{ segment.style }}" style="flex-grow: {{ segment.percent }};" title="{{ segment.label }}: {{ segment.days }} calendar days"></span>
-                        {% endfor %}
-                    </div>
-                    {% endif %}
-                {% else %}
+                <div class="contract-schedule-dates">
+                    <div><strong>Notice to proceed</strong>{% if contract_schedule.ntp_start %}<time datetime="{{ contract_schedule.ntp_start.isoformat() }}">{{ contract_schedule.ntp_start_display }}</time>{% else %}Not recorded.{% endif %}</div>
+                    <div><strong>Current expected end (recorded)</strong>{% if contract_schedule.expected_end %}<time datetime="{{ contract_schedule.expected_end.isoformat() }}">{{ contract_schedule.expected_end_display }}</time>{% else %}Not recorded.{% endif %}</div>
+                </div>
+                {% if not contract_schedule.has_schedule_dates %}
                     <p>Schedule span unavailable because Notice-to-Proceed start and current expected end are not both recorded.</p>
+                {% endif %}
+
+                {% if contract_timeline %}
+                <p class="text-muted small">Hover for dates and durations, drag to zoom, and double-click to reset. Click a legend entry to show or hide a duration segment.</p>
+                <div id="contract-timeline" class="contract-timeline" aria-labelledby="contract-schedule-heading"></div>
+                <script type="application/json" data-plotly-chart data-chart-id="contract-timeline">{{ contract_timeline.figure|tojson }}</script>
+                <noscript><p>Enable JavaScript to view the interactive timeline. Schedule details are listed below.</p></noscript>
+                {% if contract_timeline.original_end or contract_timeline.duration_end %}
+                <div class="small text-muted contract-schedule-references">
+                    <p class="mb-1">* Duration-derived reference dates; recorded dates remain authoritative.</p>
+                    {% if contract_timeline.original_end %}<p class="mb-1"><strong>Original end (NTP + original duration):</strong> <time datetime="{{ contract_timeline.original_end.isoformat() }}">{{ contract_timeline.original_end.strftime('%b %d, %Y') }}</time></p>{% endif %}
+                    {% if contract_timeline.duration_end %}<p class="mb-1"><strong>Current duration end (NTP + current duration):</strong> <time datetime="{{ contract_timeline.duration_end.isoformat() }}">{{ contract_timeline.duration_end.strftime('%b %d, %Y') }}</time></p>{% endif %}
+                </div>
+                {% endif %}
                 {% endif %}
 
                 {% if contract_schedule.components %}
@@ -154,3 +160,10 @@
     </section>
 </div>
 {% endblock content %}
+
+{% block scripts %}
+    {% if contract_timeline %}
+    <script defer src="{{ plotly_js_url }}"></script>
+    <script defer src="{{ url_for('static', filename='plotly_charts.js') }}"></script>
+    {% endif %}
+{% endblock scripts %}

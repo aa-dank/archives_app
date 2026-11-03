@@ -5,12 +5,8 @@ import json
 
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.offline import get_plotlyjs_version
 from plotly.io import to_json
 from plotly.subplots import make_subplots
-
-
-PLOTLY_CDN_URL = f"https://cdn.plot.ly/plotly-{get_plotlyjs_version()}.min.js"
 
 
 def date_bounds(start: date, end: date) -> tuple[datetime, datetime]:
