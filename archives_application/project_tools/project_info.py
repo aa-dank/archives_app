@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from archives_application import db, utils
 from archives_application.models import FileLocationModel, ProjectModel
 from archives_application.plotting import PLOTLY_CDN_URL
+from .contract_dates import recorded_contract_dates
 from .contract_timeline import build_contract_timeline
 
 
@@ -25,16 +26,6 @@ class ProjectInfoNotFoundError(LookupError):
 class ProjectInfoAmbiguousNumberError(LookupError):
     """Raised when a project number identifies more than one project row."""
 
-
-OTHER_CONTRACT_DATE_FIELDS = (
-    ("bid_date", "Bid"),
-    ("contract_date", "Contract"),
-    ("beneficial_occupancy_date", "Beneficial occupancy"),
-    ("substantial_completion_date", "Substantial completion"),
-    ("certificate_of_occupancy_date", "Certificate of occupancy"),
-    ("noc_recorded_date", "Notice of completion recorded"),
-    ("termination_date", "Termination"),
-)
 
 PROJECT_INFO_SELECTOR_PARAMETERS = frozenset({"project_id", "project_number"})
 PROJECT_INFO_API_PARAMETERS = PROJECT_INFO_SELECTOR_PARAMETERS | {"include_user_path"}
@@ -533,23 +524,6 @@ def project_api_data(
     }
 
 
-def other_contract_dates(contract) -> list[dict]:
-    """Return chronological non-schedule dates without treating them as a schedule."""
-    dates = []
-    for sort_order, (field, label) in enumerate(OTHER_CONTRACT_DATE_FIELDS):
-        value = getattr(contract, field)
-        if value is not None:
-            dates.append({
-                "source_field": field,
-                "label": label,
-                "iso_date": value.isoformat(),
-                "display_date": _readable_date(value),
-                "sort_order": sort_order,
-                "date_value": value,
-            })
-    return sorted(dates, key=lambda event: (event["date_value"], event["sort_order"]))
-
-
 def _status(value: bool | None, true_label: str, false_label: str) -> str:
     if value is None:
         return "Unknown"
@@ -579,15 +553,17 @@ def project_context(project, user_archives_location: str | None) -> dict:
         "contract_schedule": None,
         "contract_timeline": None,
         "plotly_js_url": PLOTLY_CDN_URL,
-        "other_contract_dates": [],
+        "contract_dates": [],
         "multiple_contract_column_groups": MULTIPLE_CONTRACT_COLUMN_GROUPS,
         "multiple_contract_rows": [],
     }
     if contract_state == "single":
         context["contract_groups"] = contract_fields(contracts[0])
         context["contract_schedule"] = contract_schedule(contracts[0])
-        context["contract_timeline"] = build_contract_timeline(contracts[0], context["contract_schedule"])
-        context["other_contract_dates"] = other_contract_dates(contracts[0])
+        context["contract_dates"] = recorded_contract_dates(contracts[0])
+        context["contract_timeline"] = build_contract_timeline(
+            contracts[0], context["contract_schedule"], recorded_dates=context["contract_dates"],
+        )
     elif contract_state == "multiple":
         context["multiple_contract_rows"] = multiple_contract_table(contracts)
     return context

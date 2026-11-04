@@ -312,46 +312,14 @@ a[aria-expanded="false"] .collapse-toggle-icon {
   }
 }
 
-.contract-schedule-dates {
-  display: flex;
-  justify-content: space-between;
-  gap: 2rem;
-  margin-bottom: 0.35rem;
-}
-
-.contract-schedule-dates div:last-child {
-  text-align: right;
-}
-
-.contract-schedule-dates strong,
-.contract-schedule-dates time {
-  display: block;
-}
-
 .contract-timeline {
   width: 100%;
   min-width: 0;
-  height: 460px;
   margin-bottom: 1rem;
 }
 
 .contract-schedule-references {
   margin-bottom: 1rem;
-}
-
-@media (max-width: 575.98px) {
-  .contract-schedule-dates {
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-
-  .contract-schedule-dates div:last-child {
-    text-align: left;
-  }
-
-  .contract-timeline {
-    height: 500px;
-  }
 }
 
 .contract-schedule-components dd {
@@ -379,8 +347,12 @@ a[aria-expanded="false"] .collapse-toggle-icon {
   color: #6c757d;
 }
 
-.contract-other-dates {
+.contract-dates {
   max-width: 38rem;
+}
+
+.contract-dates time {
+  white-space: nowrap;
 }
 
 .contract-table-wrap {

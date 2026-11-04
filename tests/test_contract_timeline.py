@@ -6,11 +6,13 @@ import re
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import Date
 
 from archives_application import create_app, db
 from archives_application.models import CAANModel, ContractModel, ProjectCaanModel, ProjectModel, UserModel
 from archives_application.plotting import PLOTLY_CDN_URL
 from archives_application.project_tools import project_info as service
+from archives_application.project_tools.contract_dates import CONTRACT_DATE_FIELDS, recorded_contract_dates
 from archives_application.project_tools.contract_timeline import build_contract_timeline, MILLISECONDS_PER_DAY
 
 
@@ -20,6 +22,7 @@ TODAY = date(2026, 11, 2)
 
 def contract_values(**overrides):
     return {
+        **{field: None for field, *_ in CONTRACT_DATE_FIELDS},
         "ntp_start_date": START, "original_project_duration": 60,
         "change_order_time_total": 15, "change_order_revised_duration": 75,
         "change_order_revised_expected_end": START + timedelta(days=75),
@@ -47,8 +50,11 @@ def test_original_and_extension_have_real_date_bases_and_calendar_day_lengths():
     assert result["original_end"] == date(2026, 10, 31)
     assert result["duration_end"] is None
     assert result["figure"]["layout"]["xaxis"]["type"] == "date"
-    today = result["figure"]["layout"]["shapes"][0]
-    assert today["x0"] == today["x1"] == TODAY.isoformat()
+    today = next(note for note in result["figure"]["layout"]["annotations"] if note["text"].startswith("Today"))
+    assert today["x"] == TODAY.isoformat()
+    assert today["y"] == 0
+    assert result["figure"]["layout"]["yaxis"]["visible"] is False
+    assert all(trace["y"] == [0] for trace in result["figure"]["data"])
 
 
 @pytest.mark.parametrize("overrides", [
@@ -75,15 +81,21 @@ def test_recorded_end_stays_distinct_from_duration_derived_end():
     assert bars(result)[1]["customdata"][0][1] == "2026-11-15"
 
 
-def test_coincident_milestones_remain_on_distinct_rows_and_zero_extension_is_omitted():
+def test_coincident_milestones_share_callout_and_zero_extension_is_omitted():
     result = timeline(change_order_time_total=0, change_order_revised_duration=60,
                       change_order_revised_expected_end=START + timedelta(days=60),
                       noc_completion_date=START + timedelta(days=60))
     assert len(bars(result)) == 1
     markers = [trace for trace in result["figure"]["data"] if trace["type"] == "scatter"]
     endpoints = [trace for trace in markers if trace["x"] == ["2026-10-31"]]
-    assert len(endpoints) == 3
-    assert len({trace["y"][0] for trace in endpoints}) == 3
+    assert len(endpoints) == 1
+    assert endpoints[0]["y"] == [0]
+    assert all(label in endpoints[0]["hovertemplate"] for label in (
+        "Original end", "Current expected end", "Actual completion",
+    ))
+    callouts = [note for note in result["figure"]["layout"]["annotations"] if note["x"] == "2026-10-31"]
+    assert len(callouts) == 1
+    assert all(label in callouts[0]["text"] for label in ("Original end*", "Expected end", "Completed"))
     assert result["today"] is None
     assert "shapes" not in result["figure"]["layout"]
 
@@ -97,7 +109,7 @@ def test_partial_dates_show_only_supported_milestones_and_no_invented_start():
     result = timeline(ntp_start_date=None)
     assert not bars(result)
     assert result["original_end"] is None
-    assert [trace["name"] for trace in result["figure"]["data"]] == ["Current expected end (recorded)"]
+    assert {trace["name"] for trace in result["figure"]["data"]} == {"Current expected end (recorded)"}
     result = timeline(change_order_revised_expected_end=None)
     assert result["duration_end"] == START + timedelta(days=75)
     assert all(trace["name"] != "Current expected end (recorded)" for trace in result["figure"]["data"])
@@ -105,6 +117,55 @@ def test_partial_dates_show_only_supported_milestones_and_no_invented_start():
 
 def test_completely_missing_dates_do_not_create_a_today_only_chart():
     assert timeline(ntp_start_date=None, change_order_revised_expected_end=None) is None
+
+
+def test_shared_event_list_covers_every_contract_date_field_and_preserves_ties():
+    date_fields = {column.name for column in ContractModel.__table__.columns if isinstance(column.type, Date)}
+    assert {field for field, *_ in CONTRACT_DATE_FIELDS} == date_fields
+    contract = SimpleNamespace(**{field: START for field in date_fields})
+    events = recorded_contract_dates(contract)
+    assert len(events) == len(date_fields) == 10
+    assert {event["source_field"] for event in events} == date_fields
+    assert all(event["date_value"] == START for event in events)
+
+
+def test_timeline_includes_every_recorded_date_in_chronological_range():
+    values = {field: START + timedelta(days=index - 5) for index, (field, *_) in enumerate(CONTRACT_DATE_FIELDS)}
+    contract = SimpleNamespace(**contract_values(**values))
+    events = recorded_contract_dates(contract)
+    result = build_contract_timeline(contract, service.contract_schedule(contract), today=TODAY,
+                                     recorded_dates=events)
+    markers = [trace for trace in result["figure"]["data"] if trace["type"] == "scatter"]
+    for event in events:
+        assert any(trace["x"] == [event["iso_date"]] and event["label"] in trace["hovertemplate"] for trace in markers)
+    assert result["first_recorded_date"] == min(values.values())
+    assert date.fromisoformat(result["figure"]["layout"]["xaxis"]["range"][0]) <= min(values.values())
+
+
+def test_before_ntp_interval_starts_at_earliest_recorded_date():
+    result = timeline(bid_date=START - timedelta(days=180), contract_date=START - timedelta(days=120))
+    before = bars(result)[0]
+    assert before["name"] == "Before NTP"
+    assert before["base"] == [(START - timedelta(days=180)).isoformat()]
+    assert before["x"] == [180 * MILLISECONDS_PER_DAY]
+    assert before["customdata"][0][1] == START.isoformat()
+    assert result["before_ntp_days"] == 180
+    assert result["first_recorded_date"] == START - timedelta(days=180)
+
+
+def test_history_only_still_plots_without_ntp_and_cannot_invent_before_ntp_duration():
+    result = timeline(ntp_start_date=None, change_order_revised_expected_end=None,
+                      bid_date=START - timedelta(days=100), contract_date=START - timedelta(days=50))
+    assert result is not None
+    assert result["before_ntp_days"] is None
+    assert not bars(result)
+    assert any(trace["name"] == "Bid" for trace in result["figure"]["data"])
+
+
+def test_today_does_not_extend_the_timeline_before_future_contract_records():
+    result = timeline(ntp_start_date=None, change_order_revised_expected_end=None,
+                      bid_date=TODAY + timedelta(days=60))
+    assert result["today"] is None
 
 
 class TestConfig:
@@ -171,6 +232,27 @@ def test_inconsistent_dates_and_components_keep_original_warnings(app):
     assert "Nov 15, 2026" in response.text
     figure = page_figure(response)
     assert [trace["name"] for trace in figure["data"] if trace["type"] == "bar"] == ["Current contractual duration"]
+
+
+def test_all_recorded_dates_appear_in_table_before_plot_with_matching_markers(app):
+    values = {field: START + timedelta(days=index - 5) for index, (field, *_) in enumerate(CONTRACT_DATE_FIELDS)}
+    with app.app_context():
+        contract = db.session.get(ContractModel, 1)
+        for field, value in values.items():
+            setattr(contract, field, value)
+        db.session.commit()
+    response = app.test_client().get("/project_info?project_id=1")
+    assert response.status_code == 200
+    table = re.search(r'<table[^>]*id="contract-dates-table"[^>]*>(.*?)</table>', response.text, re.S)[1]
+    assert re.findall(r'<time datetime="([^"]+)"', table) == sorted(value.isoformat() for value in values.values())
+    figure = page_figure(response)
+    for field, label, *_ in CONTRACT_DATE_FIELDS:
+        assert label in table
+        assert any(trace.get("x") == [values[field].isoformat()] and label in trace.get("hovertemplate", "")
+                   for trace in figure["data"])
+    assert response.text.index('id="contract-dates-table"') < response.text.index('id="contract-timeline"')
+    assert 'other-contract-dates-heading' not in response.text
+    assert "Before NTP:</strong> 2 calendar days" in response.text
 
 
 @pytest.mark.parametrize("state", ["no_dates", "no_contracts", "multiple_contracts"])

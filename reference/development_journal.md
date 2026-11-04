@@ -2329,47 +2329,56 @@ copy-only with no database, API, or filesystem behavior change.
 
 ---
 
-## Entry 073 - Plotly contract schedule timeline on Project Info
-**Date:** 2026-11-02
+## Entry 073 - Project Info contract chronology with Plotly
+**Date:** 2026-11-02 to 2026-11-03
 **Author:** OpenAI Codex
 
 Replaced the single-contract Project Info duration strip with an interactive
-Plotly date-axis timeline. Calendar-day bars start at NTP and distinguish
-original duration from approved extensions when the existing reconciliation
-rules permit; otherwise the current-duration fallback remains. Zero-day
-extensions retain their text value without an empty legend entry. Distinct
-milestone rows show recorded NTP, expected end, and actual completion alongside
-explicitly labeled original/current duration-derived end references. Conflicting
-recorded ends do not stretch bars or replace source dates. A dotted today line
-uses the application-local date at page generation when neither completion nor
-termination is recorded.
+Plotly timeline covering all ten recorded contract date fields, from bid and
+contract through occupancy, completion, recording, termination, and expected
+end. A shared chronological event list feeds the complete table immediately
+above the plot and its date markers, replacing the supplementary-date table.
+Thin duration segments and all markers share one horizontal date axis. Nearby
+callouts stagger above/below the line; coincident events retain separate table
+rows and share a complete callout/hover detail. Label heights and chart sizing
+accommodate dense records and narrow screens.
 
-Retained duration components, source-date text, completion variance, and
-consistency warnings for printing, accessibility, and script-load failure.
-Partial schedules show only supported dates; all-missing dates and zero/multiple
-contract views load no chart scripts. Figure construction is isolated in
-`project_tools/contract_timeline.py` and called only by HTML page preparation;
-the project-info API retains its existing data and schema. Shared CDN settings
-now live in `plotting.py`, and `static/plotly_charts.js` initializes both this
-timeline and the archiving dashboard from safely serialized figure data.
+The timeline includes the earliest recorded date and highlights its interval
+to NTP in purple, with a calendar-day count. This measures recorded coverage
+before NTP without asserting a physical construction-start date or calculating
+a project percentage. Original duration and approved extensions use the existing
+reconciliation rules and current-duration fallback; zero-day extensions remain
+in text without empty legend entries. Calculated end references stay explicitly
+labeled, and conflicting recorded ends never stretch bars or replace source
+values. Retained duration summaries, completion variance, and consistency
+warnings for printing, accessibility, and script failure.
 
-Affected components: Project Info page preparation/template/CSS, shared chart
-embedding, and dashboard script wiring. Updated the project-info feature and
-development references. No dependencies, database schema, archive filesystem,
-Docker configuration, or synchronization behavior changed.
+Any recorded date can support a partial timeline without NTP. Today uses the
+application-local date for contracts without completion or termination and
+cannot extend the axis before the first recorded date. All-missing dates and
+zero/multiple-contract views load no chart scripts. The project-info API and
+existing multiple-contract table retain their contracts.
 
-Verification: 251 regression tests passed, with three opt-in service checks
-skipped. Fifteen new cases cover duration/date arithmetic, negative and
-inconsistent components, coincident endpoints, zero extensions, completion and
-termination, missing dates, conditional CDN loading, preserved warnings, and API
-isolation. Python compilation, JavaScript syntax, all Jinja template parses,
-and diff checks passed; existing dependency deprecation warnings remain.
-Chromium checks with the live CDN passed at 1440px and 390px for standard,
-completed/coincident, negative-extension, inconsistent, partial, and empty
-schedules, plus both dashboard figures. Verified hover, legend controls,
-zoom/reset, responsive sizing, one CDN request per chart page, and no JavaScript
-errors. Blocking the CDN retained the text summary and showed a chart-load error.
-Screenshots and browser reports are in ignored
+Affected components: Project Info page preparation/template/CSS,
+`project_tools/contract_dates.py`, `project_tools/contract_timeline.py`, and
+shared chart embedding. Figure construction stays in the HTML presentation
+path. Shared CDN settings live in `plotting.py`; the renamed
+`static/plotly_charts.js` initializes both the timeline and archiving dashboard
+from safely serialized data. Updated feature/development references. No
+schema, dependency, archive-filesystem, Docker, configuration, or synchronization
+change is required.
+
+Verification: the initial full suite passed 251 tests with three opt-in service
+checks skipped; final focused timeline/dashboard/project-search checks passed
+54 tests, including 21 timeline cases. Coverage includes source-date completeness,
+table/plot parity, chronological extent, pre-NTP arithmetic, missing/future dates,
+reconciliation fallbacks, conditional CDN loading, and API isolation. Live-CDN
+Chromium checks passed at 1440px and 390px for complete, partial/history-only,
+empty, coincident, dense, and inconsistent records plus both dashboard figures.
+Verified callout bounds/non-overlap, hover, legend controls, zoom/reset, and
+blocked-CDN text fallback, with no JavaScript errors. Template parses,
+Python/JavaScript syntax, and diff checks passed; existing dependency warnings
+remain. Screenshots/reports are in ignored
 `dev_files/contract_timeline_validation`. Follow-on: deploy the Python,
-template/CSS, and renamed shared initializer together and restart web processes;
-retain browser access to the already-used Plotly CDN. No migration is required.
+template/CSS, and renamed initializer together and restart web processes;
+retain browser access to the existing Plotly CDN. No migration is required.
