@@ -152,7 +152,7 @@
                     {% else %}
                         <span class="badge badge-pill archive-cache-state archive-cache-state-fresh">Fresh results</span>
                     {% endif %}
-                    <a class="btn btn-outline-primary btn-sm" href="{{ fresh_search_url }}">Run fresh search</a>
+                    <a class="btn btn-outline-primary btn-sm" id="archive-fresh-search-button" data-search-loading href="{{ fresh_search_url }}">Run fresh search</a>
                 </div>
                 {% if export_available %}
                     <a class="btn btn-outline-info btn-sm" href="{{ url_for('archiver.archives_search', timestamp=timestamp) }}">Download Excel</a>

@@ -2382,3 +2382,46 @@ remain. Screenshots/reports are in ignored
 `dev_files/contract_timeline_validation`. Follow-on: deploy the Python,
 template/CSS, and renamed initializer together and restart web processes;
 retain browser access to the existing Plotly CDN. No migration is required.
+
+---
+
+## Entry 074 - Fresh search loading feedback
+**Date:** 2026-11-04
+**Author:** OpenAI Codex
+
+The Archive Search results page's Run fresh search action now immediately shows
+Searching... and becomes disabled while navigation is pending. It uses the same
+350 ms rendering delay as the Archive Search form and ignores repeat clicks.
+Modified clicks retain native link behavior. Affected runtime component:
+`archive_search_results.html`; the existing refresh URL and search settings
+remain intact.
+
+Verification: all 101 cache/shareable-search-URL tests passed. JavaScript checks
+confirmed immediate feedback, disabled state, repeat-click suppression, delayed
+navigation to the original URL, and native modified clicks; diff checks passed.
+No browser screenshot was captured. No operational follow-on is required.
+
+---
+
+## Entry 075 - Shared search loading behavior and history recovery
+**Date:** 2026-11-04
+**Author:** OpenAI Codex
+
+Archive Search, CAAN Search, Project Search, and Run fresh search now use the
+shared `static/search_loading.js` handler, loaded by `layout.html`. Each action
+immediately displays Searching..., disables its control, and suppresses repeat
+requests. All four use Archive Search's existing 350 ms rendering pause before
+submitting or navigating; this adds the same pause to CAAN and Project Search.
+Native form validation and modified fresh-search link clicks remain intact.
+
+Page hide/show handlers restore each control's original label and enabled state
+for Back/Forward navigation and cancel pending timers to prevent stale searches
+after restoration. Affected runtime components: the four search templates,
+shared layout, and shared JavaScript. No backend search or data changes.
+
+Verification: all 115 cache, shareable-URL, and project-search tests passed.
+JavaScript checks covered form/link loading, duplicate suppression, original
+destinations, modified clicks, history recovery, stale timer cancellation,
+canceled events, and browser-restored disabled controls. JavaScript syntax,
+all template parses, and diff checks passed. No browser screenshot was captured.
+Follow-on: deploy the new static file together with the updated templates.

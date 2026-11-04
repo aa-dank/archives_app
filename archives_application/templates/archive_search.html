@@ -118,7 +118,7 @@
                 </div>
             </fieldset>
             <div class="form-group">
-                <button class="btn btn-outline-info" id="archive-search-button" type="submit">Search</button>
+                <button class="btn btn-outline-info" id="archive-search-button" type="submit" data-search-loading>Search</button>
             </div>
         </form>
     </div>
@@ -158,19 +158,6 @@
             if (scopeSelect) {
                 scopeSelect.addEventListener('change', updateScopeFields);
                 updateScopeFields();
-            }
-
-            var searchForm = document.getElementById('archive-search-form');
-            if (searchForm) {
-                searchForm.addEventListener('submit', function(event) {
-                    var button = document.getElementById('archive-search-button');
-                    if (button) {
-                        button.textContent = 'Searching...';
-                        setTimeout(function() { button.disabled = true; }, 10);
-                    }
-                    event.preventDefault();
-                    setTimeout(function() { HTMLFormElement.prototype.submit.call(searchForm); }, 350);
-                });
             }
         });
     </script>

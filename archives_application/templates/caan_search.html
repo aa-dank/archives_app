@@ -32,22 +32,8 @@
 			</div>
 		</fieldset>
 		<div class="form-group">
-			<button class="btn btn-outline-info" id="caan-search-button" type="submit">Search</button>
+			<button class="btn btn-outline-info" id="caan-search-button" type="submit" data-search-loading>Search</button>
 		</div>
 	</form>
 </div>
-<script>
-	document.addEventListener('DOMContentLoaded', function () {
-		var form = document.getElementById('caan-search-form');
-		if (form) {
-			form.addEventListener('submit', function (e) {
-				var btn = document.getElementById('caan-search-button');
-				if (btn && !btn.disabled) {
-					btn.textContent = 'Searching...';
-					setTimeout(function(){ btn.disabled = true; }, 10);
-				}
-			});
-		}
-	});
-</script>
 {% endblock content %}
