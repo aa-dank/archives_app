@@ -2329,6 +2329,24 @@ copy-only with no database, API, or filesystem behavior change.
 
 ---
 
+## Entry 073 - Align Batch Process Inbox with archiving form UX
+**Date:** 2026-11-05
+**Author:** OpenAI Codex
+
+Updated Batch Process Inbox to use the same visual grouping and destination
+choice cues as Upload File and Inbox Item. The page now uses a compact intro
+panel with archiving guide links, grouped file-selection and notes sections,
+and an Archive destination section that explicitly presents Option A
+(Project + Filing Code) versus Option B (Direct destination path) with an OR
+divider. Added the Filing code guide link to the batch destination controls.
+
+Affected runtime component: Batch Process Inbox template.
+Verification: template parse and diff review confirmed unchanged field names,
+validation wiring, and submit behavior. Changes are presentational/copy-only
+with no database, API, or filesystem behavior change.
+
+---
+
 ## Entry 073 - Project Info contract chronology with Plotly
 **Date:** 2026-11-02 to 2026-11-03
 **Author:** OpenAI Codex
