@@ -318,12 +318,53 @@ a[aria-expanded="false"] .collapse-toggle-icon {
   margin-bottom: 1rem;
 }
 
-.contract-schedule-references {
-  margin-bottom: 1rem;
+.contract-duration-key {
+  max-width: 38rem;
 }
 
-.contract-schedule-components dd {
-  margin-bottom: 0.35rem;
+.contract-duration-key th[scope="row"] {
+  font-weight: normal;
+}
+
+.contract-duration-key .contract-duration-total {
+  border-top: 2px solid #cad4dc;
+}
+
+.contract-duration-key .contract-duration-total th,
+.contract-duration-key .contract-duration-total td {
+  font-weight: 600;
+}
+
+.contract-duration-toggle {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.contract-duration-key tr.is-toggleable {
+  cursor: pointer;
+}
+
+.contract-duration-toggle:enabled:hover {
+  text-decoration: underline;
+}
+
+.contract-duration-toggle:focus-visible {
+  outline: 2px solid #35759a;
+  outline-offset: 3px;
+}
+
+.contract-duration-key .is-muted .contract-duration-toggle {
+  text-decoration: line-through;
+}
+
+.contract-duration-key .is-muted .contract-schedule-key {
+  opacity: 0.25;
 }
 
 .contract-schedule-key {
@@ -333,14 +374,6 @@ a[aria-expanded="false"] .collapse-toggle-icon {
   margin-right: 0.35rem;
   border-radius: 0.15rem;
   vertical-align: -0.05rem;
-}
-
-.contract-schedule-key-original {
-  background: #5f788a;
-}
-
-.contract-schedule-key-change-order {
-  background: #d39e00;
 }
 
 .contract-schedule-variance {
@@ -353,6 +386,19 @@ a[aria-expanded="false"] .collapse-toggle-icon {
 
 .contract-dates time {
   white-space: nowrap;
+}
+
+.contract-date-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.contract-date-swatch {
+  flex: 0 0 0.6rem;
+  height: 0.6rem;
+  margin-top: 0.4rem;
+  border-radius: 50%;
 }
 
 .contract-table-wrap {

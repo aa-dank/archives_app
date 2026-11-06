@@ -1,4 +1,4 @@
-"""The recorded contract-date events shared by the page table and timeline."""
+"""Recorded contract milestones and their table presentation."""
 
 
 # Field, table/hover label, callout label, color, marker symbol.
@@ -12,7 +12,8 @@ CONTRACT_DATE_FIELDS = (
     ("noc_completion_date", "Actual completion", "Completed", "#287f5e", "square"),
     ("noc_recorded_date", "Notice of completion recorded", "NOC recorded", "#6c757d", "circle"),
     ("termination_date", "Termination", "Terminated", "#a74036", "x"),
-    ("change_order_revised_expected_end", "Current expected end (recorded)", "Expected end", "#9a7000", "diamond"),
+    ("change_order_revised_expected_end", "Revised expected completion date",
+     "Revised expected<br>completion date", "#9a7000", "diamond"),
 )
 
 
@@ -29,3 +30,24 @@ def recorded_contract_dates(contract) -> list[dict]:
                 "sort_order": order,
             })
     return sorted(events, key=lambda event: (event["date_value"], event["sort_order"]))
+
+
+def contract_date_rows(recorded_dates: list[dict], timeline: dict | None) -> list[dict]:
+    """Prepare chronological rows with calculated dates and matching plot colors."""
+    rows = [{**event, "calculation": None} for event in recorded_dates]
+    if timeline is not None:
+        for order, (key, label, calculation) in enumerate((
+            ("original_end", "Original end (calculated)", "NTP + original duration"),
+            ("duration_end", "Revised end (calculated)", "NTP + current duration"),
+        ), start=len(CONTRACT_DATE_FIELDS)):
+            value = timeline[key]
+            if value is not None:
+                rows.append({
+                    "label": label, "calculation": calculation, "date_value": value,
+                    "iso_date": value.isoformat(), "display_date": value.strftime("%b %d, %Y"),
+                    "sort_order": order,
+                })
+    colors = timeline["milestone_colors"] if timeline is not None else {}
+    for row in rows:
+        row["marker_color"] = colors.get(row["iso_date"])
+    return sorted(rows, key=lambda event: (event["date_value"], event["sort_order"]))

@@ -74,10 +74,10 @@ def build_contract_timeline(
         (event["date_value"], event["short_label"], event["label"], event["color"], event["symbol"])
         for event in recorded_dates
     ]
-    milestones.append((original_end, "Original end*", "Original end (NTP + original duration)",
+    milestones.append((original_end, "Original end (calc.)", "Original end (NTP + original duration)",
                        "#5f788a", "diamond-open"))
     if duration_end is not None and duration_end != expected:
-        milestones.append((duration_end, "Duration end*", "Current end (NTP + current duration)",
+        milestones.append((duration_end, "Revised end (calc.)", "Current end (NTP + current duration)",
                            "#6c757d", "diamond-open"))
     # Put every event on the same date axis. Coincident dates share one callout.
     today_marker = None
@@ -100,8 +100,9 @@ def build_contract_timeline(
     lanes = []
     lane_heights = []
     callouts = []
+    milestone_colors = {value.isoformat(): events[-1][2] for value, events in events_by_date.items()}
     for value, events in sorted(events_by_date.items()):
-        color = events[-1][2]
+        color = milestone_colors[value.isoformat()]
         fig.add_trace(go.Scatter(
             x=[value.isoformat()], y=[0], name=" / ".join(event[1] for event in events),
             mode="markers", marker={"color": color, "size": 13, "symbol": events[-1][3]},
@@ -113,7 +114,7 @@ def build_contract_timeline(
         anchor = "left" if position < 0.2 else "right" if position > 0.8 else "center"
         # Reserve label space for a narrow phone viewport as well as desktop.
         # Each lane can hold several callouts when their horizontal extents fit.
-        text_width = max(95, max(len(event[0]) for event in events) * 6.5) / 260
+        text_width = max(95, max(len(line) for event in events for line in event[0].split("<br>")) * 6.5) / 260
         left = (position if anchor == "left" else position - text_width
                 if anchor == "right" else position - text_width / 2)
         right = left + text_width
@@ -123,7 +124,8 @@ def build_contract_timeline(
             lanes.append([])
             lane_heights.append(0)
         lanes[lane].append((left, right))
-        lane_heights[lane] = max(lane_heights[lane], (len(events) + 1) * 15 + 6)
+        text_lines = sum(event[0].count("<br>") + 1 for event in events) + 1
+        lane_heights[lane] = max(lane_heights[lane], text_lines * 15 + 6)
         callouts.append((value, events, color, anchor, lane))
 
     # Account for multi-event callout height as well as horizontal label spacing.
@@ -147,12 +149,12 @@ def build_contract_timeline(
 
     # Keep the figure compact for ordinary schedules, with space for dense callouts.
     above, below = max(80, above), max(80, below)
-    bottom_margin = 110 if any(trace.type == "bar" for trace in fig.data) else 30
+    bottom_margin = 30
     height = above + below + 20 + bottom_margin
     fig.update_layout(
         template="plotly_white", autosize=True, barmode="overlay", dragmode="zoom",
         margin={"l": 25, "r": 25, "t": 20, "b": bottom_margin},
-        legend={"orientation": "h", "x": 0, "y": -0.07, "yanchor": "top", "font": {"size": 11}},
+        showlegend=False,
         hovermode="closest",
     )
     fig.update_xaxes(type="date", anchor="free", position=below / (above + below), showline=True,
@@ -168,4 +170,35 @@ def build_contract_timeline(
         "today": today_marker,
         "first_recorded_date": first_recorded_date,
         "before_ntp_days": before_ntp_days,
+        "milestone_colors": milestone_colors,
     }
+
+
+def contract_duration_rows(contract, timeline: dict | None) -> list[dict]:
+    """Build the duration summary and key from recorded values and actual bar traces."""
+    periods = []
+    if timeline is not None:
+        periods.append(("Before NTP", timeline["before_ntp_days"],
+                        "From earliest recorded contract date" if timeline["before_ntp_days"] is not None
+                        else "NTP not recorded", False, False))
+    for label, field, signed, total in (
+        ("Original contract duration", "original_project_duration", False, False),
+        ("Approved change-order time", "change_order_time_total", True, False),
+        ("Current contractual duration", "change_order_revised_duration", False, True),
+    ):
+        value = getattr(contract, field)
+        if value is not None:
+            periods.append((label, value, None, signed, total))
+    traces = timeline["figure"]["data"] if timeline is not None else []
+    rows = []
+    for label, days, note, signed, total in periods:
+        index = next((i for i, trace in enumerate(traces)
+                      if trace["type"] == "bar" and trace["name"] == label), None)
+        rows.append({
+            "label": label, "days": days,
+            "display_days": (f"{days:+,}" if signed and days > 0 else f"{days:,}")
+                            if days is not None else "Unavailable",
+            "note": note, "total": total, "trace_index": index,
+            "color": traces[index]["marker"]["color"] if index is not None else None,
+        })
+    return rows

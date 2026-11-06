@@ -99,12 +99,16 @@
 
             <section class="contract-schedule mt-4" aria-labelledby="contract-schedule-heading">
                 <h3 class="h4" id="contract-schedule-heading">Contract dates and timeline</h3>
-                {% if contract_dates %}
+                {% if contract_date_rows %}
                 <div class="table-responsive">
-                    <table id="contract-dates-table" class="table table-sm table-bordered contract-dates" aria-label="Recorded contract dates">
+                    <table id="contract-dates-table" class="table table-sm table-bordered contract-dates" aria-label="Contract dates">
                         <thead><tr><th scope="col">Date</th><th scope="col">Contract milestone</th></tr></thead>
-                        <tbody>{% for event in contract_dates %}<tr>
-                            <td><time datetime="{{ event.iso_date }}">{{ event.display_date }}</time></td><td>{{ event.label }}</td>
+                        <tbody>{% for event in contract_date_rows %}<tr>
+                            <td><time datetime="{{ event.iso_date }}">{{ event.display_date }}</time></td>
+                            <td><div class="contract-date-label">
+                                {% if event.marker_color %}<span class="contract-date-swatch" style="background-color: {{ event.marker_color }};" aria-hidden="true"></span>{% endif %}
+                                <span>{{ event.label }}{% if event.calculation %}<small class="d-block text-muted">{{ event.calculation }}</small>{% endif %}</span>
+                            </div></td>
                         </tr>{% endfor %}</tbody>
                     </table>
                 </div>
@@ -112,34 +116,34 @@
                 <p>No contract dates are recorded.</p>
                 {% endif %}
                 {% if not contract_schedule.has_schedule_dates %}
-                <p class="text-muted">Contractual duration comparison is unavailable because NTP and the recorded expected end are not both recorded.</p>
+                <p class="text-muted">Contractual duration comparison is unavailable because NTP and the revised expected completion date are not both recorded.</p>
                 {% endif %}
 
                 {% if contract_timeline %}
-                {% if contract_timeline.before_ntp_days is not none %}
-                <p><strong>Before NTP:</strong> {{ '{:,}'.format(contract_timeline.before_ntp_days) }} calendar days from the earliest recorded contract date to notice to proceed.</p>
-                {% else %}
-                <p class="text-muted">The before-NTP interval is unavailable because NTP is not recorded.</p>
-                {% endif %}
-                <p class="text-muted small">Hover for dates and durations, drag to zoom, and double-click to reset. Click a legend entry to show or hide a duration segment.</p>
+                <p class="text-muted small">Hover for dates and durations, drag to zoom, and double-click to reset. Select a colored row below to show or hide its segment.</p>
                 <div id="contract-timeline" class="contract-timeline" style="height: {{ contract_timeline.height }}px;" aria-labelledby="contract-schedule-heading"></div>
                 <script type="application/json" data-plotly-chart data-chart-id="contract-timeline">{{ contract_timeline.figure|tojson }}</script>
-                <noscript><p>Enable JavaScript to view the interactive timeline. Recorded dates are listed above; duration details are listed below.</p></noscript>
-                {% if contract_timeline.original_end or contract_timeline.duration_end %}
-                <div class="small text-muted contract-schedule-references">
-                    <p class="mb-1">* Duration-derived reference dates; recorded dates remain authoritative.</p>
-                    {% if contract_timeline.original_end %}<p class="mb-1"><strong>Original end (NTP + original duration):</strong> <time datetime="{{ contract_timeline.original_end.isoformat() }}">{{ contract_timeline.original_end.strftime('%b %d, %Y') }}</time></p>{% endif %}
-                    {% if contract_timeline.duration_end %}<p class="mb-1"><strong>Current duration end (NTP + current duration):</strong> <time datetime="{{ contract_timeline.duration_end.isoformat() }}">{{ contract_timeline.duration_end.strftime('%b %d, %Y') }}</time></p>{% endif %}
-                </div>
-                {% endif %}
+                <noscript><p>Enable JavaScript to view the interactive timeline. Dates are listed above; duration details are listed below.</p></noscript>
                 {% endif %}
 
-                {% if contract_schedule.components %}
-                <dl class="contract-schedule-components row">
-                    {% for component in contract_schedule.components %}
-                    <dt class="col-sm-4">{% if contract_schedule.show_duration_key and component.style %}<span class="contract-schedule-key contract-schedule-key-{{ component.style }}" aria-hidden="true"></span>{% endif %}{{ component.label }}</dt><dd class="col-sm-8">{{ component.value }}</dd>
-                    {% endfor %}
-                </dl>
+                {% if contract_duration_rows %}
+                <h4 class="h6 mt-3" id="contract-duration-heading">Duration and key</h4>
+                <div class="table-responsive">
+                    <table id="contract-duration-key" class="table table-sm contract-duration-key" aria-labelledby="contract-duration-heading">
+                        <thead><tr><th scope="col">Key</th><th scope="col">Period</th><th scope="col" class="text-right">Calendar days</th></tr></thead>
+                        <tbody>{% for row in contract_duration_rows %}
+                        <tr{% if row.total %} class="contract-duration-total"{% endif %}>
+                            <td>{% if row.color %}<span class="contract-schedule-key" style="background-color: {{ row.color }};" aria-hidden="true"></span>{% endif %}</td>
+                            <th scope="row">
+                                {% if row.trace_index is not none %}
+                                <button type="button" class="contract-duration-toggle" data-plotly-toggle data-chart-id="contract-timeline" data-trace-index="{{ row.trace_index }}" aria-controls="contract-timeline" aria-pressed="true" disabled>{{ row.label }}</button>
+                                {% else %}{{ row.label }}{% endif %}
+                                {% if row.note %}<small class="d-block text-muted font-weight-normal">{{ row.note }}</small>{% endif %}
+                            </th>
+                            <td class="text-right">{{ row.display_days }}</td>
+                        </tr>{% endfor %}</tbody>
+                    </table>
+                </div>
                 {% endif %}
 
                 {% if contract_schedule.actual_completion_display %}
@@ -152,7 +156,7 @@
                 <p class="text-warning mb-1">The recorded original duration, approved change-order time, and current duration do not reconcile.</p>
                 {% endif %}
                 {% if contract_schedule.expected_end_reconciled is sameas false %}
-                <p class="text-warning mb-0">The recorded current expected end does not match Notice-to-Proceed plus the current contractual duration.</p>
+                <p class="text-warning mb-0">The revised expected completion date does not match Notice-to-Proceed plus the current contractual duration.</p>
                 {% endif %}
             </section>
 

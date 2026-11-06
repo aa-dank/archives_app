@@ -11,8 +11,8 @@ from sqlalchemy.orm import selectinload
 from archives_application import db, utils
 from archives_application.models import FileLocationModel, ProjectModel
 from archives_application.plotting import PLOTLY_CDN_URL
-from .contract_dates import recorded_contract_dates
-from .contract_timeline import build_contract_timeline
+from .contract_dates import contract_date_rows, recorded_contract_dates
+from .contract_timeline import build_contract_timeline, contract_duration_rows
 
 
 class ProjectInfoValidationError(ValueError):
@@ -62,7 +62,7 @@ MULTIPLE_CONTRACT_COLUMN_GROUPS = (
             ("noc_completion_date", "Notice of completion", "date", ""),
             ("noc_recorded_date", "Notice of completion recorded", "date", ""),
             ("termination_date", "Termination", "date", ""),
-            ("change_order_revised_expected_end", "Current expected end", "date", ""),
+            ("change_order_revised_expected_end", "Revised expected completion date", "date", ""),
         ),
     },
     {
@@ -406,11 +406,11 @@ def contract_schedule(contract) -> dict:
     if actual_variance_days is None:
         actual_variance_label = None
     elif actual_variance_days == 0:
-        actual_variance_label = "on the current expected end date"
+        actual_variance_label = "on the revised expected completion date"
     elif actual_variance_days < 0:
-        actual_variance_label = f"{abs(actual_variance_days)} calendar day{'s' if abs(actual_variance_days) != 1 else ''} before the current expected end"
+        actual_variance_label = f"{abs(actual_variance_days)} calendar day{'s' if abs(actual_variance_days) != 1 else ''} before the revised expected completion date"
     else:
-        actual_variance_label = f"{actual_variance_days} calendar day{'s' if actual_variance_days != 1 else ''} after the current expected end"
+        actual_variance_label = f"{actual_variance_days} calendar day{'s' if actual_variance_days != 1 else ''} after the revised expected completion date"
 
     return {
         "ntp_start": ntp_start,
@@ -554,6 +554,8 @@ def project_context(project, user_archives_location: str | None) -> dict:
         "contract_timeline": None,
         "plotly_js_url": PLOTLY_CDN_URL,
         "contract_dates": [],
+        "contract_date_rows": [],
+        "contract_duration_rows": [],
         "multiple_contract_column_groups": MULTIPLE_CONTRACT_COLUMN_GROUPS,
         "multiple_contract_rows": [],
     }
@@ -564,6 +566,8 @@ def project_context(project, user_archives_location: str | None) -> dict:
         context["contract_timeline"] = build_contract_timeline(
             contracts[0], context["contract_schedule"], recorded_dates=context["contract_dates"],
         )
+        context["contract_date_rows"] = contract_date_rows(context["contract_dates"], context["contract_timeline"])
+        context["contract_duration_rows"] = contract_duration_rows(contracts[0], context["contract_timeline"])
     elif contract_state == "multiple":
         context["multiple_contract_rows"] = multiple_contract_table(contracts)
     return context

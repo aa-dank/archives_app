@@ -2443,3 +2443,59 @@ destinations, modified clicks, history recovery, stale timer cancellation,
 canceled events, and browser-restored disabled controls. JavaScript syntax,
 all template parses, and diff checks passed. No browser screenshot was captured.
 Follow-on: deploy the new static file together with the updated templates.
+
+---
+
+## Entry 076 - Consolidate Project Info date and duration details
+**Date:** 2026-11-05
+**Author:** OpenAI Codex
+
+Moved duration-derived end references into the chronological contract date
+table, labeled Original end (calculated) and, when distinct from the recorded
+expected end, Revised end (calculated). Each row includes its short NTP +
+duration basis. Removed the separate reference paragraphs and authoritative-date
+footnote; timeline callouts use (calc.) instead of asterisks. Recorded dates,
+calculations, and the API are unchanged.
+
+The synced `change_order_revised_expected_end` date is now labeled Revised
+expected completion date throughout Project Info's single/multiple-contract
+tables, timeline hover/callouts, variance text, and consistency messages. The
+callout wraps onto two lines, with spacing accounting for its actual line count.
+Database/sync field names and API keys are unchanged.
+
+The date table also places small decorative color swatches beside milestone
+labels, matching the final plotted point and callout colors. Calculated rows
+use the same mapping, and coincident events share their grouped point's color.
+Text remains dark, and the two-column table keeps its existing behavior;
+no shape matching or date-row controls were added.
+
+Combined the timeline's Plotly legend, duration list, and before-NTP paragraph
+into one Duration and key table below the plot. Its calendar-day values include
+before-NTP coverage, original duration, approved change-order time, and the
+recorded current duration as a separated total. Only actual plotted segments
+receive matching color swatches and controls. The current total is normally
+uncolored but supplies the blue key when it is the fallback segment. Zero,
+negative, unavailable, and no-chart values remain readable without fictitious
+controls. Hiding a segment never changes its recorded value or date markers.
+
+Colored rows toggle their segment through native buttons with pressed state,
+mouse/keyboard support, focus retention, and duplicate-click suppression during
+updates. Controls enable after chart initialization and remain disabled after
+script/CDN failure while summary data stays visible. Removed the chart's internal
+legend and its reserved space. The archiving dashboard retains its own legend.
+
+Affected components: Project Info table helpers/page preparation/template/CSS,
+contract figure layout/labels, and shared `static/plotly_charts.js` initialization.
+Updated the feature specification. Verification: the consolidation passed 43
+focused timeline/dashboard tests; all 24 timeline cases passed again after the
+completion-label and date-color updates. Coverage includes chronological calculated
+rows, source retention, conditional references, key-to-trace mapping, fallback
+and zero-duration keys, and API isolation. Live-CDN desktop/mobile browser checks
+passed across complete, partial, coincident, dense, empty, and inconsistent
+records, plus the dashboard and blocked-CDN fallback. Checked row/button toggles,
+Space/Enter activation, pressed state, focus, layout, and zoom/reset. Refreshed
+screenshots/reports are in ignored `dev_files/contract_timeline_validation`.
+Template parses, Python compilation, JavaScript syntax, and diff checks passed;
+existing dependency warnings remain. Follow-on: deploy the Python/template/CSS
+and updated shared JavaScript together and restart web processes; no migration,
+dependency, or configuration change is required.
