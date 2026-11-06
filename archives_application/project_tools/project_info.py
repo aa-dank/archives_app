@@ -11,8 +11,7 @@ from sqlalchemy.orm import selectinload
 from archives_application import db, utils
 from archives_application.models import FileLocationModel, ProjectModel
 from archives_application.plotting import PLOTLY_CDN_URL
-from .contract_dates import contract_date_rows, recorded_contract_dates
-from .contract_timeline import build_contract_timeline, contract_duration_rows
+from .contract_timeline import build_contract_timeline, prepare_contract_timeline
 
 
 class ProjectInfoValidationError(ValueError):
@@ -350,59 +349,6 @@ def contract_schedule(contract) -> dict:
     if actual_completion is not None and expected_end is not None:
         actual_variance_days = (actual_completion - expected_end).days
 
-    components = []
-    if original_duration is not None:
-        components.append({
-            "label": "Original contract duration",
-            "value": _duration_display(original_duration),
-            "style": "original",
-        })
-    if change_order_time is not None:
-        components.append({
-            "label": "Approved change-order time",
-            "value": _duration_display(change_order_time, signed=True),
-            "style": "change-order",
-        })
-    if revised_duration is not None:
-        components.append({
-            "label": "Current contractual duration",
-            "value": _duration_display(revised_duration),
-            "style": None,
-        })
-
-    can_segment_bar = (
-        original_duration is not None
-        and change_order_time is not None
-        and revised_duration is not None
-        and original_duration >= 0
-        and change_order_time >= 0
-        and revised_duration > 0
-        and duration_reconciled
-    )
-    bar_segments = []
-    if can_segment_bar:
-        bar_segments = [
-            {
-                "label": "Original contract duration",
-                "days": original_duration,
-                "percent": (original_duration / revised_duration) * 100,
-                "style": "original",
-            },
-            {
-                "label": "Approved change-order time",
-                "days": change_order_time,
-                "percent": (change_order_time / revised_duration) * 100,
-                "style": "change-order",
-            },
-        ]
-    elif revised_duration is not None and revised_duration > 0:
-        bar_segments = [{
-            "label": "Current contractual duration",
-            "days": revised_duration,
-            "percent": 100,
-            "style": "current",
-        }]
-
     if actual_variance_days is None:
         actual_variance_label = None
     elif actual_variance_days == 0:
@@ -413,18 +359,11 @@ def contract_schedule(contract) -> dict:
         actual_variance_label = f"{actual_variance_days} calendar day{'s' if actual_variance_days != 1 else ''} after the revised expected completion date"
 
     return {
-        "ntp_start": ntp_start,
-        "ntp_start_display": _readable_date(ntp_start) if ntp_start else None,
-        "expected_end": expected_end,
-        "expected_end_display": _readable_date(expected_end) if expected_end else None,
         "actual_completion": actual_completion,
         "actual_completion_display": _readable_date(actual_completion) if actual_completion else None,
         "actual_variance_label": actual_variance_label,
         "duration_reconciled": duration_reconciled,
         "expected_end_reconciled": expected_end_reconciled,
-        "components": components,
-        "show_duration_key": can_segment_bar,
-        "bar_segments": bar_segments,
         "has_schedule_dates": ntp_start is not None and expected_end is not None,
     }
 
@@ -553,7 +492,6 @@ def project_context(project, user_archives_location: str | None) -> dict:
         "contract_schedule": None,
         "contract_timeline": None,
         "plotly_js_url": PLOTLY_CDN_URL,
-        "contract_dates": [],
         "contract_date_rows": [],
         "contract_duration_rows": [],
         "multiple_contract_column_groups": MULTIPLE_CONTRACT_COLUMN_GROUPS,
@@ -562,12 +500,10 @@ def project_context(project, user_archives_location: str | None) -> dict:
     if contract_state == "single":
         context["contract_groups"] = contract_fields(contracts[0])
         context["contract_schedule"] = contract_schedule(contracts[0])
-        context["contract_dates"] = recorded_contract_dates(contracts[0])
-        context["contract_timeline"] = build_contract_timeline(
-            contracts[0], context["contract_schedule"], recorded_dates=context["contract_dates"],
-        )
-        context["contract_date_rows"] = contract_date_rows(context["contract_dates"], context["contract_timeline"])
-        context["contract_duration_rows"] = contract_duration_rows(contracts[0], context["contract_timeline"])
+        timeline_data = prepare_contract_timeline(contracts[0], context["contract_schedule"])
+        context["contract_timeline"] = build_contract_timeline(timeline_data)
+        context["contract_date_rows"] = timeline_data["date_rows"]
+        context["contract_duration_rows"] = timeline_data["duration_rows"]
     elif contract_state == "multiple":
         context["multiple_contract_rows"] = multiple_contract_table(contracts)
     return context

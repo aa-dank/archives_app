@@ -6,92 +6,87 @@ import json
 import plotly.graph_objects as go
 from plotly.io import to_json
 
-from .contract_dates import recorded_contract_dates
+from .contract_dates import prepare_contract_dates
 
 
 MILLISECONDS_PER_DAY = 86400000
 
 
-def build_contract_timeline(
-    contract, schedule: dict, today: date | None = None, *, recorded_dates: list[dict] | None = None,
-) -> dict | None:
-    """Annotate one date axis with schedule milestones and duration references.
+def prepare_contract_timeline(contract, schedule: dict, today: date | None = None) -> dict:
+    """Prepare shared table/figure data without constructing or inspecting a figure."""
+    data = prepare_contract_dates(contract, today)
+    rows = []
+    if data["first_recorded_date"] is not None:
+        rows.append({
+            "id": "before_ntp", "label": "Before NTP", "days": data["before_ntp_days"],
+            "note": "From earliest recorded contract date" if data["before_ntp_days"] is not None
+                    else "NTP not recorded", "total": False,
+        })
+    for field, label, signed, total in (
+        ("original_project_duration", "Original contract duration", False, False),
+        ("change_order_time_total", "Approved change-order time", True, False),
+        ("change_order_revised_duration", "Current contractual duration", False, True),
+    ):
+        days = getattr(contract, field)
+        if days is not None:
+            rows.append({"id": field, "label": label, "days": days, "note": None,
+                         "signed": signed, "total": total})
 
-    Only the HTML page calls this helper. It consumes the existing reconciliation
-    and segment decisions without changing the project-info API's schedule data.
-    """
-    start = schedule["ntp_start"]
-    expected = schedule["expected_end"]
-    actual = schedule["actual_completion"]
-    original_days = contract.original_project_duration
-    revised_days = contract.change_order_revised_duration
-    original_end = (
-        start + timedelta(days=original_days)
-        if start is not None and original_days is not None and original_days >= 0 else None
+    original = contract.original_project_duration
+    change = contract.change_order_time_total
+    revised = contract.change_order_revised_duration
+    can_segment = (
+        original is not None and change is not None and revised is not None
+        and original >= 0 and change >= 0 and revised > 0 and schedule["duration_reconciled"]
     )
-    duration_end = (
-        start + timedelta(days=revised_days)
-        if start is not None and revised_days is not None and revised_days >= 0 else None
+    plotted = (
+        {"original_project_duration", "change_order_time_total"}
+        if can_segment else {"change_order_revised_duration"}
     )
-    recorded_dates = recorded_contract_dates(contract) if recorded_dates is None else recorded_dates
-    if not recorded_dates:
+    segments = []
+    segment_start = contract.ntp_start_date
+    for row in rows:
+        days = row["days"]
+        row["display_days"] = (
+            f"{days:+,}" if row.get("signed") and days > 0 else f"{days:,}"
+        ) if days is not None else "Unavailable"
+        row.update(trace_index=None, color=None)
+        if segment_start is None or days is None or days <= 0:
+            continue
+        if row["id"] == "before_ntp":
+            start = data["first_recorded_date"]
+            end = segment_start
+            color = "#9b8bb0"
+        elif row["id"] in plotted:
+            start = segment_start
+            end = start + timedelta(days=days)
+            color = "#d39e00" if row["id"] == "change_order_time_total" else "#5f788a"
+            segment_start = end
+        else:
+            continue
+        row.update(trace_index=len(segments), color=color)
+        segments.append({"id": row["id"], "label": row["label"], "days": days,
+                         "start": start, "end": end, "color": color})
+    return {**data, "segments": segments, "duration_rows": rows}
+
+
+def build_contract_timeline(data: dict) -> dict | None:
+    """Render prepared milestones and duration segments on a single date axis."""
+    if not data["milestones"]:
         return None
-
     fig = go.Figure()
-    dates = [event["date_value"] for event in recorded_dates]
-    first_recorded_date = min(dates)
-    before_ntp_days = (start - first_recorded_date).days if start is not None else None
-    if before_ntp_days:
+    dates = [milestone["date_value"] for milestone in data["milestones"]]
+    # Duration controls use this same prepared segment order as their trace indices.
+    for segment in data["segments"]:
         fig.add_trace(go.Bar(
-            orientation="h", y=[0], x=[before_ntp_days * MILLISECONDS_PER_DAY],
-            base=[first_recorded_date.isoformat()], width=6,
-            name="Before NTP", marker_color="#9b8bb0",
-            customdata=[[first_recorded_date.isoformat(), start.isoformat(), before_ntp_days]],
-            hovertemplate=("Before NTP<br>%{customdata[0]} – %{customdata[1]}"
+            orientation="h", y=[0], x=[segment["days"] * MILLISECONDS_PER_DAY],
+            base=[segment["start"].isoformat()], width=6,
+            name=segment["label"], marker_color=segment["color"],
+            customdata=[[segment["start"].isoformat(), segment["end"].isoformat(), segment["days"]]],
+            hovertemplate=("%{fullData.name}<br>%{customdata[0]} – %{customdata[1]}"
                            "<br>%{customdata[2]} calendar days<extra></extra>"),
         ))
-    if start is not None and schedule["bar_segments"]:
-        segment_start = start
-        for segment in schedule["bar_segments"]:
-            segment_end = segment_start + timedelta(days=segment["days"])
-            # A zero-day extension has no width; its recorded value stays in the summary.
-            if segment["days"] > 0:
-                fig.add_trace(go.Bar(
-                    orientation="h", y=[0], x=[segment["days"] * MILLISECONDS_PER_DAY],
-                    base=[segment_start.isoformat()], width=6,
-                    name=segment["label"],
-                    marker_color="#d39e00" if segment["style"] == "change-order" else "#5f788a",
-                    customdata=[[segment_start.isoformat(), segment_end.isoformat(), segment["days"]]],
-                    hovertemplate=(
-                        "%{fullData.name}<br>%{customdata[0]} – %{customdata[1]}"
-                        "<br>%{customdata[2]} calendar days<extra></extra>"
-                    ),
-                ))
-            dates.extend([segment_start, segment_end])
-            segment_start = segment_end
-
-    milestones = [
-        (event["date_value"], event["short_label"], event["label"], event["color"], event["symbol"])
-        for event in recorded_dates
-    ]
-    milestones.append((original_end, "Original end (calc.)", "Original end (NTP + original duration)",
-                       "#5f788a", "diamond-open"))
-    if duration_end is not None and duration_end != expected:
-        milestones.append((duration_end, "Revised end (calc.)", "Current end (NTP + current duration)",
-                           "#6c757d", "diamond-open"))
-    # Put every event on the same date axis. Coincident dates share one callout.
-    today_marker = None
-    if actual is None and contract.termination_date is None:
-        current_day = today if today is not None else date.today()
-        if current_day >= first_recorded_date:
-            today_marker = current_day
-            milestones.append((today_marker, "Today", "Today", "#a74036", "line-ns"))
-
-    events_by_date = {}
-    for value, short_label, label, color, symbol in milestones:
-        if value is not None:
-            dates.append(value)
-            events_by_date.setdefault(value, []).append((short_label, label, color, symbol))
+        dates.extend([segment["start"], segment["end"]])
 
     earliest, latest = min(dates), max(dates)
     padding = timedelta(days=max(3, (latest - earliest).days * 0.08))
@@ -100,21 +95,20 @@ def build_contract_timeline(
     lanes = []
     lane_heights = []
     callouts = []
-    milestone_colors = {value.isoformat(): events[-1][2] for value, events in events_by_date.items()}
-    for value, events in sorted(events_by_date.items()):
-        color = milestone_colors[value.isoformat()]
+    for milestone in data["milestones"]:
+        value, events, color = milestone["date_value"], milestone["events"], milestone["color"]
         fig.add_trace(go.Scatter(
-            x=[value.isoformat()], y=[0], name=" / ".join(event[1] for event in events),
-            mode="markers", marker={"color": color, "size": 13, "symbol": events[-1][3]},
+            x=[value.isoformat()], y=[0], name=" / ".join(event["hover_label"] for event in events),
+            mode="markers", marker={"color": color, "size": 13, "symbol": milestone["symbol"]},
             showlegend=False,
             hovertemplate=("<b>%{x|%b %d, %Y}</b><br>"
-                           + "<br>".join(event[1] for event in events) + "<extra></extra>"),
+                           + "<br>".join(event["hover_label"] for event in events) + "<extra></extra>"),
         ))
         position = (value - range_start).days / span
         anchor = "left" if position < 0.2 else "right" if position > 0.8 else "center"
         # Reserve label space for a narrow phone viewport as well as desktop.
         # Each lane can hold several callouts when their horizontal extents fit.
-        text_width = max(95, max(len(line) for event in events for line in event[0].split("<br>")) * 6.5) / 260
+        text_width = max(95, max(len(line) for event in events for line in event["short_label"].split("<br>")) * 6.5) / 260
         left = (position if anchor == "left" else position - text_width
                 if anchor == "right" else position - text_width / 2)
         right = left + text_width
@@ -124,7 +118,7 @@ def build_contract_timeline(
             lanes.append([])
             lane_heights.append(0)
         lanes[lane].append((left, right))
-        text_lines = sum(event[0].count("<br>") + 1 for event in events) + 1
+        text_lines = sum(event["short_label"].count("<br>") + 1 for event in events) + 1
         lane_heights[lane] = max(lane_heights[lane], text_lines * 15 + 6)
         callouts.append((value, events, color, anchor, lane))
 
@@ -141,7 +135,7 @@ def build_contract_timeline(
     for value, events, color, anchor, lane in callouts:
         fig.add_annotation(
             x=value.isoformat(), y=0, xref="x", yref="y",
-            text="<br>".join(event[0] for event in events) + f"<br><b>{value:%b %d, %Y}</b>",
+            text="<br>".join(event["short_label"] for event in events) + f"<br><b>{value:%b %d, %Y}</b>",
             showarrow=True, arrowhead=0, arrowwidth=1, arrowcolor=color,
             ax=0, ay=offsets[lane], axref="pixel", ayref="pixel", xanchor=anchor,
             font={"size": 11, "color": color}, bgcolor="rgba(255,255,255,0.95)", borderpad=3,
@@ -165,40 +159,4 @@ def build_contract_timeline(
     return {
         "figure": json.loads(to_json(fig)),
         "height": height,
-        "original_end": original_end,
-        "duration_end": duration_end if duration_end != expected else None,
-        "today": today_marker,
-        "first_recorded_date": first_recorded_date,
-        "before_ntp_days": before_ntp_days,
-        "milestone_colors": milestone_colors,
     }
-
-
-def contract_duration_rows(contract, timeline: dict | None) -> list[dict]:
-    """Build the duration summary and key from recorded values and actual bar traces."""
-    periods = []
-    if timeline is not None:
-        periods.append(("Before NTP", timeline["before_ntp_days"],
-                        "From earliest recorded contract date" if timeline["before_ntp_days"] is not None
-                        else "NTP not recorded", False, False))
-    for label, field, signed, total in (
-        ("Original contract duration", "original_project_duration", False, False),
-        ("Approved change-order time", "change_order_time_total", True, False),
-        ("Current contractual duration", "change_order_revised_duration", False, True),
-    ):
-        value = getattr(contract, field)
-        if value is not None:
-            periods.append((label, value, None, signed, total))
-    traces = timeline["figure"]["data"] if timeline is not None else []
-    rows = []
-    for label, days, note, signed, total in periods:
-        index = next((i for i, trace in enumerate(traces)
-                      if trace["type"] == "bar" and trace["name"] == label), None)
-        rows.append({
-            "label": label, "days": days,
-            "display_days": (f"{days:+,}" if signed and days > 0 else f"{days:,}")
-                            if days is not None else "Unavailable",
-            "note": note, "total": total, "trace_index": index,
-            "color": traces[index]["marker"]["color"] if index is not None else None,
-        })
-    return rows

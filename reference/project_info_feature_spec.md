@@ -162,6 +162,8 @@ Place the complete **Contract dates** table immediately before the timeline, usi
 
 A future document-date-mention density visualization may show frequently mentioned dates and the pace/rhythm of project paperwork, including projects without recorded contracts. It will require separate indexed file/date-mention aggregation, clear coverage and frequency definitions, and evaluation of aggregation cost and user value. It remains future work and must label extracted mentions distinctly from contract milestones.
 
+Prepare milestones, coincident-date styles, duration segments, and both tables before rendering the figure. Recorded and calculated milestones use the same event structure, with explicit calculation labels. The table and chart consume this shared data; table preparation must not inspect serialized Plotly traces. Identify duration segments by stable field identifiers and assign table-control trace indices from the prepared segment order, independently of display labels. Keep reconciliation available to the API without preparing or rendering the timeline.
+
 ## Integration changes
 
 After this route exists, change the CAAN detail page’s project-number column into a link to:

@@ -12,11 +12,12 @@ from archives_application import create_app, db
 from archives_application.models import CAANModel, ContractModel, ProjectCaanModel, ProjectModel, UserModel
 from archives_application.plotting import PLOTLY_CDN_URL
 from archives_application.project_tools import project_info as service
+from archives_application.project_tools import contract_timeline as timeline_module
 from archives_application.project_tools.contract_dates import (
-    CONTRACT_DATE_FIELDS, contract_date_rows, recorded_contract_dates,
+    CONTRACT_DATE_FIELDS, recorded_contract_dates,
 )
 from archives_application.project_tools.contract_timeline import (
-    build_contract_timeline, contract_duration_rows, MILLISECONDS_PER_DAY,
+    build_contract_timeline, prepare_contract_timeline, MILLISECONDS_PER_DAY,
 )
 
 
@@ -34,13 +35,45 @@ def contract_values(**overrides):
     }
 
 
-def timeline(**overrides):
+def timeline_data(**overrides):
     contract = SimpleNamespace(**contract_values(**overrides))
-    return build_contract_timeline(contract, service.contract_schedule(contract), today=TODAY)
+    return prepare_contract_timeline(contract, service.contract_schedule(contract), today=TODAY)
+
+
+def timeline(**overrides):
+    return build_contract_timeline(timeline_data(**overrides))
 
 
 def bars(result):
     return [trace for trace in result["figure"]["data"] if trace["type"] == "bar"]
+
+
+def test_tables_prepare_without_constructing_a_plotly_figure(monkeypatch):
+    def fail_figure(*args, **kwargs):
+        raise AssertionError("Preparing table data must not construct a figure")
+
+    monkeypatch.setattr(timeline_module.go, "Figure", fail_figure)
+    data = timeline_data(bid_date=START - timedelta(days=30))
+    assert [row["display_days"] for row in data["duration_rows"]] == ["30", "60", "+15", "75"]
+    assert [row["trace_index"] for row in data["duration_rows"]] == [0, 1, 2, None]
+    calculated = [row for row in data["date_rows"] if row["calculation"]]
+    assert [(row["label"], row["iso_date"]) for row in calculated] == [
+        ("Original end (calculated)", "2026-10-31"),
+    ]
+
+
+def test_duration_controls_keep_their_segments_when_display_labels_are_duplicated():
+    data = timeline_data()
+    for segment in data["segments"]:
+        segment["label"] = "Duration"
+    figure = build_contract_timeline(data)
+    keyed_rows = [row for row in data["duration_rows"] if row["trace_index"] is not None]
+    assert [row["id"] for row in keyed_rows] == ["original_project_duration", "change_order_time_total"]
+    for row in keyed_rows:
+        trace = figure["figure"]["data"][row["trace_index"]]
+        assert trace["name"] == "Duration"
+        assert trace["x"] == [row["days"] * MILLISECONDS_PER_DAY]
+        assert trace["marker"]["color"] == row["color"]
 
 
 def test_original_and_extension_have_real_date_bases_and_calendar_day_lengths():
@@ -51,8 +84,10 @@ def test_original_and_extension_have_real_date_bases_and_calendar_day_lengths():
     assert extension["base"] == ["2026-10-31"]
     assert extension["x"] == [15 * MILLISECONDS_PER_DAY]
     assert extension["customdata"] == [["2026-10-31", "2026-11-15", 15]]
-    assert result["original_end"] == date(2026, 10, 31)
-    assert result["duration_end"] is None
+    calculated = [row for row in timeline_data()["date_rows"] if row["calculation"]]
+    assert [(row["label"], row["date_value"]) for row in calculated] == [
+        ("Original end (calculated)", date(2026, 10, 31)),
+    ]
     assert result["figure"]["layout"]["xaxis"]["type"] == "date"
     today = next(note for note in result["figure"]["layout"]["annotations"] if note["text"].startswith("Today"))
     assert today["x"] == TODAY.isoformat()
@@ -78,7 +113,6 @@ def test_negative_missing_or_inconsistent_components_use_current_duration_fallba
 def test_recorded_end_stays_distinct_from_duration_derived_end():
     recorded = START + timedelta(days=85)
     result = timeline(change_order_revised_expected_end=recorded)
-    assert result["duration_end"] == START + timedelta(days=75)
     traces = {trace["name"]: trace for trace in result["figure"]["data"]}
     assert traces["Revised expected completion date"]["x"] == [recorded.isoformat()]
     assert traces["Current end (NTP + current duration)"]["x"] == ["2026-11-15"]
@@ -101,27 +135,25 @@ def test_coincident_milestones_share_callout_and_zero_extension_is_omitted():
     callouts = [note for note in result["figure"]["layout"]["annotations"] if note["x"] == "2026-10-31"]
     assert len(callouts) == 1
     assert all(label in callouts[0]["text"] for label in ("Original end (calc.)", "Revised expected<br>completion date", "Completed"))
-    contract = SimpleNamespace(**contract_values(**values))
-    rows = contract_date_rows(recorded_contract_dates(contract), result)
+    rows = timeline_data(**values)["date_rows"]
     coincident = [row for row in rows if row["iso_date"] == "2026-10-31"]
     assert len(coincident) == 3
     assert all(row["marker_color"] == endpoints[0]["marker"]["color"] for row in coincident)
-    assert result["today"] is None
+    assert all("Today" not in trace["name"] for trace in result["figure"]["data"])
     assert "shapes" not in result["figure"]["layout"]
 
 
 def test_termination_without_noc_completion_does_not_show_today():
     result = timeline(termination_date=date(2026, 10, 1))
-    assert result["today"] is None
+    assert all("Today" not in trace["name"] for trace in result["figure"]["data"])
 
 
 def test_partial_dates_show_only_supported_milestones_and_no_invented_start():
     result = timeline(ntp_start_date=None)
     assert not bars(result)
-    assert result["original_end"] is None
+    assert not any(row["calculation"] for row in timeline_data(ntp_start_date=None)["date_rows"])
     assert {trace["name"] for trace in result["figure"]["data"]} == {"Revised expected completion date"}
     result = timeline(change_order_revised_expected_end=None)
-    assert result["duration_end"] == START + timedelta(days=75)
     assert all(trace["name"] != "Revised expected completion date" for trace in result["figure"]["data"])
 
 
@@ -143,12 +175,12 @@ def test_timeline_includes_every_recorded_date_in_chronological_range():
     values = {field: START + timedelta(days=index - 5) for index, (field, *_) in enumerate(CONTRACT_DATE_FIELDS)}
     contract = SimpleNamespace(**contract_values(**values))
     events = recorded_contract_dates(contract)
-    result = build_contract_timeline(contract, service.contract_schedule(contract), today=TODAY,
-                                     recorded_dates=events)
+    data = prepare_contract_timeline(contract, service.contract_schedule(contract), today=TODAY)
+    result = build_contract_timeline(data)
     markers = [trace for trace in result["figure"]["data"] if trace["type"] == "scatter"]
     for event in events:
         assert any(trace["x"] == [event["iso_date"]] and event["label"] in trace["hovertemplate"] for trace in markers)
-    assert result["first_recorded_date"] == min(values.values())
+    assert data["first_recorded_date"] == min(values.values())
     assert date.fromisoformat(result["figure"]["layout"]["xaxis"]["range"][0]) <= min(values.values())
 
 
@@ -159,15 +191,17 @@ def test_before_ntp_interval_starts_at_earliest_recorded_date():
     assert before["base"] == [(START - timedelta(days=180)).isoformat()]
     assert before["x"] == [180 * MILLISECONDS_PER_DAY]
     assert before["customdata"][0][1] == START.isoformat()
-    assert result["before_ntp_days"] == 180
-    assert result["first_recorded_date"] == START - timedelta(days=180)
+    before_row = timeline_data(bid_date=START - timedelta(days=180))["duration_rows"][0]
+    assert before_row["days"] == 180
 
 
 def test_history_only_still_plots_without_ntp_and_cannot_invent_before_ntp_duration():
     result = timeline(ntp_start_date=None, change_order_revised_expected_end=None,
                       bid_date=START - timedelta(days=100), contract_date=START - timedelta(days=50))
     assert result is not None
-    assert result["before_ntp_days"] is None
+    data = timeline_data(ntp_start_date=None, change_order_revised_expected_end=None,
+                         bid_date=START - timedelta(days=100), contract_date=START - timedelta(days=50))
+    assert data["duration_rows"][0]["display_days"] == "Unavailable"
     assert not bars(result)
     assert any(trace["name"] == "Bid" for trace in result["figure"]["data"])
 
@@ -175,7 +209,7 @@ def test_history_only_still_plots_without_ntp_and_cannot_invent_before_ntp_durat
 def test_today_does_not_extend_the_timeline_before_future_contract_records():
     result = timeline(ntp_start_date=None, change_order_revised_expected_end=None,
                       bid_date=TODAY + timedelta(days=60))
-    assert result["today"] is None
+    assert all("Today" not in trace["name"] for trace in result["figure"]["data"])
 
 
 @pytest.mark.parametrize("overrides,colored_labels", [
@@ -187,8 +221,9 @@ def test_today_does_not_extend_the_timeline_before_future_contract_records():
 ])
 def test_duration_key_colors_only_plotted_segments_and_keeps_recorded_values(overrides, colored_labels):
     contract = SimpleNamespace(**contract_values(**overrides))
-    figure = timeline(**overrides)
-    rows = contract_duration_rows(contract, figure)
+    data = timeline_data(**overrides)
+    figure = build_contract_timeline(data)
+    rows = data["duration_rows"]
     assert [row["label"] for row in rows if row["color"]] == colored_labels
     assert [row["days"] for row in rows] == [
         0, contract.original_project_duration, contract.change_order_time_total,
@@ -333,6 +368,7 @@ def test_api_retains_recorded_schedule_contract_without_building_a_figure(app, m
         raise AssertionError("Project API must not build a chart")
 
     monkeypatch.setattr(service, "build_contract_timeline", fail_figure)
+    monkeypatch.setattr(service, "prepare_contract_timeline", fail_figure)
     client = app.test_client()
     with client.session_transaction() as session:
         session["_user_id"] = "1"
