@@ -3189,7 +3189,7 @@ def archives_search():
         )
             
 
-@archiver.route("/api/scrape_location", methods=['GET', 'POST'])      
+@archiver.route("/api/scrape_location", methods=['GET', 'POST'])
 @archiver.route("/scrape_location", methods=['GET', 'POST'])
 def scrape_location():
     """Initiates scraping of a specific file server location to synchronize with the database.
