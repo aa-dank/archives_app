@@ -1747,6 +1747,71 @@ original secrets and require restricted storage until deliberately retired.
 
 ---
 
+## Entry 058A - Interactive Plotly archiving dashboard
+**Date:** 2026-10-20
+**Author:** OpenAI Codex
+
+Replaced collective and individual archiving-dashboard PNGs with responsive
+Plotly figures: grouped file-count and archived-MB bars, plus daily rolling
+averages on independent, automatically scaled y-axes. Aggregated bars no longer
+clip against limits calculated from daily values. The dashboard supports hover,
+zoom/reset, and legend controls and reports empty selected intervals explicitly.
+Chart calculations and figure construction now live in `timekeeper/charts.py`;
+the route retrieves only timestamps, byte sizes, and archivist IDs for charts.
+The dashboard no longer writes temporary images or adds chart paths to sessions.
+
+Rolling averages now cover consecutive calendar days, including weekend activity
+and zero-activity days. Fetching N - 1 preceding days supplies the first visible
+N-day average; that history never enters displayed bars. Displayed inclusive
+range length selects daily bars through 90 days, three-day bars through 270,
+and seven-day bars thereafter, anchored at the selected start with a partial
+final bin. Charts and spreadsheets both use inclusive selected dates through
+an exclusive next-day-midnight bound, fixing end-day and fractional-second
+omissions. All-time summary metrics, export columns/path conversion, and role
+restrictions remain; missing archivists now return 404, and authorization checks
+use the authenticated user ID directly. Displayed date headings use ISO dates.
+Volume retains the existing bytes / 1024**2 conversion and MB label.
+
+Affected runtime components: timekeeper dashboard/export route, chart helpers,
+dashboard template/CSS/JavaScript, and the shared layout's page-script block.
+Figure data passes through Plotly serialization and Jinja `tojson`. Both charts
+share one versioned Plotly.js 4.1.1 bundle from Plotly's official CDN, matching
+locked Python Plotly 7.1.0. The CDN URL uses the installed package's public
+`get_plotlyjs_version()`; other pages do not load it. At the user's direction,
+removed the initially prepared local bundle, generator, and generated filename
+reference. Browsers require HTTPS access to `cdn.plot.ly`. Removed Matplotlib,
+Seaborn,
+and their unused dependencies; retained NumPy as a direct dependency. Existing
+remaining package versions were preserved. Regenerated `uv.lock` and Docker's
+production-only requirements export and synced the development environment.
+Development documents dependency updates, CDN version matching, and rollout.
+
+Verification: all 149 regression tests passed; the opt-in live Redis contract
+test was skipped. Nineteen new cases cover calendar averages, history isolation,
+aggregation thresholds/partial bins, end-day export parity, axes/grouping,
+empty and zero-byte data, safe serialization, CDN version matching and script
+ordering, defaults, and authorization. Chromium checks using the live Plotly
+CDN on 1440px desktop and 390px mobile layouts
+verified hover, legend toggling, zoom/reset, grouped bars, unclipped weekly
+totals, zero-volume axes, responsive sizing, and one shared bundle request, with
+no JavaScript errors. Screenshots and local benchmark/browser reports are in
+ignored `dev_files/plotly_validation`. All templates parsed; Python/JavaScript
+syntax, lock consistency, installed-package compatibility, requirements dry-run,
+and `git diff --check` passed. Existing pandas/SQLAlchemy warnings remain.
+
+A synthetic SQLite dataset of 100,000 archive records yielded warm full-page
+responses of approximately 0.15–0.99 seconds across 31-, 365-, and 1,825-day
+selections, with 41–385 KB HTML responses excluding the shared JS bundle.
+Caching remains deferred pending representative deployment measurements. No
+database migration, production data change, or contract-schedule change is part
+of this release. Follow-on: deploy the updated Python code/dependencies and
+local chart initializer and restart web processes; confirm browser access to
+the Plotly CDN and measure the real PostgreSQL query
+and browser performance before adding caching. Docker build validation remains
+outstanding because Docker Desktop WSL integration is unavailable here.
+
+---
+
 ## Entry 058 - Align worker task model with migrated schema
 **Date:** 2026-10-22
 **Author:** OpenAI Codex
@@ -2238,3 +2303,229 @@ and Project Search. The remaining links retain their existing order. Affected
 runtime component: the shared `layout.html` template. Verification: rendered the
 layout and checked link order for anonymous and authenticated users; diff checks
 passed. No operational follow-on is required.
+
+---
+
+## Entry 072 - Upload form visual grouping and destination-choice cues
+**Date:** 2026-11-02
+**Author:** OpenAI Codex
+
+Updated Upload File and Inbox Item archiving forms to improve clarity without
+changing validation or archive behavior. Upload File now uses two visually
+grouped sections (File Details and Archive Destination) instead of a double
+horizontal rule. Both forms now present destination choice as Option A
+(Project Number + Filing Code) versus Option B (Direct destination path) with
+an explicit OR divider and concise helper text; Inbox Item keeps shorter copy
+for experienced users. Document details on Inbox Item now use the same card
+style grouping as Upload File for consistent scanning. Upload File also now
+includes the Filing code guide link so both workflows expose the same quick
+reference.
+
+Affected runtime components: Upload File and Inbox Item templates, plus shared
+CSS for form grouping/choice presentation.
+Verification: template parse and diff review confirmed unchanged field names,
+error-display wiring, and submit behavior. Changes are presentational and
+copy-only with no database, API, or filesystem behavior change.
+
+---
+
+## Entry 073 - Align Batch Process Inbox with archiving form UX
+**Date:** 2026-11-05
+**Author:** OpenAI Codex
+
+Updated Batch Process Inbox to use the same visual grouping and destination
+choice cues as Upload File and Inbox Item. The page now uses a compact intro
+panel with archiving guide links, grouped file-selection and notes sections,
+and an Archive destination section that explicitly presents Option A
+(Project + Filing Code) versus Option B (Direct destination path) with an OR
+divider. Added the Filing code guide link to the batch destination controls.
+
+Affected runtime component: Batch Process Inbox template.
+Verification: template parse and diff review confirmed unchanged field names,
+validation wiring, and submit behavior. Changes are presentational/copy-only
+with no database, API, or filesystem behavior change.
+
+---
+
+## Entry 073 - Project Info contract chronology with Plotly
+**Date:** 2026-11-02 to 2026-11-03
+**Author:** OpenAI Codex
+
+Replaced the single-contract Project Info duration strip with an interactive
+Plotly timeline covering all ten recorded contract date fields, from bid and
+contract through occupancy, completion, recording, termination, and expected
+end. A shared chronological event list feeds the complete table immediately
+above the plot and its date markers, replacing the supplementary-date table.
+Thin duration segments and all markers share one horizontal date axis. Nearby
+callouts stagger above/below the line; coincident events retain separate table
+rows and share a complete callout/hover detail. Label heights and chart sizing
+accommodate dense records and narrow screens.
+
+The timeline includes the earliest recorded date and highlights its interval
+to NTP in purple, with a calendar-day count. This measures recorded coverage
+before NTP without asserting a physical construction-start date or calculating
+a project percentage. Original duration and approved extensions use the existing
+reconciliation rules and current-duration fallback; zero-day extensions remain
+in text without empty legend entries. Calculated end references stay explicitly
+labeled, and conflicting recorded ends never stretch bars or replace source
+values. Retained duration summaries, completion variance, and consistency
+warnings for printing, accessibility, and script failure.
+
+Any recorded date can support a partial timeline without NTP. Today uses the
+application-local date for contracts without completion or termination and
+cannot extend the axis before the first recorded date. All-missing dates and
+zero/multiple-contract views load no chart scripts. The project-info API and
+existing multiple-contract table retain their contracts.
+
+Affected components: Project Info page preparation/template/CSS,
+`project_tools/contract_dates.py`, `project_tools/contract_timeline.py`, and
+shared chart embedding. Figure construction stays in the HTML presentation
+path. Shared CDN settings live in `plotting.py`; the renamed
+`static/plotly_charts.js` initializes both the timeline and archiving dashboard
+from safely serialized data. Updated feature/development references. No
+schema, dependency, archive-filesystem, Docker, configuration, or synchronization
+change is required.
+
+Verification: the initial full suite passed 251 tests with three opt-in service
+checks skipped; final focused timeline/dashboard/project-search checks passed
+54 tests, including 21 timeline cases. Coverage includes source-date completeness,
+table/plot parity, chronological extent, pre-NTP arithmetic, missing/future dates,
+reconciliation fallbacks, conditional CDN loading, and API isolation. Live-CDN
+Chromium checks passed at 1440px and 390px for complete, partial/history-only,
+empty, coincident, dense, and inconsistent records plus both dashboard figures.
+Verified callout bounds/non-overlap, hover, legend controls, zoom/reset, and
+blocked-CDN text fallback, with no JavaScript errors. Template parses,
+Python/JavaScript syntax, and diff checks passed; existing dependency warnings
+remain. Screenshots/reports are in ignored
+`dev_files/contract_timeline_validation`. Follow-on: deploy the Python,
+template/CSS, and renamed initializer together and restart web processes;
+retain browser access to the existing Plotly CDN. No migration is required.
+
+---
+
+## Entry 074 - Fresh search loading feedback
+**Date:** 2026-11-04
+**Author:** OpenAI Codex
+
+The Archive Search results page's Run fresh search action now immediately shows
+Searching... and becomes disabled while navigation is pending. It uses the same
+350 ms rendering delay as the Archive Search form and ignores repeat clicks.
+Modified clicks retain native link behavior. Affected runtime component:
+`archive_search_results.html`; the existing refresh URL and search settings
+remain intact.
+
+Verification: all 101 cache/shareable-search-URL tests passed. JavaScript checks
+confirmed immediate feedback, disabled state, repeat-click suppression, delayed
+navigation to the original URL, and native modified clicks; diff checks passed.
+No browser screenshot was captured. No operational follow-on is required.
+
+---
+
+## Entry 075 - Shared search loading behavior and history recovery
+**Date:** 2026-11-04
+**Author:** OpenAI Codex
+
+Archive Search, CAAN Search, Project Search, and Run fresh search now use the
+shared `static/search_loading.js` handler, loaded by `layout.html`. Each action
+immediately displays Searching..., disables its control, and suppresses repeat
+requests. All four use Archive Search's existing 350 ms rendering pause before
+submitting or navigating; this adds the same pause to CAAN and Project Search.
+Native form validation and modified fresh-search link clicks remain intact.
+
+Page hide/show handlers restore each control's original label and enabled state
+for Back/Forward navigation and cancel pending timers to prevent stale searches
+after restoration. Affected runtime components: the four search templates,
+shared layout, and shared JavaScript. No backend search or data changes.
+
+Verification: all 115 cache, shareable-URL, and project-search tests passed.
+JavaScript checks covered form/link loading, duplicate suppression, original
+destinations, modified clicks, history recovery, stale timer cancellation,
+canceled events, and browser-restored disabled controls. JavaScript syntax,
+all template parses, and diff checks passed. No browser screenshot was captured.
+Follow-on: deploy the new static file together with the updated templates.
+
+---
+
+## Entry 076 - Consolidate Project Info date and duration details
+**Date:** 2026-11-05
+**Author:** OpenAI Codex
+
+Moved duration-derived end references into the chronological contract date
+table, labeled Original end (calculated) and, when distinct from the recorded
+expected end, Revised end (calculated). Each row includes its short NTP +
+duration basis. Removed the separate reference paragraphs and authoritative-date
+footnote; timeline callouts use (calc.) instead of asterisks. Recorded dates,
+calculations, and the API are unchanged.
+
+The synced `change_order_revised_expected_end` date is now labeled Revised
+expected completion date throughout Project Info's single/multiple-contract
+tables, timeline hover/callouts, variance text, and consistency messages. The
+callout wraps onto two lines, with spacing accounting for its actual line count.
+Database/sync field names and API keys are unchanged.
+
+The date table also places small decorative color swatches beside milestone
+labels, matching the final plotted point and callout colors. Calculated rows
+use the same mapping, and coincident events share their grouped point's color.
+Text remains dark, and the two-column table keeps its existing behavior;
+no shape matching or date-row controls were added.
+
+Combined the timeline's Plotly legend, duration list, and before-NTP paragraph
+into one Duration and key table below the plot. Its calendar-day values include
+before-NTP coverage, original duration, approved change-order time, and the
+recorded current duration as a separated total. Only actual plotted segments
+receive matching color swatches and controls. The current total is normally
+uncolored but supplies the blue key when it is the fallback segment. Zero,
+negative, unavailable, and no-chart values remain readable without fictitious
+controls. Hiding a segment never changes its recorded value or date markers.
+
+Colored rows toggle their segment through native buttons with pressed state,
+mouse/keyboard support, focus retention, and duplicate-click suppression during
+updates. Controls enable after chart initialization and remain disabled after
+script/CDN failure while summary data stays visible. Removed the chart's internal
+legend and its reserved space. The archiving dashboard retains its own legend.
+
+Affected components: Project Info table helpers/page preparation/template/CSS,
+contract figure layout/labels, and shared `static/plotly_charts.js` initialization.
+Updated the feature specification. Verification: the consolidation passed 43
+focused timeline/dashboard tests; all 24 timeline cases passed again after the
+completion-label and date-color updates. Coverage includes chronological calculated
+rows, source retention, conditional references, key-to-trace mapping, fallback
+and zero-duration keys, and API isolation. Live-CDN desktop/mobile browser checks
+passed across complete, partial, coincident, dense, empty, and inconsistent
+records, plus the dashboard and blocked-CDN fallback. Checked row/button toggles,
+Space/Enter activation, pressed state, focus, layout, and zoom/reset. Refreshed
+screenshots/reports are in ignored `dev_files/contract_timeline_validation`.
+Template parses, Python compilation, JavaScript syntax, and diff checks passed;
+existing dependency warnings remain. Follow-on: deploy the Python/template/CSS
+and updated shared JavaScript together and restart web processes; no migration,
+dependency, or configuration change is required.
+
+---
+
+## Entry 077 - Share archiving forms and submission feedback
+**Date:** 2026-11-06
+**Author:** OpenAI Codex
+
+Upload File, Inbox Item, and Batch Process Inbox now share destination fields
+and project-number validation through a base form, plus control/error rendering
+and destination markup through Jinja macros. Page-specific labels, help text,
+field names, filing-code choices, upload requirements, and download actions
+remain intact.
+
+Inbox Item and Batch Process Inbox use `static/archive_loading.js` instead of
+duplicate inline scripts. Archiving immediately shows Archiving... and disables
+the button, retains the 500 ms submission delay, and suppresses repeat requests.
+Page hide/show cancels pending timers and restores controls for Back/Forward
+navigation. Download Copy bypasses this feedback and retains its submitter
+value. Upload File's submission behavior is unchanged.
+
+Verification: 16 focused tests passed for validation, required uploads, download
+actions, preserved field values, escaped errors, and template wiring. Chromium
+checks passed for validation, delayed/repeated/canceled submissions, submissions
+without an explicit submitter, history recovery, and Download Copy. Normal form
+markup and desktop/mobile screenshots matched the previous versions for all
+three pages. Previews/reports are in ignored `dev_files/archive_forms_validation`.
+Template parsing, Python compilation, JavaScript syntax, and diff checks passed;
+existing dependency warnings remain. Follow-on: deploy the base form, templates,
+macro, and new script together. No database, archive-filesystem, API, dependency,
+or configuration change is required.

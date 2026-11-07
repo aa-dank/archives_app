@@ -3188,9 +3188,9 @@ def archives_search():
             app_obj=flask.current_app
         )
             
-      
-@archiver.route("/scrape_location", methods=['GET', 'POST'])
+
 @archiver.route("/api/scrape_location", methods=['GET', 'POST'])
+@archiver.route("/scrape_location", methods=['GET', 'POST'])
 def scrape_location():
     """Initiates scraping of a specific file server location to synchronize with the database.
 
@@ -3308,18 +3308,18 @@ def scrape_location():
         if form.validate_on_submit() or (not form_request and request_is_authenticated):
             # Get parameters from form or request
             if form_request:
-                scrape_location_path = form.scrape_location.data
+                scrape_target_path = form.target_path.data
                 recursive = form.recursive.data
             else:
-                scrape_location_path = utils.FlaskAppUtils.retrieve_request_param('scrape_location')
+                scrape_target_path = utils.FlaskAppUtils.retrieve_request_param('scrape_location')
                 recursive = utils.FlaskAppUtils.retrieve_request_param(
                     'recursive', default_value=True, param_is_bool=True
                 )
                 
-                if not scrape_location_path:
+                if not scrape_target_path:
                     return flask.Response("Missing required parameter: scrape_location", status=400)
             
-            search_location = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=scrape_location_path,
+            search_location = utils.FlaskAppUtils.user_path_to_app_path(path_from_user=scrape_target_path,
                                                                         app=flask.current_app)
             
             scrape_params = {'scrape_location': search_location,

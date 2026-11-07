@@ -1,7 +1,8 @@
 {% extends "layout.html" %}
+{% from "macros/archive_forms.html" import control, destination_fields %}
 {% block content %}
     <div class="content-section inbox-archive-page">
-        <form method="POST" action="" enctype="multipart/form-data" id="archive-form-main">
+        <form method="POST" action="" enctype="multipart/form-data" id="archive-form-main" data-archive-loading>
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Inbox Item to Archive</legend>
@@ -36,109 +37,35 @@
                 </section>
 
                 <section class="inbox-form-section" aria-labelledby="inbox-document-details-heading">
-                    <h2 class="h5" id="inbox-document-details-heading">Document details <span class="text-muted font-weight-normal">(optional)</span></h2>
-                <div class="form-group">
-                    {{ form.new_filename.label(class="form-control-label") }}
-                    {% if form.new_filename.errors %}
-                        {{ form.new_filename(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.new_filename.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
+                    <h2 class="h5 mb-3" id="inbox-document-details-heading">Document details <span class="text-muted font-weight-normal">(optional)</span></h2>
+                    <div class="upload-form-cluster">
+                        <div class="form-group">
+                            {{ form.new_filename.label(class="form-control-label") }}
+                            {{ control(form.new_filename) }}
                         </div>
-                    {% else %}
-                        {{ form.new_filename(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
-                <div class="form-group">
-                    {{ form.notes.label(class="form-control-label") }}
-                    <p class="form-text text-muted">Use notes to document file issues or archiving context.</p>
-                    {% if form.notes.errors %}
-                        {{ form.notes(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.notes.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
+                        <div class="form-group mb-0">
+                            {{ form.notes.label(class="form-control-label") }}
+                            <p class="form-text text-muted">Use notes to document file issues or archiving context.</p>
+                            {{ control(form.notes) }}
                         </div>
-                    {% else %}
-                        {{ form.notes(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
+                    </div>
                 </section>
 
                 <section class="inbox-form-section" aria-labelledby="inbox-destination-heading">
-                <h2 class="h5" id="inbox-destination-heading">Archive destination</h2>
-                <p class="text-muted">Enter a project number and filing code, or use a complete destination path instead.</p>
-                <div class="form-group">
-                    {{ form.project_number.label(class="form-control-label") }}
-                    {% if form.project_number.errors %}
-                        {{ form.project_number(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.project_number.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.project_number(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
-                <div class="form-group">
-                    <div class="d-flex justify-content-between align-items-baseline flex-wrap">
-                        {{ form.destination_directory.label(class="form-control-label") }}
-                        <a class="small" href="https://docs.google.com/document/d/1d_jiqWVc1ySuVxibfX-QCRPOzY6DB71GAZFrNqBisVo/edit?usp=sharing">Filing code guide</a>
-                    </div>
-                    {% if form.destination_directory.errors %}
-                        {{ form.destination_directory(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.destination_directory.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.destination_directory(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
-                <div class="form-group">
-                    {{ form.destination_path.label(class="form-control-label") }}
-                    <p class="form-text text-muted">Use a complete user-facing path for non-project files or a custom folder structure.</p>
-                    {% if form.destination_path.errors %}
-                        {{ form.destination_path(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.destination_path.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.destination_path(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
+                    <h2 class="h5 mb-3" id="inbox-destination-heading">Archive destination</h2>
+                    <p class="text-muted mb-3">Use one method.</p>
+
+                    {{ destination_fields(form, heading_labels=false, muted_help=true) }}
                 </section>
             </fieldset>
             <div class="form-group">
-                {{ form.submit(class="btn btn-info", id="archive-button") }}
+                {{ form.submit(class="btn btn-info", id="archive-button", data_archive_submit="") }}
             </div>
         </form>
     </div>
 
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        var archiveForm = document.getElementById('archive-form-main');
-        if (archiveForm) {
-            archiveForm.addEventListener('submit', function(event) {
-                // Only change button text if it's not the download button that was clicked
-                if (!event.submitter || event.submitter.id !== 'download_item') {
-                    var button = document.getElementById('archive-button');
-                    if (button) {
-                        button.value = 'Archiving...';  // Change button text
-                        // Disable button to prevent double submission
-                        setTimeout(() => button.disabled = true, 10);
-                    }
-                    // Delay form submission to allow button text change
-                    event.preventDefault();
-                    setTimeout(() => HTMLFormElement.prototype.submit.call(archiveForm), 500);
-                }
-            });
-        }
-    });
-</script>
 {% endblock content %}
+
+{% block scripts %}
+    <script defer src="{{ url_for('static', filename='archive_loading.js') }}"></script>
+{% endblock scripts %}

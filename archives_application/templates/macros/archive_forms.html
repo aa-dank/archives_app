@@ -1,0 +1,42 @@
+{% macro control(field) -%}
+    {{ field(class="form-control form-control-lg" ~ (" is-invalid" if field.errors else "")) }}
+    {% if field.errors %}
+    <div class="invalid-feedback">
+        {% for error in field.errors %}
+        <span>{{ error }}</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+{%- endmacro %}
+
+{% macro destination_fields(form, heading_labels=true, muted_help=false,
+    path_help="Use this when a file does not map to a project/filing code or needs a custom subdirectory. Non-existant directories will be created automatically.") -%}
+    <div class="upload-choice-block">
+        <h6 class="upload-choice-heading">Option A: Project + Filing Code</h6>
+        <div class="form-group">
+            {% if heading_labels %}<h5>{{ form.project_number.label(class="form-control-label") }}</h5>
+            {% else %}{{ form.project_number.label(class="form-control-label") }}{% endif %}
+            {{ control(form.project_number) }}
+        </div>
+        <div class="form-group mb-0">
+            <div class="d-flex justify-content-between align-items-baseline flex-wrap">
+                {% if heading_labels %}<h5 class="mb-0">{{ form.destination_directory.label(class="form-control-label") }} (Filing Code)</h5>
+                {% else %}{{ form.destination_directory.label(class="form-control-label") }}{% endif %}
+                <a class="small" href="https://docs.google.com/document/d/1d_jiqWVc1ySuVxibfX-QCRPOzY6DB71GAZFrNqBisVo/edit?usp=sharing">Filing code guide</a>
+            </div>
+            {{ control(form.destination_directory) }}
+        </div>
+    </div>
+
+    <div class="upload-choice-divider">OR</div>
+
+    <div class="upload-choice-block mb-0">
+        <h6 class="upload-choice-heading">Option B: Direct destination path</h6>
+        <div class="form-group mb-0">
+            {% if heading_labels %}<h5>{{ form.destination_path.label(class="form-control-label") }}</h5>
+            {% else %}{{ form.destination_path.label(class="form-control-label") }}{% endif %}
+            <p{% if muted_help %} class="form-text text-muted"{% endif %}>{{ path_help }}</p>
+            {{ control(form.destination_path) }}
+        </div>
+    </div>
+{%- endmacro %}

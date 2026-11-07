@@ -1,97 +1,43 @@
 {% extends "layout.html" %}
+{% from "macros/archive_forms.html" import control, destination_fields %}
 {% block content %}
     <div class="content-section">
         <form method="POST" action="" enctype="multipart/form-data">
             {{ form.hidden_tag() }}
             <fieldset class="form-group">
                 <legend class="border-bottom mb-4">Upload File</legend>
-                <h3>Instructions:</h3>
-                <p>Enter a project number and choose a destination directory (filing code). Alternatively, enter a complete destination path (likely copied from Windows File Explorer) for the file to be archived. This is useful for archiving non‑project files or placing files within additional folder structure. Any missing intermediate directories in the destination path will be created automatically.</p>
-                <div class="form-group">
-                    <h5>{{ form.upload.label(class="form-control-file") }}</h5>
-                    {% if form.upload.errors %}
-                        {{ form.upload(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.upload.errors %}
-                                <span class="text-danger">{{ error }}</span></br>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.upload(class="form-control form-control-lg") }}
-                    {% endif %}
+                <div class="upload-form-intro mb-3">
+                    <h3>Instructions</h3>
+                    <ul class="mb-0">
+                        <li>Upload the file and optional file details.</li>
+                        <li>Choose one destination method under Archive Destination.</li>
+                        <li>Missing folders in a direct destination path are created automatically.</li>
+                    </ul>
                 </div>
-                <div class="form-group">
-                    <h5>{{ form.new_filename.label(class="form-control-label") }} (Optional)</h5>
-                    {% if form.new_filename.errors %}
-                        {{ form.new_filename(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.new_filename.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.new_filename(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
-                <div class="form-group">
-                    <h5>{{ form.notes.label(class="form-control-label") }} (Optional)</h5>
-                    <p>Useful for documenting any issues with the file.</p>
-                    {% if form.notes.errors %}
-                        {{ form.notes(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.notes.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.notes(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
-                <hr>
-                <hr>
-                <h6>Either enter a...</h6>
-                <div class="form-group">
-                    <h5>{{ form.project_number.label(class="form-control-label") }}</h5>
-                    {% if form.project_number.errors %}
-                        {{ form.project_number(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.project_number.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.project_number(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
-                <h6>..and choose a...</h6>
-                <div class="form-group">
-                    <h5>{{ form.destination_directory.label(class="form-control-label") }} (ie "Filing Code")</h5>
-                    {% if form.destination_directory.errors %}
-                        {{ form.destination_directory(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.destination_directory.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.destination_directory(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
-                <h6>...or enter a full path to the archiving destination directory:</h6>
-                <div class="form-group">
-                    <h5>{{ form.destination_path.label(class="form-control-label") }}</h5>
-                    <p>Useful for archiving a file that doesn't have a corresponding project or that needs to be archived in a custom directory.</p>
-                    {% if form.destination_path.errors %}
-                        {{ form.destination_path(class="form-control form-control-lg is-invalid") }}
-                        <div class="invalid-feedback">
-                            {% for error in form.destination_path.errors %}
-                                <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        {{ form.destination_path(class="form-control form-control-lg") }}
-                    {% endif %}
-                </div>
+
+                <section class="upload-form-cluster">
+                    <h4 class="upload-form-cluster-title">File Details</h4>
+                    <div class="form-group">
+                        <h5>{{ form.upload.label(class="form-control-file") }}</h5>
+                        {{ control(form.upload) }}
+                    </div>
+                    <div class="form-group">
+                        <h5>{{ form.new_filename.label(class="form-control-label") }} (Optional)</h5>
+                        {{ control(form.new_filename) }}
+                    </div>
+                    <div class="form-group mb-0">
+                        <h5>{{ form.notes.label(class="form-control-label") }} (Optional)</h5>
+                        <p>Use notes to capture issues or context for this archived file.</p>
+                        {{ control(form.notes) }}
+                    </div>
+                </section>
+
+                <section class="upload-form-cluster">
+                    <h4 class="upload-form-cluster-title">Archive Destination</h4>
+                    <p class="text-muted mb-3">Use one method. If Destination Path is filled, Project Number and Filing Code are ignored.</p>
+
+                    {{ destination_fields(form) }}
+                </section>
             </fieldset>
             <div class="form-group">
                 {{ form.submit(class="btn btn-outline-info") }}
