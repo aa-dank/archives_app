@@ -121,18 +121,23 @@ class MultiCheckboxField(SelectMultipleField):
     option_widget = widgets.CheckboxInput()
 
 
-class UploadFileForm(FlaskForm):
+class ArchiveDestinationForm(FlaskForm):
+    """Common destination fields and project-number validation for archiving forms."""
+
     project_number = StringField('Project Number')
-    new_filename = StringField('New Filename')
-    document_date = StringField('Document Date')
     destination_directory = SelectField('Destination Directory')
     destination_path = StringField('Destination Path')
     notes = StringField('Notes')
-    upload = FileField('File Upload', validators=[FileRequired()])
-    submit = SubmitField('Archive File')
 
     def validate_project_number(self, project_number):
         project_number_pattern_validation(project_number)
+
+
+class UploadFileForm(ArchiveDestinationForm):
+    new_filename = StringField('New Filename')
+    document_date = StringField('Document Date')
+    upload = FileField('File Upload', validators=[FileRequired()])
+    submit = SubmitField('Archive File')
 
 
 class ArchivedOrNotForm(FlaskForm):
@@ -141,29 +146,18 @@ class ArchivedOrNotForm(FlaskForm):
     upload = FileField('File Upload', validators=[FileRequired()])
     submit = SubmitField('Submit')
 
-class InboxItemForm(FlaskForm):
+
+class InboxItemForm(ArchiveDestinationForm):
     download_item = SubmitField('Download Copy')
-    project_number = StringField('Project Number')
     new_filename = StringField('New Filename')
     document_date = StringField('Document Date')
-    destination_directory = SelectField('Destination Directory')
-    destination_path = StringField('Destination Path')
-    notes = StringField('Notes')
     submit = SubmitField('Archive File')
 
-    def validate_project_number(self, project_number):
-        project_number_pattern_validation(project_number)
 
-class BatchInboxItemsForm(FlaskForm):
+class BatchInboxItemsForm(ArchiveDestinationForm):
     items_to_archive = MultiCheckboxField('Items to archive', choices=[], validate_choice=False)
-    project_number = StringField('Project Number')
-    destination_directory = SelectField('Destination Directory')
-    destination_path = StringField('Destination Path')
-    notes = StringField('Notes')
     submit = SubmitField('Archive Items')
 
-    def validate_project_number(self, project_number):
-        project_number_pattern_validation(project_number)
 
 class ArchiveSearchForm(FlaskForm):
     """Form for the archive search workflow and its scope controls."""

@@ -2499,3 +2499,33 @@ Template parses, Python compilation, JavaScript syntax, and diff checks passed;
 existing dependency warnings remain. Follow-on: deploy the Python/template/CSS
 and updated shared JavaScript together and restart web processes; no migration,
 dependency, or configuration change is required.
+
+---
+
+## Entry 077 - Share archiving forms and submission feedback
+**Date:** 2026-11-06
+**Author:** OpenAI Codex
+
+Upload File, Inbox Item, and Batch Process Inbox now share destination fields
+and project-number validation through a base form, plus control/error rendering
+and destination markup through Jinja macros. Page-specific labels, help text,
+field names, filing-code choices, upload requirements, and download actions
+remain intact.
+
+Inbox Item and Batch Process Inbox use `static/archive_loading.js` instead of
+duplicate inline scripts. Archiving immediately shows Archiving... and disables
+the button, retains the 500 ms submission delay, and suppresses repeat requests.
+Page hide/show cancels pending timers and restores controls for Back/Forward
+navigation. Download Copy bypasses this feedback and retains its submitter
+value. Upload File's submission behavior is unchanged.
+
+Verification: 16 focused tests passed for validation, required uploads, download
+actions, preserved field values, escaped errors, and template wiring. Chromium
+checks passed for validation, delayed/repeated/canceled submissions, submissions
+without an explicit submitter, history recovery, and Download Copy. Normal form
+markup and desktop/mobile screenshots matched the previous versions for all
+three pages. Previews/reports are in ignored `dev_files/archive_forms_validation`.
+Template parsing, Python compilation, JavaScript syntax, and diff checks passed;
+existing dependency warnings remain. Follow-on: deploy the base form, templates,
+macro, and new script together. No database, archive-filesystem, API, dependency,
+or configuration change is required.
