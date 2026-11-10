@@ -2557,3 +2557,26 @@ and GET forms with CSRF enabled. Python compilation, template parsing, and
 diff checks passed. No browser screenshot was captured. Follow-on: deploy the
 Python and templates together and restart web processes. No database migration,
 archive-filesystem, dependency, or configuration change is required.
+
+---
+
+## Entry 079 - Update OAuthlib to 4.0.1
+**Date:** 2026-11-10
+**Author:** OpenAI Codex
+
+Updated OAuthlib from 4.0.0 to the latest stable release, 4.0.1, in the project
+minimum, lockfile, generated requirements, and local virtual environment. No
+other package versions changed. This release fixes device-code validation
+(CVE-2026-49272); the application's Google login uses WebApplicationClient's
+authorization-code flow and requires no integration changes. Affected runtime
+components: Google OAuth client initialization and login/callback handling.
+
+Verification: 293 tests passed with 3 optional live-store tests skipped and
+existing dependency warnings. Tests ran with a local KEY_VALUE_STORE_URL supplied
+for configuration loading. Lock consistency, installed-package compatibility,
+and diff checks passed. A local smoke check passed authorization URL construction,
+code-exchange request preparation, token response parsing, and bearer-token
+attachment. Live Google sign-in was not exercised.
+Follow-on: install the updated locked dependencies
+or rebuild the Docker image, restart application processes, and verify Google
+sign-in after deployment. No database or filesystem migration is required.
