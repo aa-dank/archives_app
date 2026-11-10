@@ -191,6 +191,8 @@ def caan_search():
     if len(exact_caan) > 200 or len(raw_query) > 200 or not (exact_caan or raw_query):
         return flask.Response("Provide a CAAN value or search query of at most 200 characters.", status=400)
     if exact_caan:
+        if not form.validate():
+            return flask.render_template('caan_search.html', form=form)
         return flask.redirect(flask.url_for('project_tools.caan_info', caan=exact_caan))
     if flask.request.args.to_dict(flat=True) != {"search_query": raw_query}:
         return flask.redirect(flask.url_for(
@@ -273,7 +275,8 @@ def caan_info(caan):
 
     Returns:
         Response: Renders the 'caan_info.html' template with CAAN metadata and a table of associated projects.
-                  Returns a 404 response if the CAAN is not found or if no projects are associated with the CAAN.
+                  Returns a recovery form with status 404 if the CAAN is not found.
+                  Existing CAANs without associated projects still display their metadata.
     """
 
     def project_number_sort_key(project_number):
@@ -327,77 +330,75 @@ def caan_info(caan):
         )
     
     try:
-        # check if the caan value exists in the database
-        caan_query = CAANModel.query.filter(CAANModel.caan == caan)
-        if caan_query.count() == 0:
-            return flask.Response(f"CAAN {caan} not found in database.", status=404)
+        caan_record = caan_search_service.find_exact_caan(caan)
+        if caan_record is None:
+            form = CAANSearchForm(data={"enter_caan": caan}, meta={"csrf": False})
+            return flask.render_template(
+                'caan_search.html', form=form, missing_caan=caan, title="CAAN not found"
+            ), 404
 
         # get all projects for a caan
         caan_projects_query = ProjectModel.query.filter(ProjectModel.caans.any(CAANModel.caan == caan))
         caan_projects_df = utils.FlaskAppUtils.db_query_to_df(query=caan_projects_query)
 
-        # if there are no projects for the caan, return a 404
-        if caan_projects_df.empty:
-            return flask.Response(f"No projects found for CAAN {caan}.", status=404)
-
-        row_root_location = lambda row: linked_project_root_location(
-            project_location=row["file_server_location"],
-            network_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION')
-        )
-        drawings_explanation = (
-            "Yes: The project record indicates drawings exist. "
-            "UNKNOWN: The project record has no drawings value. "
-            "No: The project record indicates drawings do not exist."
-        )
-        drawings_heading = (
-            '<span class="caan-drawings-help" tabindex="0" data-toggle="tooltip" '
-            'data-container="body" data-trigger="hover focus" '
-            f'aria-label="Drawings? {drawings_explanation}" '
-            f'title="{drawings_explanation}">'
-            'Drawings? <span aria-hidden="true">ⓘ</span></span>'
-        )
-        html_col_widths = {"Number": "10%", "Name": "33%", drawings_heading: "12%", "Location": "45%"}
-
-        caan_projects_df["Drawings?"] = caan_projects_df["drawings"].apply(drawings_label)
-        caan_projects_df["_drawings_rank"] = caan_projects_df["Drawings?"].map({"Yes": 0, "UNKNOWN": 1, "No": 2})
-        caan_projects_df["_number_sort_key"] = caan_projects_df["number"].apply(project_number_sort_key)
-        caan_projects_df["Number"] = caan_projects_df.apply(
-            lambda row: project_info_link(row["id"], row["number"]), axis=1
-        )
-        caan_projects_df["Location"] = caan_projects_df.apply(row_root_location, axis=1)
-
-        caan_projects_df.sort_values(by=["_drawings_rank", "_number_sort_key"], inplace=True)
-        projects_table_df = caan_projects_df[["Number", "name", "Drawings?", "Location"]]
-        projects_table_df.columns = ["Number", "Name", "Drawings?", "Location"]
-        # ``html_columns`` disables pandas' table-wide escaping so the location
-        # links render. Escape the remaining database-backed columns explicitly.
-        for column in ["Name", "Drawings?"]:
-            projects_table_df[column] = projects_table_df[column].apply(
-                lambda value: html.escape(str(value))
+        projects_html = None
+        if not caan_projects_df.empty:
+            row_root_location = lambda row: linked_project_root_location(
+                project_location=row["file_server_location"],
+                network_location=flask.current_app.config.get('USER_ARCHIVES_LOCATION')
             )
-        projects_table_df.rename(columns={"Drawings?": drawings_heading}, inplace=True)
-        projects_html = utils.html_table_from_df(
-            df=projects_table_df,
-            html_columns=["Number", "Location"],
-            column_widths=html_col_widths
-        )
-        
-        # retrieve caan data
-        caan = CAANModel.query.filter(CAANModel.caan == caan).first()
+            drawings_explanation = (
+                "Yes: The project record indicates drawings exist. "
+                "UNKNOWN: The project record has no drawings value. "
+                "No: The project record indicates drawings do not exist."
+            )
+            drawings_heading = (
+                '<span class="caan-drawings-help" tabindex="0" data-toggle="tooltip" '
+                'data-container="body" data-trigger="hover focus" '
+                f'aria-label="Drawings? {drawings_explanation}" '
+                f'title="{drawings_explanation}">'
+                'Drawings? <span aria-hidden="true">ⓘ</span></span>'
+            )
+            html_col_widths = {"Number": "10%", "Name": "33%", drawings_heading: "12%", "Location": "45%"}
+
+            caan_projects_df["Drawings?"] = caan_projects_df["drawings"].apply(drawings_label)
+            caan_projects_df["_drawings_rank"] = caan_projects_df["Drawings?"].map({"Yes": 0, "UNKNOWN": 1, "No": 2})
+            caan_projects_df["_number_sort_key"] = caan_projects_df["number"].apply(project_number_sort_key)
+            caan_projects_df["Number"] = caan_projects_df.apply(
+                lambda row: project_info_link(row["id"], row["number"]), axis=1
+            )
+            caan_projects_df["Location"] = caan_projects_df.apply(row_root_location, axis=1)
+
+            caan_projects_df.sort_values(by=["_drawings_rank", "_number_sort_key"], inplace=True)
+            projects_table_df = caan_projects_df[["Number", "name", "Drawings?", "Location"]]
+            projects_table_df.columns = ["Number", "Name", "Drawings?", "Location"]
+            # ``html_columns`` disables pandas' table-wide escaping so the location
+            # links render. Escape the remaining database-backed columns explicitly.
+            for column in ["Name", "Drawings?"]:
+                projects_table_df[column] = projects_table_df[column].apply(
+                    lambda value: html.escape(str(value))
+                )
+            projects_table_df.rename(columns={"Drawings?": drawings_heading}, inplace=True)
+            projects_html = utils.html_table_from_df(
+                df=projects_table_df,
+                html_columns=["Number", "Location"],
+                column_widths=html_col_widths
+            )
+
         map_embed_url = caan_map_embed_url(
-            caan,
+            caan_record,
             flask.current_app.config.get('GOOGLE_MAPS_EMBED_API_KEY'),
         )
 
         return flask.render_template(
             'caan_info.html',
-            caan=caan.caan,
-            caan_name=caan.name,
-            caan_description=caan.description,
-            caan_address_street=caan.address_street,
-            caan_address_city=caan.address_city,
-            caan_address_zip=caan.address_zip,
-            caan_area=caan.area,
+            caan=caan_record.caan,
+            caan_name=caan_record.name,
+            caan_description=caan_record.description,
+            caan_address_street=caan_record.address_street,
+            caan_address_city=caan_record.address_city,
+            caan_address_zip=caan_record.address_zip,
+            caan_area=caan_record.area,
             map_embed_url=map_embed_url,
             projects_table=projects_html
         )

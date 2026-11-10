@@ -2,6 +2,13 @@
 {% extends "layout.html" %}
 {% block content %}
 <div class="content-section">
+	{% if missing_caan is defined %}
+		<a class="btn btn-outline-secondary btn-sm mb-3" href="{{ url_for('project_tools.caan_search') }}">Back to CAAN Search</a>
+		<h2>CAAN not found</h2>
+		<div class="alert alert-warning" role="alert">
+			No CAAN found for “{{ missing_caan }}”. Check the number below, or clear the Enter CAAN field and use Search Query to search by name or description.
+		</div>
+	{% endif %}
 	<form method="GET" action="{{ url_for('project_tools.caan_search') }}" id="caan-search-form">
 		<fieldset class="form-group">
 			<legend class="border-bottom mb-4">CAAN Search</legend>
@@ -10,8 +17,8 @@
 				<h6>{{ form.enter_caan.label(class="form-control-label") }}</h6>
 				<p class="text-muted">Exact CAAN (optional direct navigation)</p>
 				{% if form.enter_caan.errors %}
-					{{ form.enter_caan(class="form-control form-control-lg is-invalid", placeholder="e.g. 7199") }}
-					<div class="invalid-feedback">
+					{{ form.enter_caan(class="form-control form-control-lg is-invalid", placeholder="e.g. 7199", aria_invalid="true", aria_describedby="enter-caan-errors", autofocus=true) }}
+					<div class="invalid-feedback" id="enter-caan-errors" role="alert">
 						{% for error in form.enter_caan.errors %}<span>{{ error }}</span>{% endfor %}
 					</div>
 				{% else %}

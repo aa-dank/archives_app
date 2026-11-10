@@ -2529,3 +2529,31 @@ Template parsing, Python compilation, JavaScript syntax, and diff checks passed;
 existing dependency warnings remain. Follow-on: deploy the base form, templates,
 macro, and new script together. No database, archive-filesystem, API, dependency,
 or configuration change is required.
+
+---
+
+## Entry 078 - CAAN lookup feedback and projectless detail pages
+**Date:** 2026-11-10
+**Author:** OpenAI Codex
+
+Exact CAAN searches now check the database before navigating. Missing values
+redisplay the form with both inputs preserved, a focused invalid CAAN field,
+and an accessible inline error explaining how to correct the number or clear
+it and search by name/description. GET searches and legacy POST submissions
+use the same exact-match lookup; valid values retain their detail redirects.
+
+Direct links to missing CAANs retain HTTP 404 but now show the normal site
+layout, a not-found notice, an editable search form prefilled with the missing
+value, and a Back to CAAN Search link. Existing CAANs without linked projects
+return HTTP 200 with their metadata, optional map, and an explicit empty-project
+message. Project table generation only runs when projects exist.
+
+Affected runtime components: CAAN search service/form, search/detail routes,
+and CAAN search/detail templates. Verification: all 29 focused lookup and
+shareable-search URL tests passed, covering GET/POST feedback and redirects,
+preserved/escaped inputs, accessible error markup, direct-link 404 recovery,
+projectless metadata/maps, existing project-table ordering/links/escaping,
+and GET forms with CSRF enabled. Python compilation, template parsing, and
+diff checks passed. No browser screenshot was captured. Follow-on: deploy the
+Python and templates together and restart web processes. No database migration,
+archive-filesystem, dependency, or configuration change is required.

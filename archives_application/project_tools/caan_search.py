@@ -5,6 +5,11 @@ from sqlalchemy import or_
 from archives_application.models import CAANModel
 
 
+def find_exact_caan(value: str) -> CAANModel | None:
+    """Resolve a CAAN value using the same exact match as the detail page."""
+    return CAANModel.query.filter(CAANModel.caan == value).first()
+
+
 def search_caans(query: str) -> list[dict[str, str]]:
     """Match every whitespace-separated term against CAAN, name, or description."""
     records = CAANModel.query
