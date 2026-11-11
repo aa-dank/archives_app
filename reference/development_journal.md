@@ -2580,3 +2580,40 @@ attachment. Live Google sign-in was not exercised.
 Follow-on: install the updated locked dependencies
 or rebuild the Docker image, restart application processes, and verify Google
 sign-in after deployment. No database or filesystem migration is required.
+
+---
+
+## Entry 080 - Skip oversized files during daily metadata scraping
+**Date:** 2026-11-10
+**Author:** OpenAI Codex
+
+The daily file metadata scrape repeatedly restarted hashing the same very large
+file because it replays the saved directory and only commits a file after its
+full hash completes. Added a code-defined 10 GiB maximum size for this scrape.
+Larger files are skipped so traversal can continue, and task status details
+report the number skipped plus up to 20 relative paths and byte sizes. A skipped
+file does not update `existence_confirmed` or `hash_confirmed`; those timestamps
+continue to mean that the path and content hash were verified together.
+
+Affected runtime components: `scrape_file_data_task` and its worker task status
+details. No schema migration or filesystem change is required. Verification:
+tests were not run. Follow-on: deploy the worker code and inspect task status
+details after the next scrape. Oversized files remain unverified and require a
+separate manual or future targeted verification path.
+
+---
+
+## Entry 081 - Raise oversized scrape threshold and report all skipped files
+**Date:** 2026-11-10
+**Author:** OpenAI Codex
+
+Raised the daily scrape's code-defined size threshold to 100 GiB and removed
+the cap on oversized-file details in task status. The skip count and path/size
+details now cover every file above the threshold, matching the small expected
+number of such files.
+
+Affected runtime components: `scrape_file_data_task` and its worker task status
+details. No schema migration or filesystem change is required. Verification:
+tests were not run. Follow-on: deploy the worker code and review the next scrape's
+status details. Oversized files remain unverified and require a separate manual
+or future targeted verification path.

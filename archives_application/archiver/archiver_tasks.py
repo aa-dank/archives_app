@@ -16,6 +16,9 @@ from rq.timeouts import JobTimeoutException
 # they are not running in the main thread.
 app = create_app()
 
+# Files larger than this are left unverified by the daily metadata scrape.
+SCRAPE_MAX_FILE_SIZE_BYTES = 100 * 1024 ** 3
+
 
 def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
     """
@@ -228,6 +231,8 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
                       "This Start Location": start_location,
                       "Files Added": 0, "File Locations Added": 0,
                       "Files Confirmed": 0, "File Locations Updated": 0,
+                      "Files Skipped (Size Limit)": 0,
+                      "Oversized Files": [],
                       "Errors": [], "Time Elapsed": "0s",
                       "Current File": None, "Current File Started": None,
                       "Last Completed File": None}
@@ -289,6 +294,16 @@ def scrape_file_data_task(archives_location: str, start_location: str, file_serv
                     try:
                         file_size = os.path.getsize(file)
                         if file_size == 0:
+                            continue
+                        if file_size > SCRAPE_MAX_FILE_SIZE_BYTES:
+                            scrape_log["Files Skipped (Size Limit)"] += 1
+                            scrape_log["Oversized Files"].append({
+                                "File": scrape_log["Current File"],
+                                "Size Bytes": file_size,
+                            })
+                            scrape_log["Current File"] = None
+                            scrape_log["Current File Started"] = None
+                            checkpoint()
                             continue
                         file_hash = utils.FilesUtils.get_hash(filepath=file, check_progress=hash_progress)
                         check_deadline()
