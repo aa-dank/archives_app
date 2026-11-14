@@ -83,6 +83,22 @@ class FileModel(db.Model):
     hash = db.Column(db.String, unique=True, index=True, nullable=False)
     size = db.Column(db.BigInteger, nullable=False)
     extension = db.Column(db.String)
+    content_restricted_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=True,
+        comment=(
+            "Time the active content restriction was applied. "
+            "NULL means no active restriction is recorded."
+        ),
+    )
+    restriction_reason = db.Column(
+        db.Text,
+        nullable=True,
+        comment=(
+            "Optional reason for the content restriction. "
+            "Record a category or rationale without sensitive values."
+        ),
+    )
     content = db.relationship(
         "FileContentModel",
         back_populates="file",
