@@ -1188,6 +1188,11 @@ class FilesUtils:
               keep deadline/heartbeat overhead small for large scrape inputs.
             - The function streams the file; memory footprint remains small regardless of file size.
 
+        Warning:
+            This function reads a live file without checking whether it changed during
+            the read. A copy, overwrite, or edit in progress could produce a hash of
+            incomplete or changing content.
+
         Security Notes:
             - SHA-1 is no longer recommended for collision resistance in security-sensitive contexts.
               Prefer hashlib.sha256 or stronger for integrity/security validation.
