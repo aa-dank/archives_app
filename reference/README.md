@@ -23,6 +23,7 @@ These documents explain feature design and its original constraints. Features ha
 | [Project Search](project_search_feature_spec.md) | Metadata matching, canonical project IDs, ranking, filters, and workbook exports. |
 | [Project Information](project_info_feature_spec.md) | Project/CAAN/contract relationships, archive counts, and contract presentation. |
 | [File Information API](file_info_api_spec.md) | File identity and path selectors, authentication, text, dates, and location response contracts. |
+| [Restricted File Retention](restricted_file_retention_spec.md) | Phase 1 text/snippet suppression and restricted-identity retention through shared location cleanup; Phase 2 apply/remove suppression form and global search-cache/export purge. External scraper work is separate. |
 | [Archive Search](user_search_feature_spec.md) | Original file-search design: scopes, canonical results, text coverage, and exports. Later API and telemetry work extends this design. |
 | [Archive Search caching](archive_search_cache_feature_spec.md) | Opt-in five-day browser result caching, per-entry lifetimes, workbook reuse and retention, key-value storage boundary, and extension conventions for future data/files. |
 
