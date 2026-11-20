@@ -424,7 +424,10 @@ def resolve_scope(search_request: ArchiveSearchRequest, app) -> ScopeResolution:
 def _file_hash_scope_cte(scope: ScopeResolution, params: dict) -> str:
     """Build the scoped file-hash CTE used by search and coverage queries."""
     if not scope.has_scope:
-        return "scoped_file_hashes AS (SELECT f.hash AS file_hash FROM files f)"
+        return """scoped_file_hashes AS (
+            SELECT f.hash AS file_hash FROM files f
+            WHERE EXISTS (SELECT 1 FROM file_locations fl WHERE fl.file_id = f.id)
+        )"""
     scope_filter = _scope_clause("fl.file_server_directories", scope.prefixes, params)
     return f"""
         scoped_file_hashes AS (
@@ -634,6 +637,7 @@ def _fetch_file_metadata(file_hashes: list[str]) -> dict[str, dict]:
         SELECT
             f.hash AS file_hash,
             f.extension,
+            f.content_restricted_at,
             f.size AS size_bytes,
             fc.text_length,
             fcf.stage AS failure_stage,
@@ -771,6 +775,9 @@ def _fetch_snippets(query_text: str, chunk_ids: list[int]) -> dict[int, str]:
             ) AS snippet
         FROM file_content_fts_chunks
         WHERE id IN :chunk_ids
+          AND EXISTS (SELECT 1 FROM files f
+                      WHERE f.hash = file_content_fts_chunks.file_hash
+                        AND f.content_restricted_at IS NULL)
     """
     rows = db.session.execute(
         text(sql).bindparams(bindparam("chunk_ids", expanding=True)),
@@ -1109,7 +1116,8 @@ class ArchiveSearchRun:
         )
         snippets = _fetch_snippets(
             query_text,
-            [row["best_chunk_id"] for row in results if row.get("best_chunk_id")],
+            [row["best_chunk_id"] for row in results if row.get("best_chunk_id")
+             and metadata.get(row["file_hash"], {}).get("content_restricted_at") is None],
         )
 
         for row in results:
@@ -1125,7 +1133,8 @@ class ArchiveSearchRun:
                 "primary_location": primary.get("user_path") or "",
                 "additional_location_count": max(len(file_locations) - 1, 0),
                 "locations": file_locations,
-                "snippet": snippets.get(row.get("best_chunk_id"), ""),
+                "snippet": (snippets.get(row.get("best_chunk_id"), "")
+                            if meta.get("content_restricted_at") is None else ""),
                 "text_status": text_status,
                 "text_status_label": status_label(text_status),
                 "text_length": meta.get("text_length"),

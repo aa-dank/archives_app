@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 SCHEMA_VERSION = 1
-SEARCH_FORMAT_VERSION = 1
+SEARCH_FORMAT_VERSION = 2  # Location membership and suppression-aware snippet generation.
 # Only cache codec failures belong here; database/search exceptions must retain
 # their existing failure response and telemetry rather than becoming cache misses.
 CODEC_ERRORS = (ValueError, TypeError, KeyError, OverflowError, RecursionError)

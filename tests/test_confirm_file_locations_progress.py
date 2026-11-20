@@ -26,7 +26,7 @@ class TestConfig:
 
 
 @pytest.fixture()
-def app(tmp_path, monkeypatch):
+def app(tmp_path, monkeypatch, create_file_content_tables):
     class DiskConfig(TestConfig):
         SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'confirmation.sqlite'}"
 
@@ -41,8 +41,12 @@ def app(tmp_path, monkeypatch):
         db.session.execute(text("PRAGMA foreign_keys=ON"))
         for table in tables:
             table.create(db.engine)
+        create_file_content_tables()
         yield app
         db.session.remove()
+        for name in ("file_content_fts_chunks", "file_date_mentions", "file_content_failures", "file_contents"):
+            db.session.execute(text(f"DROP TABLE {name}"))
+        db.session.commit()
         for table in reversed(tables):
             table.drop(db.engine)
 

@@ -2617,3 +2617,67 @@ details. No schema migration or filesystem change is required. Verification:
 tests were not run. Follow-on: deploy the worker code and review the next scrape's
 status details. Oversized files remain unverified and require a separate manual
 or future targeted verification path.
+
+---
+
+## Entry 082 - Suppress restricted text and retain restricted file identities
+**Date:** 2026-11-19
+**Author:** OpenAI Codex
+
+Phase 1 enforces existing `content_restricted_at` flags on file-information
+HTML/JSON and Archive Search snippets, including generated and cached Excel
+output. Suppressed files still match content and filename/path queries with
+ordinary ranking, metadata, detected dates, and indexing status. File info adds
+an ISO-8601 `content_restricted_at` value; requested suppressed source text is
+null and is not fetched. Restriction reasons stay private. Search/coverage now
+require an indexed location before candidate limits and count each hash once.
+
+`FileLocationModel.remove_from_db()` delegates last-location cleanup to
+`FileModel.cleanup_if_unlocated()` in the caller's transaction. Confirmation,
+scoped reconciliation, queued indexing replacement, server deletions, and move
+cleanup share that policy. Last-location cleanup explicitly deletes content,
+chunks, detected dates, and failures. Restricted identities retain their ID,
+hash, flag/reason, and archive-history links; unrestricted identities are
+deleted after unlinking archive history. Remaining copies preserve derived data.
+Identical reuploads reuse the retained identity. Daily metadata scraping keeps
+its existing historical-row policy on content reassignment. Locationless hashes
+remain addressable through file info; Archived or Not handles them normally.
+
+Added the operator CLI `purge-archive-search-output --publishers-stopped`, which
+clears only the selected namespace's Archive Search keys across cache versions
+and physically removes recognized search workbooks/staging/reservation files,
+including unreferenced exports. RQ, other cache consumers, previews, and uploads
+are preserved. Cache/filesystem failures are reported separately with a nonzero
+exit status, allowing repeated cleanup. Missing export links return a clear
+404 requesting a new search. Search format version 2 prevents old result-cache
+reuse, but does not remove old physical files by itself.
+
+Affected runtime components: file lifecycle model methods, archiver tasks and
+server-edit reconciliation, file-information service/template/API, Archive
+Search queries/cache identity, export download route, and app CLI registration.
+Production's PostgreSQL 17 and single RQ worker arrangement is documented and
+preserved. Multi-worker locking/concurrency infrastructure, external scrapers,
+suppression-management forms/endpoints, and schema/index changes are outside
+this change.
+
+Verification: the full suite passed 327 tests with 3 optional live-store tests
+skipped; all 23 suppression/lifecycle tests passed again after strengthening
+authenticated HTML coverage. Cases cover retention/history, explicit child
+cleanup without cascades, rollback, reattachment/replacement, task counters,
+zero-location selectors, unchanged matching/status, snippet SQL guards, cached
+responses, Excel cell values, purge isolation/retries/failures, and old download
+and static URLs. Python syntax, all Jinja templates, CLI registration/help, and
+diff checks passed. Chromium previews passed eight desktop/mobile cases with
+Bootstrap loaded, no horizontal overflow, suppression notices for public and
+authenticated users, retained metadata, and ordinary unrestricted text.
+Screenshots and preview reports are in ignored `dev_files/suppression_validation`.
+No production PostgreSQL, SMB share, or live key-value store was modified.
+
+Follow-on: deploy matching web/worker code with one RQ worker. At rollout, and
+after later SQL flag changes, follow the operations reference to stop new
+searches/exports, drain publishers, commit flag edits, run the purge on all
+applicable namespaces/export stores, require complete success, and resume.
+Verify a remove/reupload cycle on a disposable deployment test share and fresh
+API/search/export behavior. Cached output does not automatically detect external
+flag changes; copies already downloaded by users remain outside the purge.
+Phase 2 management actions require their separate stakeholder agreement.

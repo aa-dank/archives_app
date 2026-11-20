@@ -37,6 +37,15 @@ curl --user archivist@example.org --get \
 
 File information accepts exactly one of `file_hash` or `user_path`. `include_text=true` requests the **complete** stored source text, rather than the HTML page's limited window. Project information accepts exactly one of `project_id` or `project_number`; retain the canonical project ID because project numbers can be ambiguous. Metadata APIs reject unknown or repeated query parameters and return `400` for invalid input, `401` for failed authentication, `404` for missing records, and `409` for ambiguous selectors.
 
+File information includes `content_restricted_at` as an ISO-8601 timestamp or
+null. When that timestamp is set, extracted text is suppressed: the default
+response omits `source_text`, and `include_text=true` returns `source_text: null`
+without fetching the text. Metadata, detected dates, and indexing status remain
+available; `restriction_reason` is private. A retained hash with zero indexed
+locations still returns `200` with `location_count: 0` and `locations: []`.
+Its former `user_path` returns `404`. `/api/archived_or_not` also returns `404`
+when a known hash has no indexed copies.
+
 The former `/api/project_location` endpoint has been removed. Use `/api/project_info` and request `include_user_path=true` for a display path.
 
 ### Archive search request
@@ -55,5 +64,14 @@ Send `Content-Type: application/json` with a body such as this, using a logged-i
 ```
 
 `search_mode` accepts `filename_only`, `filepath`, `content`, or `combined`; `scope_type` accepts `all`, `location`, `project`, or `caan`. Omit `scope_value` for `all`. Results include canonical file hashes, locations, ranking, coverage, and a search-run ID when telemetry persistence succeeds. A result limit being reached calls for a narrower query or scope.
+
+Files with active text suppression still match content and filename/path
+searches and keep their metadata, ranks, and ordinary coverage classification.
+Their `snippet` is an empty string. Search results and coverage exclude hashes
+without indexed locations. The same snippet policy applies to browser results
+and Excel exports. This permits inference that a suppressed file contains a
+searched term. After SQL flag changes, follow the
+[cache/export purge procedure](operations.md#text-suppression-and-search-output-purge)
+to discard previously generated output.
 
 Return to the [reference index](README.md).

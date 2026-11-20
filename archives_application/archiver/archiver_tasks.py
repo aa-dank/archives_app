@@ -68,29 +68,7 @@ def add_file_to_db_task(filepath: str,  queue_id: str, archiving: bool = False):
             # if there is already already a file location that is the same as this loction,
             # but the files are different, we remove the old file location and add the new one.
             if db_file_location_entry and (db_file_location_entry.file_id != file_id):
-                displaced_file_id = db_file_location_entry.file_id
-                db.session.delete(db_file_location_entry)
-                db.session.flush()
-
-                # A replaced path may have been the displaced file's only
-                # known location. Remove that obsolete FileModel only when it
-                # no longer has any locations, and keep the replacement work
-                # in one transaction.
-                remaining_location = db.session.query(FileLocationModel.id)\
-                    .filter(FileLocationModel.file_id == displaced_file_id)\
-                    .first()
-                if not remaining_location:
-                    archival_events = db.session.query(ArchivedFileModel)\
-                        .filter(ArchivedFileModel.file_id == displaced_file_id)\
-                        .all()
-                    for archival_event in archival_events:
-                        archival_event.file_id = None
-
-                    displaced_file = db.session.query(FileModel)\
-                        .filter(FileModel.id == displaced_file_id)\
-                        .first()
-                    if displaced_file:
-                        db.session.delete(displaced_file)
+                db_file_location_entry.remove_from_db()
                 db_file_location_entry = None
             
             if not db_file_location_entry:
@@ -347,11 +325,9 @@ def _confirm_file_location(db, location, exists):
         db.session.query(FileLocationModel).filter_by(id=location.id).update(
             {"existence_confirmed": datetime.now()})
     else:
-        db.session.query(FileLocationModel).filter_by(id=location.id).delete()
-        remaining = db.session.query(FileLocationModel.id).filter_by(file_id=location.file_id).first()
-        if remaining is None:
-            db.session.query(ArchivedFileModel).filter_by(file_id=location.file_id).update({"file_id": None})
-            file_removed = bool(db.session.query(FileModel).filter_by(id=location.file_id).delete())
+        current = db.session.get(FileLocationModel, location.id)
+        if current is not None:
+            file_removed = current.remove_from_db()["file_removed"]
     db.session.commit()
     return file_removed
 

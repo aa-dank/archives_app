@@ -11,7 +11,7 @@ from sqlalchemy import func
 from typing import List, Callable
 from archives_application import create_app, utils
 from archives_application.archiver import archiver_tasks
-from archives_application.models import ArchivedFileModel, FileLocationModel, FileModel, FileContentModel, FileContentFailureModel, FileDateMentionModel
+from archives_application.models import ArchivedFileModel, FileLocationModel, FileModel
 # Create the app context so that tasks can access app extensions even though
 # they are not running in the main thread.
 app = create_app()
@@ -150,23 +150,6 @@ class ServerEdit:
         :rtype: str
         """
         return os.path.join(*path_list) if path_list else ""
-
-    @staticmethod
-    def _delete_file_hash_dependents(db: flask_sqlalchemy.SQLAlchemy, file_hash: str):
-        """
-        Remove child rows keyed by files.hash before deleting FileModel rows.
-        This protects delete operations in environments where ON DELETE CASCADE
-        constraints are missing or stale.
-        """
-        db.session.query(FileDateMentionModel).filter(
-            FileDateMentionModel.file_hash == file_hash
-        ).delete(synchronize_session=False)
-        db.session.query(FileContentModel).filter(
-            FileContentModel.file_hash == file_hash
-        ).delete(synchronize_session=False)
-        db.session.query(FileContentFailureModel).filter(
-            FileContentFailureModel.file_hash == file_hash
-        ).delete(synchronize_session=False)
 
     @staticmethod
     def estimate_timeout_seconds(change_type: str, is_file: bool, files_effected: int,
@@ -413,7 +396,7 @@ class ServerEdit:
     @staticmethod
     def record_file_server_file_removal(db, root_index, file_path):
         """
-        Removes a file location from database and if it is the last entry for that file_id, removes the file db entry too.
+        Remove a location and clean its parent, retaining active suppression.
         :param db: SQLAlchemy database object
         :param root_index: index of the server share directory in the file path
         :param file_path: path to the file
@@ -430,36 +413,9 @@ class ServerEdit:
             .first()
         
         if location_entry:
-            file_id = location_entry.file_id
-            db.session.delete(location_entry)
-            location_entry_removed = True
-
-            remaining_locations = db.session.query(FileLocationModel)\
-                .filter(FileLocationModel.file_id == file_id)\
-                .all()
-            
-            # If this was the last entry for this file_id and, thus, the file has actually been removed from the fileserver...
-            # 1. scrub any ArchivedModel entries of their link to the File...
-            # 2. Remove the FileModel itself and any associated content (file_contents, file_content_failures)
-            if not remaining_locations:
-                file_model = db.session.query(FileModel)\
-                    .filter(FileModel.id == file_id)\
-                    .first()
-                if not file_model:
-                    flask.current_app.logger.warning(
-                        "ServerEdit.remove_file_from_db: FileModel(id=%s) referenced by FileLocation(id=%s) is missing.",
-                        file_id,
-                        location_entry.id
-                    )
-                else:
-                    associated_archival_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_model.id).all()
-                    for archival_event in associated_archival_events:
-                        archival_event.file_id = None
-
-                        # Delete the FileModel and associated content rows (if any)
-                    ServerEdit._delete_file_hash_dependents(db=db, file_hash=file_model.hash)
-                    db.session.delete(file_model)
-                    file_entry_removed = True
+            outcome = location_entry.remove_from_db()
+            location_entry_removed = outcome["location_removed"]
+            file_entry_removed = outcome["file_removed"]
             db.session.commit()
         return location_entry_removed, file_entry_removed
             
@@ -488,51 +444,24 @@ class ServerEdit:
                     .filter(FileLocationModel.file_server_directories == server_path,
                             FileLocationModel.filename == filename).first()
 
-                if file_location_entry:
-                    file_id = file_location_entry.file_id
-                    db.session.delete(file_location_entry)
-                    db.session.commit()
-                    deletion_log['location_entries_effected'] = 1
-                    
-                    # If this was the last entry for this file_id, delete the file_id entry
-                    other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
-                    if not other_locations:
-                        # update any associated archival events so file_id is NULL
-                        associated_archival_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_id).all()
-                        for archival_event in associated_archival_events:
-                            archival_event.file_id = None
-
-                        file_entry = db.session.query(FileModel).filter(FileModel.id == file_id).first()
-                        if file_entry:
-                            self._delete_file_hash_dependents(db=db, file_hash=file_entry.hash)
-                            db.session.delete(file_entry)
-                            db.session.commit()
-                            deletion_log['files_entries_effected'] = 1
-
+                entries = [file_location_entry] if file_location_entry else []
             else:
                 server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:]
                 server_path = self._safe_path_join(server_dirs)
-                file_location_entries = db.session.query(FileLocationModel)\
+                entries = db.session.query(FileLocationModel)\
                     .filter(FileLocationModel.file_server_directories.like(func.concat(server_path, '%'))).all()
-                for file_location_entry in file_location_entries:
-                    file_id = file_location_entry.file_id
-                    db.session.delete(file_location_entry)
-                    db.session.commit()
-                    deletion_log['location_entries_effected'] += 1
-                    other_locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_id).all()
-                    if not other_locations:
-                        # update any associated archival events so file_id is NULL
-                        associated_archival_events = db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_id).all()
-                        for archival_event in associated_archival_events:
-                            archival_event.file_id = None
 
-                        file_entry = db.session.query(FileModel).filter(FileModel.id == file_id).first()
-                        if file_entry:
-                            self._delete_file_hash_dependents(db=db, file_hash=file_entry.hash)
-                            db.session.delete(file_entry)
-                            db.session.commit()
-                            deletion_log['files_entries_effected'] += 1
-            
+            try:
+                for location in entries:
+                    outcome = location.remove_from_db()
+                    db.session.commit()
+                    deletion_log['location_entries_effected'] += int(outcome["location_removed"])
+                    deletion_log['files_entries_effected'] += int(outcome["file_removed"])
+            except Exception:
+                db.session.rollback()
+                utils.RQTaskUtils.failed_task_subroutine(q_id=queue_id, sql_db=db, task_result=deletion_log)
+                raise
+
             utils.RQTaskUtils.complete_task_subroutine(q_id=queue_id, sql_db=db, task_result=deletion_log)
             return deletion_log
     
@@ -602,7 +531,7 @@ class ServerEdit:
                     
                     if existing_file_location_entry:
                         existing_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), new_server_path)
-                        remove_file_entry, remove_location_entry = self.record_file_server_file_removal(db, file_server_root_index, file_path=existing_path)   
+                        remove_location_entry, remove_file_entry = self.record_file_server_file_removal(db, file_server_root_index, file_path=existing_path)
                         if remove_file_entry:
                             rename_log['files_entries_effected'] += 1
                         if remove_location_entry:
@@ -687,9 +616,9 @@ class ServerEdit:
                                                    size=os.path.getsize(self.new_path),
                                                    extension=filename.split('.')[-1])
                             db.session.add(file_entry)
-                            db.session.commit()
+                            db.session.flush()
                             move_log['files_entries_effected'] += 1
-                    
+
                     location_entry = FileLocationModel(file_server_directories=new_server_path,
                                                        filename=filename,
                                                        file_id=file_entry.id,
@@ -714,7 +643,7 @@ class ServerEdit:
 
                     # remove any entries that are already in the new location
                     existing_loc_path = os.path.join(flask.current_app.config.get('ARCHIVES_LOCATION'), new_location_server_dirs, location_entry.filename)
-                    remove_file_entry, remove_location_entry = self.record_file_server_file_removal(db, file_server_root_index, file_path=existing_loc_path)
+                    remove_location_entry, remove_file_entry = self.record_file_server_file_removal(db, file_server_root_index, file_path=existing_loc_path)
                     if remove_file_entry:
                         move_log['files_entries_effected'] += 1
                     if remove_location_entry:
@@ -727,8 +656,9 @@ class ServerEdit:
                         location_entry.existence_confirmed = datetime.datetime.now()
                         move_log['location_entries_effected'] += 1
                     else:
-                        db.session.delete(location_entry)
-                        move_log['location_entries_effected'] += 1
+                        outcome = location_entry.remove_from_db()
+                        move_log['location_entries_effected'] += int(outcome["location_removed"])
+                        move_log['files_entries_effected'] += int(outcome["file_removed"])
                     db.session.commit()
 
                 # check that all of the moved files are in the database by checking if they are in the effected_location_entries

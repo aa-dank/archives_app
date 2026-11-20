@@ -1,7 +1,8 @@
 # Restricted File Retention Specification
 
 Date: 2026-11-19
-Status: Proposed implementation; runtime behavior has not changed.
+Status: Phase 1 implemented in application code; rollout purge and deployment
+verification remain operator actions. Phase 2 is deferred.
 
 ## Purpose
 
@@ -20,9 +21,9 @@ metadata-scraping and reconciliation tasks. Changes to `archives_scraper`,
 separate efforts. Their known issues are recorded below as an aside, not as
 acceptance criteria or prerequisites for completing this app change.
 
-This specification does not implement changes or claim that the restriction
-flag is already enforced throughout the system. Database readiness and index
-work are handled separately and are outside this specification.
+The implementation enforces the display policy in `archives_app`; external
+services remain separate. Database readiness and index work are handled
+elsewhere and are outside this specification.
 
 ## Delivery phases and terminology
 
@@ -89,10 +90,10 @@ explicit change by its owning workflow; it is not triggered by deletion,
 re-upload, rename, missing content, or a failed extraction. This is retention of
 an active restriction, not a permanent history of restrictions after clearance.
 
-## Findings in the current code
+## Findings before implementation
 
-The following findings were checked against the local repositories during the
-2026-11-18 review and rechecked for this specification:
+The following findings describe the baseline checked during the 2026-11-18
+review, before Phase 1 implementation:
 
 - The restriction columns exist in the Archives App model, but the app's search
   and file-information reads do not currently enforce them.
@@ -132,8 +133,8 @@ lifecycle policy as one operation. Callers must not each implement their own
 remaining-location check, dependent deletion, restriction guard, or archive-event
 unlinking. Its responsibilities are:
 
-1. Resolve the location and its canonical file, using the transaction/locking
-   protocol below. An already-removed location is a harmless no-op.
+1. Resolve the location and its canonical file in the caller's transaction.
+   An already-removed location is a harmless no-op.
 2. Delete the location row and flush the removal before checking for remaining
    locations. Do not commit.
 3. Leave the canonical file and its dependents intact if locations remain.
@@ -170,13 +171,22 @@ deletion must commit together. Neither method commits independently of its
 caller. Callers provide the app context and own commits and rollback. Task
 progress updates must not commit partially completed cleanup.
 
-The deletion decision must not rely on a stale restriction or location check.
-Use a consistent transaction/locking protocol across the app's indexing and
-cleanup callers, and recheck the restriction before deleting a canonical row.
-Validate it in PostgreSQL with concurrent restriction updates and app location
-attachment. A conditional delete alone does not replace coordination with
-concurrent location insertion. Changes to external writers and global
-publication guarantees are outside this effort.
+Check remaining locations and the current restriction in the cleanup transaction
+before deciding whether to delete the canonical row.
+
+Production uses PostgreSQL 17 and a single RQ worker process, intentionally
+serializing queued app jobs to avoid races between workers at the current low
+traffic level. Preserve that operating model for this initiative; see
+[the operations reference](operations.md#current-worker-concurrency). Broader
+concurrency coordination, a shared locking protocol across indexing and cleanup,
+and PostgreSQL concurrency-test infrastructure are separate future work and are
+not Phase 1 implementation requirements or release gates. Keep the atomic
+cleanup and rollback guarantees above.
+
+One worker does not serialize web requests, manual SQL changes, or external
+services. This effort does not establish cross-service concurrency guarantees;
+coordinate out-of-app flag changes and cache purges through the operator
+procedure below.
 
 ### Derived data
 
@@ -326,9 +336,12 @@ The operation must:
   workbooks are under `static/temp_files`, so physical removal also matters for
   direct static URLs. Do not remove unrelated temporary previews or uploads.
 - Account for in-progress searches/exports so an old operation cannot republish
-  pre-purge output after completion is reported. Use a bounded publication/purge
-  coordination mechanism; an operator procedure may pause/drain generation
-  during Phase 1. No per-file artifact registry is required.
+  pre-purge output after completion is reported. Phase 1 uses an operator
+  procedure to pause new searches/exports and drain active generation before
+  changing flags and purging. Searches run in web processes, so the single RQ
+  worker alone does not provide this boundary. Automated publication/purge
+  coordination can be addressed separately; no per-file artifact registry is
+  required.
 - Make old export links return a clear no-longer-available result directing users
   to rerun the search. New searches and exports use current suppression flags.
 - Be repeatable and report failures separately for cache and filesystem cleanup;
@@ -339,6 +352,12 @@ considered deployed. Document the same purge procedure for any later SQL or
 external flag changes. Disabling result-cache lookup alone is insufficient:
 old Excel files can still be downloaded. Phase 2 exposes this existing policy
 as a user action and invokes it after flag updates.
+
+Phase 1 provides the operator CLI command `purge-archive-search-output
+--publishers-stopped`. Its namespace-scoped cache cleanup and physical export
+cleanup report independent outcomes and exit nonzero on incomplete work. Follow
+the [operations procedure](operations.md#text-suppression-and-search-output-purge)
+for pause/drain, SQL changes, command invocation, retries, and resumption.
 
 This policy intentionally depends on a purge after out-of-app changes; it does
 not add automatic SQL-change detection or require per-download file-hash
@@ -465,24 +484,27 @@ Use isolated databases/filesystems for automated tests. Cover at least:
    absent while matching rows and metadata remain. A workbook created before a
    suppression change must be removed by the global purge and cannot be reused
    or downloaded afterward.
-9. PostgreSQL concurrency tests cover restriction updates and app location
-   attachment during cleanup. SQLite tests alone cannot establish these
-   guarantees.
-10. An externally applied or cleared restriction is reflected in fresh app reads
+9. An externally applied or cleared restriction is reflected in fresh app reads
     and in rebuilt results/exports after the documented purge; app cleanup uses
     the current flag value.
-11. Existing exclusions, quantity checks, task lifecycle/progress, archive-history
+10. Existing exclusions, quantity checks, task lifecycle/progress, archive-history
     totals, and existing API authentication remain intact.
-12. Global purge clears this environment's complete Archive Search cache and
+11. Global purge clears this environment's complete Archive Search cache and
     export set, including unreferenced files, while preserving unrelated keys,
     jobs, and temporary files. Exercise old download/static URLs, incomplete
-    cleanup, repeated purge, and concurrent generation across the purge boundary.
+    cleanup, repeated purge, and the operator pause/drain/resume procedure that
+    prevents old searches/exports from publishing across the purge boundary.
 
 Run relevant existing confirmation, scrape, scoped-scrape, duplicate-check,
 file-info, and search/cache/export tests within `archives_app`. Add focused cases
 where current coverage is missing. Capture screenshots for changed templates
 and manually verify one restricted remove/re-upload cycle against a disposable
 test share.
+
+Use the existing isolated test approach for retention, suppression, and rollback
+checks. Tests involving multiple concurrent database writers are deferred with
+the broader concurrency work; introducing PostgreSQL 17 test infrastructure is
+not required for Phase 1.
 
 ### Phase 2 acceptance and verification
 

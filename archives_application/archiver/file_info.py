@@ -74,6 +74,7 @@ def _fetch_file_metadata(file_hash: str) -> dict | None:
             f.hash AS file_hash,
             f.size AS size_bytes,
             f.extension,
+            f.content_restricted_at,
             fc.text_length,
             fc.updated_at AS text_updated_at,
             fcf.stage AS failure_stage,
@@ -87,7 +88,11 @@ def _fetch_file_metadata(file_hash: str) -> dict | None:
         LEFT JOIN file_content_failures fcf ON fcf.file_hash = f.hash
         WHERE f.hash = :file_hash
     """
-    row = db.session.execute(text(sql), {"file_hash": file_hash}).mappings().first()
+    statement = text(sql).columns(
+        content_restricted_at=db.DateTime(timezone=True),
+        text_updated_at=db.DateTime(timezone=True),
+    )
+    row = db.session.execute(statement, {"file_hash": file_hash}).mappings().first()
     return dict(row) if row else None
 
 
@@ -113,7 +118,9 @@ def _fetch_locations(
             fl.filename,
             fl.id
     """
-    rows = db.session.execute(text(sql), {"file_hash": file_hash}).mappings().all()
+    statement = text(sql).columns(
+        existence_confirmed=db.DateTime(), hash_confirmed=db.DateTime())
+    rows = db.session.execute(statement, {"file_hash": file_hash}).mappings().all()
     locations = []
     for row in rows:
         location = dict(row)
@@ -157,7 +164,8 @@ def _fetch_all_date_mentions(file_hash: str) -> list[dict]:
         GROUP BY mention_date
         ORDER BY mention_date ASC
     """
-    rows = db.session.execute(text(sql), {"file_hash": file_hash}).mappings().all()
+    rows = db.session.execute(
+        text(sql).columns(mention_date=db.Date()), {"file_hash": file_hash}).mappings().all()
     return [dict(row) for row in rows]
 
 
@@ -209,6 +217,8 @@ def _fetch_text_window(file_hash: str, window_chars: int) -> str | None:
         SELECT substring(source_text FROM 1 FOR :window_chars) AS extracted_text
         FROM file_contents
         WHERE file_hash = :file_hash
+          AND EXISTS (SELECT 1 FROM files f WHERE f.hash = :file_hash
+                      AND f.content_restricted_at IS NULL)
     """
     row = db.session.execute(
         text(sql),
@@ -223,6 +233,8 @@ def _fetch_source_text(file_hash: str) -> str | None:
         SELECT source_text
         FROM file_contents
         WHERE file_hash = :file_hash
+          AND EXISTS (SELECT 1 FROM files f WHERE f.hash = :file_hash
+                      AND f.content_restricted_at IS NULL)
     """
     row = db.session.execute(text(sql), {"file_hash": file_hash}).mappings().first()
     return row["source_text"] if row else None
@@ -360,6 +372,7 @@ def get_file_info_api(
         "file_hash": metadata["file_hash"],
         "size_bytes": metadata.get("size_bytes"),
         "extension": metadata.get("extension"),
+        "content_restricted_at": _iso_value(metadata.get("content_restricted_at")),
         "location_count": len(locations),
         "locations": [
             _serialize_api_location(location, include_user_paths)
@@ -378,7 +391,9 @@ def get_file_info_api(
         ],
     }
     if include_text:
-        api_data["source_text"] = _fetch_source_text(file_hash)
+        api_data["source_text"] = (
+            _fetch_source_text(file_hash) if metadata.get("content_restricted_at") is None else None
+        )
     return api_data
 
 
@@ -415,13 +430,17 @@ def get_file_info(
 
     text_status = archive_search._status_from_metadata(metadata)
     text_limit = text_window_chars(app)
-    extracted_text = _fetch_text_window(file_hash, text_limit) if include_text else None
+    extracted_text = (
+        _fetch_text_window(file_hash, text_limit)
+        if include_text and metadata.get("content_restricted_at") is None else None
+    )
     returned_text_length = len(extracted_text) if extracted_text is not None else 0
     stored_text_length = metadata.get("text_length")
 
     return {
         "file_hash": metadata["file_hash"],
         "file_id": metadata["file_id"],
+        "content_restricted_at": metadata.get("content_restricted_at"),
         "display_filename": (display_location or {}).get("filename") or "Unnamed indexed file",
         "multiple_filenames": len({location.get("filename") for location in locations}) > 1,
         "size_bytes": metadata.get("size_bytes"),
