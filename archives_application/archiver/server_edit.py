@@ -421,38 +421,38 @@ class ServerEdit:
             
 
     def add_deletion_to_db_task(self, queue_id):
-        """
-        This function is used to reconcile the database with a file deletion operation.
-        It is a task function that is enqueued for a seperate thread to execute.
-        """
-        
+        """Reconcile a physical deletion, committing each complete location cleanup."""
         with app.app_context():
             db = flask.current_app.extensions['sqlalchemy']
             utils.RQTaskUtils.initiate_task_subroutine(q_id=queue_id, sql_db=db)
-            file_server_root_index = len(utils.FileServerUtils.split_path(flask.current_app.config.get('ARCHIVES_LOCATION')))
-            deletion_log = {}
-            deletion_log['task_id'] = queue_id
-            deletion_log['location_entries_effected'] = 0
-            deletion_log['files_entries_effected'] = 0
-            deletion_log['old_path'] = self.old_path
-
-            if self.is_file:
-                server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:-1]
-                filename = utils.FileServerUtils.split_path(self.old_path)[-1]
-                server_path = self._safe_path_join(server_dirs)
-                file_location_entry = db.session.query(FileLocationModel)\
-                    .filter(FileLocationModel.file_server_directories == server_path,
-                            FileLocationModel.filename == filename).first()
-
-                entries = [file_location_entry] if file_location_entry else []
-            else:
-                server_dirs = utils.FileServerUtils.split_path(self.old_path)[file_server_root_index:]
-                server_path = self._safe_path_join(server_dirs)
-                entries = db.session.query(FileLocationModel)\
-                    .filter(FileLocationModel.file_server_directories.like(func.concat(server_path, '%'))).all()
+            deletion_log = {
+                'task_id': queue_id,
+                'location_entries_effected': 0,
+                'files_entries_effected': 0,
+                'old_path': self.old_path,
+            }
 
             try:
-                for location in entries:
+                root_index = len(utils.FileServerUtils.split_path(flask.current_app.config['ARCHIVES_LOCATION']))
+                relative_parts = utils.FileServerUtils.split_path(self.old_path)[root_index:]
+                locations = db.session.query(FileLocationModel)
+                if self.is_file:
+                    locations = locations.filter_by(
+                        file_server_directories=self._safe_path_join(relative_parts[:-1]),
+                        filename=relative_parts[-1],
+                    )
+                else:
+                    directory = self._safe_path_join(relative_parts)
+                    # Match directory boundaries and escape literal % and _ in
+                    # names; deleting A must not remove indexed copies in A2.
+                    column = FileLocationModel.file_server_directories
+                    locations = locations.filter(
+                        (column == directory) | column.startswith(directory + os.sep, autoescape=True)
+                    )
+
+                # More than one indexed row can refer to a deleted path. Apply
+                # the same cleanup to every match, for files and directories.
+                for location in locations.all():
                     outcome = location.remove_from_db()
                     db.session.commit()
                     deletion_log['location_entries_effected'] += int(outcome["location_removed"])

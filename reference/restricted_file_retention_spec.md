@@ -152,6 +152,11 @@ app location-deletion paths for adoption. Routes delegate through their existing
 helpers/tasks; the unused broken route-module removal helper must be removed or
 replaced with delegation rather than remain a second implementation.
 
+Deletion reconciliation must select the exact directory and its descendants,
+with literal filename/path characters escaped in SQL pattern predicates. A
+directory such as `A2` is not part of `A`. Single-file deletion cleans up every
+indexed row for the deleted path, including duplicate index entries.
+
 Put the last-location decision on `FileModel.cleanup_if_unlocated()`, which
 `FileLocationModel.remove_from_db()` calls on the associated file after deleting
 the location. Phase 2 suppression removal calls this same file method after

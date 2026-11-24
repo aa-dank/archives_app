@@ -128,11 +128,14 @@ class FileModel(db.Model):
         Explicit child deletes support historical constraints without cascades.
         """
         outcome = {"file_removed": False, "restricted_file_retained": False}
+        # Refresh a previously loaded identity so a completed SQL flag change
+        # is respected; pending changes in this session autoflush first.
         current = FileModel.query.filter_by(id=self.id).populate_existing().first()
         if current is None:
             return outcome
-        if FileLocationModel.query.filter_by(file_id=current.id).first() is not None:
+        if db.session.query(FileLocationModel.id).filter_by(file_id=current.id).first() is not None:
             return outcome
+        # Chunks reference content; delete them first even without DB cascades.
         for model in (FileContentFtsChunkModel, FileDateMentionModel,
                       FileContentFailureModel, FileContentModel):
             model.query.filter_by(file_hash=current.hash).delete(synchronize_session="fetch")

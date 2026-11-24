@@ -349,7 +349,9 @@ physically removed. A flag change does not automatically invalidate output.
    storage needs one physical cleanup while all its publishers are stopped.
 4. Require a zero exit status and `Purge complete.`. Cache and filesystem errors
    are reported separately; a partial purge exits nonzero even if one side
-   succeeds. Keep publishers stopped, fix the failure, and retry. The operation
+   succeeds. A cache failure stops the cache pass while physical export cleanup
+   still runs. Failed export deletions identify the generated filename. Keep
+   publishers stopped, fix the failure, and retry. The operation
    is repeatable. Keep committed suppression flags in place during a retry.
 5. Verify old workbook download and `/static/temp_files/...` URLs return `404`,
    then resume the compatible web and single-worker processes. Run a fresh

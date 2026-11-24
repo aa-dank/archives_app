@@ -4,7 +4,6 @@ import hashlib
 from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from flask import g
@@ -12,7 +11,7 @@ from sqlalchemy import event, text
 
 from archives_application import bcrypt, create_app, db, utils
 from archives_application.archiver import archiver_tasks as tasks, archive_search as search
-from archives_application.archiver import file_info, routes, server_edit
+from archives_application.archiver import file_info, server_edit
 from archives_application.models import ArchivedFileModel, FileLocationModel, FileModel, UserModel, WorkerTaskModel
 
 
@@ -252,6 +251,44 @@ def test_server_delete_task_retains_restriction(app, is_file):
     assert dependent_counts(file.hash) == [0, 0, 0, 0]
 
 
+@pytest.mark.parametrize("directory,similar_sibling", [("A", "A2"), ("A_%", "A-other")])
+def test_directory_cleanup_preserves_siblings_and_escapes_wildcards(app, directory, similar_sibling):
+    file = add_file(directory=directory)
+    add_dependents(file)
+    db.session.add_all([
+        FileLocationModel(file_id=file.id, file_server_directories=directory + "/child", filename="child.pdf"),
+        FileLocationModel(file_id=file.id, file_server_directories=similar_sibling, filename="copy.pdf"),
+    ])
+    db.session.commit()
+    edit = object.__new__(server_edit.ServerEdit)
+    edit.old_path = str(Path(app.config["ARCHIVES_LOCATION"]) / directory)
+    edit.is_file = False
+    task_record("delete-directory")
+    result = edit.add_deletion_to_db_task("delete-directory")
+    db.session.expire_all()
+    assert result["location_entries_effected"] == 2
+    assert result["files_entries_effected"] == 0
+    assert FileLocationModel.query.one().file_server_directories == similar_sibling
+    assert dependent_counts(file.hash) == [1, 1, 1, 1]
+
+
+def test_single_file_cleanup_removes_all_duplicate_index_rows(app):
+    file = add_file()
+    add_dependents(file)
+    db.session.add(FileLocationModel(file_id=file.id, file_server_directories="A", filename="plans.pdf"))
+    db.session.commit()
+    edit = object.__new__(server_edit.ServerEdit)
+    edit.old_path = str(Path(app.config["ARCHIVES_LOCATION"]) / "A" / "plans.pdf")
+    edit.is_file = True
+    task_record("delete-duplicates")
+    result = edit.add_deletion_to_db_task("delete-duplicates")
+    db.session.expire_all()
+    assert result["location_entries_effected"] == 2 and result["files_entries_effected"] == 0
+    assert FileLocationModel.query.count() == 0
+    assert FileModel.query.one().content_restricted_at is not None
+    assert dependent_counts(file.hash) == [0, 0, 0, 0]
+
+
 def test_record_removal_uses_same_retention_policy(app):
     file = add_file()
     add_dependents(file)
@@ -372,6 +409,42 @@ def test_unrestricted_text_still_available_and_retained_hash_path_api_semantics(
     assert client.get(url, query_string={"file_hash": "unknown"}, auth=auth).status_code == 404
     html = client.get(f"/file_info/{hash_value}")
     assert html.status_code == 200 and b"No indexed locations" in html.data
+
+
+def test_shared_text_reader_enforces_suppression_and_only_bounds_html(app):
+    public = add_file(restricted=False)
+    add_dependents(public)
+    public_text = "Public text café\n" * 10
+    db.session.execute(text("UPDATE file_contents SET source_text=:value, text_length=:length"),
+                       {"value": public_text, "length": len(public_text)})
+    db.session.commit()
+    app.config["FILE_INFO_TEXT_WINDOW_CHARS"] = 12
+    html = file_info.get_file_info(public.hash, app, include_text=True)
+    assert html["extracted_text"] == public_text[:12]
+    assert html["returned_text_length"] == 12 and html["text_truncated"]
+    assert file_info.get_file_info_api(public.hash, app, include_text=True)["source_text"] == public_text
+    public.content_restricted_at = datetime(2026, 11, 20)
+    db.session.commit()
+    # The shared reader itself enforces suppression for full and bounded reads,
+    # even without the view-level metadata check.
+    assert file_info._fetch_source_text(public.hash) is None
+    assert file_info._fetch_source_text(public.hash, window_chars=12) is None
+    assert file_info._fetch_source_text("unknown") is None
+
+
+def test_shared_date_query_keeps_api_complete_and_html_bounded(app):
+    file = add_file()
+    add_dependents(file)
+    db.session.execute(text("""INSERT INTO file_date_mentions (file_hash, mention_date, granularity, mentions_count)
+        VALUES (:hash, '2026-01-01', 'day', 2), (:hash, '2026-01-02', 'month', 3)"""), {"hash": file.hash})
+    db.session.commit()
+    bounded = file_info._fetch_date_mentions(file.hash, limit=1)
+    assert len(bounded) == 1 and bounded[0]["mention_date"].isoformat() == "2026-01-01"
+    api = file_info.get_file_info_api(file.hash, app)
+    assert api["detected_dates"] == [
+        {"date": "2026-01-01", "occurrences": 2},
+        {"date": "2026-01-02", "occurrences": 4},
+    ]
 
 
 def test_archived_or_not_handles_retained_hash_without_locations(app):

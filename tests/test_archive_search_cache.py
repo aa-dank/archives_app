@@ -842,6 +842,15 @@ def test_backend_timeout_bytes_retry_and_error_contract():
         broken.set("key", b"value", True)
 
 
+def test_cache_client_closes_the_pool_created_for_it(monkeypatch):
+    """Maintenance must release its short-lived pool without touching RQ."""
+    adapter = KeyValueCache.from_url("redis://localhost:6379/0", 0.5)
+    closed = []
+    monkeypatch.setattr(adapter.client.connection_pool, "close", lambda: closed.append(True))
+    adapter.client.close()
+    assert closed == [True]
+
+
 @pytest.mark.parametrize("retention", [518400, 0, "518400", True])
 def test_maintenance_separate_retention(environment, monkeypatch, retention):
     """Retain search workbooks independently while ordinary-file cleanup and task status still complete."""

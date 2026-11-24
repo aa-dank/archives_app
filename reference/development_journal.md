@@ -2681,3 +2681,51 @@ Verify a remove/reupload cycle on a disposable deployment test share and fresh
 API/search/export behavior. Cached output does not automatically detect external
 flag changes; copies already downloaded by users remain outside the purge.
 Phase 2 management actions require their separate stakeholder agreement.
+
+---
+
+## Entry 083 - Simplify suppression reads and tighten deletion reconciliation
+**Date:** 2026-11-23
+**Author:** OpenAI Codex
+
+Reviewed the Phase 1 implementation for duplication and clear ownership.
+Consolidated full/API and bounded/HTML source-text reads into one parameterized
+query with the suppression predicate; the HTML window is still applied in SQL.
+Consolidated chronological date totals into one optionally bounded query, keeping
+API dates complete. Model cleanup retains its caller-owned transaction and now
+checks location membership using only the location ID; comments explain flag
+refresh and foreign-key deletion order.
+
+Split the global purge into cache and export passes under the existing public
+operation/result. A cache failure stops that pass while export cleanup still
+runs, and failed export deletions identify the generated filename. Cache clients
+now own the pools created for them, so closing the short-lived purge client also
+closes its sockets. RQ retains its separate client/pool. Fixed the temporary-path
+helper's documented no-filename mode, which previously raised before returning
+the directory; the purge now uses it directly instead of a dummy filename.
+
+Server deletion reconciliation now uses one selection/cleanup loop for file and
+directory jobs. Directory matching requires an exact directory or descendant
+boundary and escapes literal SQL wildcard characters, preserving siblings such
+as A2 when deleting A. Single-file cleanup removes every index row for the
+deleted path, including duplicates. Each location cleanup still commits
+atomically, and task counters advance only after commit. Selection failures now
+also pass through the existing rollback/failed-task handling.
+
+Affected runtime components: file-information data readers, lifecycle membership
+check, search-output maintenance, cache-client construction, shared temporary
+path helper, and server-deletion reconciliation. No schema, API response-shape,
+worker-count, or suppression-management changes were introduced.
+
+Verification: 334 tests passed with 3 optional live-store tests skipped.
+Regression coverage includes bounded/full/suppressed reads, complete API date
+totals, pool closure, directory lookup and filename reuse, wildcard/sibling
+boundaries, duplicate-location cleanup, and independent purge failure/retry
+outcomes. Changed Python syntax, all Jinja templates, PostgreSQL query
+compilation for full/bounded reads, purge CLI registration, and diff checks
+passed. Tests used disposable SQLite databases/files and mocked cache clients;
+no production database, share, or key-value store was changed.
+
+Follow-on: deploy compatible web/worker code using the existing single-worker
+arrangement and retain the documented publisher pause/drain and purge procedure
+for external suppression changes. No additional operational setup is required.

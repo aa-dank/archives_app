@@ -1,5 +1,6 @@
 """Operator cleanup of Archive Search output while publishers are stopped."""
 
+from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -22,8 +23,49 @@ class SearchOutputPurge:
     filesystem_errors: list[str] = field(default_factory=list)
 
     @property
-    def complete(self):
+    def complete(self) -> bool:
         return not self.cache_errors and not self.filesystem_errors
+
+
+def _purge_search_cache(app, namespace: str, outcome: SearchOutputPurge) -> None:
+    """Delete only literal namespace matches, preserving partial counts on error."""
+    prefix = f"{namespace}:archive-search:"
+    prefix_bytes = prefix.encode("utf-8")
+    # Redis MATCH uses glob syntax. Treat the configured namespace literally.
+    pattern = "".join("\\" + char if char in "\\*?[]" else char for char in prefix) + "*"
+    try:
+        cache = KeyValueCache.from_url(
+            app.config["KEY_VALUE_STORE_URL"], app.config.get("CACHE_TIMEOUT_SECONDS", 0.5))
+        with closing(cache.client) as client:
+            for key in client.scan_iter(match=pattern, count=100):
+                if not key.startswith(prefix_bytes):
+                    continue
+                outcome.cache_keys_removed += client.delete(key)
+    except (redis.RedisError, OSError, ValueError, TypeError, KeyError) as error:
+        outcome.cache_errors.append(f"Cache purge did not finish ({type(error).__name__}).")
+
+
+def _purge_search_exports(outcome: SearchOutputPurge) -> None:
+    """Remove published and unfinished search workbooks, leaving other files."""
+    from archives_application.archiver.archive_search import is_archive_search_workbook
+
+    try:
+        directory = Path(utils.FlaskAppUtils.create_temp_filepath())
+        for path in directory.iterdir():
+            # Reservations use the final workbook name followed by .reserve.
+            is_export = is_archive_search_workbook(path.name.removesuffix(".reserve"))
+            is_staging = path.name.startswith(".archive-search-") and path.name.endswith(".xlsx")
+            if not (is_export or is_staging):
+                continue
+            try:
+                path.unlink()
+                outcome.export_files_removed += 1
+            except FileNotFoundError:
+                pass  # Repeated cleanup is harmless.
+            except OSError as error:
+                outcome.filesystem_errors.append(f"{path.name}: {type(error).__name__}.")
+    except OSError as error:
+        outcome.filesystem_errors.append(f"Export purge did not finish ({type(error).__name__}).")
 
 
 def purge_archive_search_output(app, namespace: str) -> SearchOutputPurge:
@@ -32,50 +74,13 @@ def purge_archive_search_output(app, namespace: str) -> SearchOutputPurge:
     The operator must stop new searches/exports and drain active publishers
     before calling. This function neither changes suppression flags nor commits
     SQL. It also works with result caching disabled, when old keys may remain.
+    Each cleanup reports its own errors so one failure does not skip the other.
     """
-    from archives_application.archiver.archive_search import is_archive_search_workbook
-
     if not isinstance(namespace, str) or not namespace.strip():
         raise ValueError("A non-empty Archive Search cache namespace is required.")
     outcome = SearchOutputPurge()
-    prefix = f"{namespace}:archive-search:"
-    # Redis MATCH uses glob syntax. Treat the configured namespace literally.
-    pattern = "".join("\\" + char if char in "\\*?[]" else char for char in prefix) + "*"
-    try:
-        cache = KeyValueCache.from_url(
-            app.config["KEY_VALUE_STORE_URL"], app.config.get("CACHE_TIMEOUT_SECONDS", 0.5))
-        try:
-            for key in cache.client.scan_iter(match=pattern, count=100):
-                if not key.startswith(prefix.encode("utf-8")):
-                    continue
-                try:
-                    outcome.cache_keys_removed += cache.client.delete(key)
-                except (redis.RedisError, OSError) as error:
-                    outcome.cache_errors.append(f"Key deletion failed ({type(error).__name__}).")
-        finally:
-            cache.client.close()
-    except (redis.RedisError, OSError, ValueError, TypeError, KeyError) as error:
-        outcome.cache_errors.append(f"Cache purge did not finish ({type(error).__name__}).")
-
-    try:
-        # Use the same server-controlled storage path as the workbook writer.
-        directory = Path(utils.FlaskAppUtils.create_temp_filepath(
-            filename=".archive-search-purge", unique_filepath=False)).parent
-        for path in directory.iterdir():
-            is_export = is_archive_search_workbook(path.name)
-            is_reservation = path.name.endswith(".reserve") and is_archive_search_workbook(path.name[:-8])
-            is_staging = path.name.startswith(".archive-search-") and path.name.endswith(".xlsx")
-            if not (is_export or is_reservation or is_staging):
-                continue
-            try:
-                path.unlink()
-                outcome.export_files_removed += 1
-            except FileNotFoundError:
-                pass  # Repeated cleanup is harmless.
-            except OSError as error:
-                outcome.filesystem_errors.append(f"Export deletion failed ({type(error).__name__}).")
-    except OSError as error:
-        outcome.filesystem_errors.append(f"Export purge did not finish ({type(error).__name__}).")
+    _purge_search_cache(app, namespace, outcome)
+    _purge_search_exports(outcome)
     return outcome
 
 
