@@ -2729,3 +2729,23 @@ no production database, share, or key-value store was changed.
 Follow-on: deploy compatible web/worker code using the existing single-worker
 arrangement and retain the documented publisher pause/drain and purge procedure
 for external suppression changes. No additional operational setup is required.
+
+---
+
+## Entry 084 - Prepare version 1.19.12 for text suppression and retention
+**Date:** 2026-11-23
+**Author:** OpenAI Codex
+
+Advanced the application version from 1.19.11 to 1.19.12 for the Phase 1 text
+suppression and restricted-identity retention release. Updated the root project
+version in `pyproject.toml` and `uv.lock`; dependency versions are unchanged.
+The application reads this value for its UI and search-run telemetry. Added
+the synthetic file-information previews from Phase 1 validation as PR assets;
+their screenshots precede the release version bump.
+
+Verification: the reviewed implementation passed 334 tests with 3 optional
+live-store tests skipped. Release checks confirm lock consistency, unchanged
+dependency records, and runtime version reporting of 1.19.12. Follow-on: deploy
+matching web/worker code with one worker and perform the documented coordinated
+search-cache/export purge at rollout. Creating or merging the PR does not
+perform that deployment or purge.
