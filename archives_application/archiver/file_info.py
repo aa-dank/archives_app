@@ -2,10 +2,11 @@
 
 from pathlib import PureWindowsPath
 
-from sqlalchemy import text
+from sqlalchemy import func, text
 
 from archives_application import db, utils
 from archives_application.archiver import archive_search
+from archives_application.models import FileContentModel, FileModel
 
 
 DEFAULT_TEXT_WINDOW_CHARS = 10_000
@@ -25,7 +26,8 @@ def can_view_file_text(user) -> bool:
     """Return whether a user may view extracted text.
 
     V1 allows every authenticated user.  Keeping this as a named policy helper
-    makes a later role-based policy a local change.
+    makes a later role-based policy a local change. File-level text suppression
+    is enforced separately by the data reader, including for eligible users.
     """
     return bool(getattr(user, "is_authenticated", False))
 
@@ -74,6 +76,7 @@ def _fetch_file_metadata(file_hash: str) -> dict | None:
             f.hash AS file_hash,
             f.size AS size_bytes,
             f.extension,
+            f.content_restricted_at,
             fc.text_length,
             fc.updated_at AS text_updated_at,
             fcf.stage AS failure_stage,
@@ -87,7 +90,11 @@ def _fetch_file_metadata(file_hash: str) -> dict | None:
         LEFT JOIN file_content_failures fcf ON fcf.file_hash = f.hash
         WHERE f.hash = :file_hash
     """
-    row = db.session.execute(text(sql), {"file_hash": file_hash}).mappings().first()
+    statement = text(sql).columns(
+        content_restricted_at=db.DateTime(timezone=True),
+        text_updated_at=db.DateTime(timezone=True),
+    )
+    row = db.session.execute(statement, {"file_hash": file_hash}).mappings().first()
     return dict(row) if row else None
 
 
@@ -113,7 +120,9 @@ def _fetch_locations(
             fl.filename,
             fl.id
     """
-    rows = db.session.execute(text(sql), {"file_hash": file_hash}).mappings().all()
+    statement = text(sql).columns(
+        existence_confirmed=db.DateTime(), hash_confirmed=db.DateTime())
+    rows = db.session.execute(statement, {"file_hash": file_hash}).mappings().all()
     locations = []
     for row in rows:
         location = dict(row)
@@ -127,8 +136,8 @@ def _fetch_locations(
     return locations
 
 
-def _fetch_date_mentions(file_hash: str, limit: int) -> list[dict]:
-    """Fetch a bounded, chronological list of calendar dates for a file."""
+def _fetch_date_mentions(file_hash: str, limit: int | None = None) -> list[dict]:
+    """Fetch chronological date totals, optionally bounded for the HTML page."""
     sql = """
         SELECT
             mention_date,
@@ -137,27 +146,14 @@ def _fetch_date_mentions(file_hash: str, limit: int) -> list[dict]:
         WHERE file_hash = :file_hash
         GROUP BY mention_date
         ORDER BY mention_date ASC
-        LIMIT :limit
     """
+    params = {"file_hash": file_hash}
+    if limit is not None:
+        sql += " LIMIT :limit"
+        params["limit"] = limit
     rows = db.session.execute(
-        text(sql),
-        {"file_hash": file_hash, "limit": limit},
+        text(sql).columns(mention_date=db.Date()), params,
     ).mappings().all()
-    return [dict(row) for row in rows]
-
-
-def _fetch_all_date_mentions(file_hash: str) -> list[dict]:
-    """Fetch every distinct detected date for API output."""
-    sql = """
-        SELECT
-            mention_date,
-            sum(mentions_count) AS mentions_count
-        FROM file_date_mentions
-        WHERE file_hash = :file_hash
-        GROUP BY mention_date
-        ORDER BY mention_date ASC
-    """
-    rows = db.session.execute(text(sql), {"file_hash": file_hash}).mappings().all()
     return [dict(row) for row in rows]
 
 
@@ -203,29 +199,24 @@ def _fetch_date_mention_highlights(
     return [dict(row) for row in rows]
 
 
-def _fetch_text_window(file_hash: str, window_chars: int) -> str | None:
-    """Fetch only the leading extracted-text window for an authenticated view."""
-    sql = """
-        SELECT substring(source_text FROM 1 FOR :window_chars) AS extracted_text
-        FROM file_contents
-        WHERE file_hash = :file_hash
-    """
-    row = db.session.execute(
-        text(sql),
-        {"file_hash": file_hash, "window_chars": window_chars},
-    ).mappings().first()
-    return row["extracted_text"] if row else None
+def _fetch_source_text(file_hash: str, window_chars: int | None = None) -> str | None:
+    """Fetch unsuppressed text: a leading window for HTML, the full value for API.
 
-
-def _fetch_source_text(file_hash: str) -> str | None:
-    """Fetch the complete source text only for an explicit API request."""
-    sql = """
-        SELECT source_text
-        FROM file_contents
-        WHERE file_hash = :file_hash
+    Callers skip this query for suppressed metadata. The SQL guard also keeps
+    direct callers from retrieving suppressed text.
     """
-    row = db.session.execute(text(sql), {"file_hash": file_hash}).mappings().first()
-    return row["source_text"] if row else None
+    source_text = FileContentModel.source_text
+    if window_chars is not None:
+        source_text = func.substr(source_text, 1, window_chars)
+    statement = (
+        db.select(source_text)
+        .join(FileModel, FileModel.hash == FileContentModel.file_hash)
+        .where(
+            FileContentModel.file_hash == file_hash,
+            FileModel.content_restricted_at.is_(None),
+        )
+    )
+    return db.session.execute(statement).scalar_one_or_none()
 
 
 def _fetch_file_and_locations(
@@ -360,6 +351,7 @@ def get_file_info_api(
         "file_hash": metadata["file_hash"],
         "size_bytes": metadata.get("size_bytes"),
         "extension": metadata.get("extension"),
+        "content_restricted_at": _iso_value(metadata.get("content_restricted_at")),
         "location_count": len(locations),
         "locations": [
             _serialize_api_location(location, include_user_paths)
@@ -374,11 +366,13 @@ def get_file_info_api(
                 "date": _iso_value(mention.get("mention_date")),
                 "occurrences": mention.get("mentions_count"),
             }
-            for mention in _fetch_all_date_mentions(file_hash)
+            for mention in _fetch_date_mentions(file_hash)
         ],
     }
     if include_text:
-        api_data["source_text"] = _fetch_source_text(file_hash)
+        api_data["source_text"] = (
+            _fetch_source_text(file_hash) if metadata.get("content_restricted_at") is None else None
+        )
     return api_data
 
 
@@ -389,7 +383,8 @@ def get_file_info(
 ) -> dict | None:
     """Return the complete view model for an indexed archive file.
 
-    The source text is deliberately queried only when ``include_text`` is true.
+    Source text is queried only when requested and unsuppressed, with the
+    server-controlled HTML window applied in SQL.
     """
     metadata, locations = _fetch_file_and_locations(
         file_hash=file_hash,
@@ -415,13 +410,17 @@ def get_file_info(
 
     text_status = archive_search._status_from_metadata(metadata)
     text_limit = text_window_chars(app)
-    extracted_text = _fetch_text_window(file_hash, text_limit) if include_text else None
+    extracted_text = (
+        _fetch_source_text(file_hash, window_chars=text_limit)
+        if include_text and metadata.get("content_restricted_at") is None else None
+    )
     returned_text_length = len(extracted_text) if extracted_text is not None else 0
     stored_text_length = metadata.get("text_length")
 
     return {
         "file_hash": metadata["file_hash"],
         "file_id": metadata["file_id"],
+        "content_restricted_at": metadata.get("content_restricted_at"),
         "display_filename": (display_location or {}).get("filename") or "Unnamed indexed file",
         "multiple_filenames": len({location.get("filename") for location in locations}) > 1,
         "size_bytes": metadata.get("size_bytes"),

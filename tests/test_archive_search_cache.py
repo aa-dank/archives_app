@@ -175,6 +175,56 @@ def result_entry(env):
     return next((key, value) for key, value in env.backend.entries.items() if ":result:" in key)
 
 
+@pytest.mark.parametrize("mode", ["content", "filename_only", "filepath", "combined"])
+def test_suppressed_matches_keep_metadata_without_snippets_in_fresh_cached_html_api_and_excel(environment, monkeypatch, mode):
+    env = environment
+    original_metadata = search._fetch_file_metadata
+
+    def metadata(hashes):
+        result = original_metadata(hashes)
+        result["hash-1"]["content_restricted_at"] = datetime(2026, 11, 1, tzinfo=timezone.utc)
+        return result
+
+    def snippets(query, ids):
+        assert 1 not in ids  # Suppressed chunk text must never be requested.
+        return {2: "<mark>PUBLIC-SNIPPET</mark>"} if 2 in ids else {}
+
+    monkeypatch.setattr(search, "_fetch_file_metadata", metadata)
+    monkeypatch.setattr(search, "_fetch_snippets", snippets)
+    monkeypatch.setattr(search, "_execute_content_search", lambda *args: [
+        {"file_hash": "hash-1", "content_rank": 0.7, "matching_chunks": 2, "best_chunk_id": 1},
+        {"file_hash": "hash-2", "content_rank": 0.2, "matching_chunks": 1, "best_chunk_id": 2},
+    ])
+    request = search.ArchiveSearchRequest.from_values("plans", search_mode=mode)
+    with env.app.app_context():
+        first = search.prepare_archive_search_page(request, env.app, 300, 3000, None)
+        second = search.prepare_archive_search_page(request, env.app, 300, 3000, None)
+        assert second.cache_hit and first.search == second.search
+        for response in (first, second):
+            results = {result["file_hash"]: result for result in response.search["results"]}
+            assert results["hash-1"]["snippet"] == ""
+            assert results["hash-1"]["text_status"] == "content_searchable"
+            assert results["hash-1"]["text_length"] == 500
+            assert len(results["hash-1"]["locations"]) == 2
+            if mode in ("content", "combined"):
+                assert results["hash-1"]["matching_chunks"] == 2
+                assert results["hash-1"]["content_rank"] == 0.7
+                assert "PUBLIC-SNIPPET" in results["hash-2"]["snippet"]
+            api = search.build_archive_search_api_response(response.search, 1, 3000)
+            assert next(row for row in api["results"] if row["file_hash"] == "hash-1")["snippet"] == ""
+            workbook = load_workbook(search.archive_search_workbook_path(response.timestamp))
+            rows = list(workbook["Results"].values)
+            columns = {value: idx for idx, value in enumerate(rows[0])}
+            restricted = next(row for row in rows[1:] if row[columns["file_hash"]] == "hash-1")
+            assert restricted[columns["snippet"]] is None
+            assert restricted[columns["text_length"]] == 500
+        assert env.calls["metadata"] == 1
+    html = env.client.get("/archives_search", query_string={"search_term": "plans", "search_mode": mode})
+    assert html.status_code == 200
+    assert b"hash-1" in html.data
+    assert b"&lt;x&gt; <mark>plans</mark>" not in html.data
+
+
 def test_warm_page_skips_all_search_stages_and_excel(environment, monkeypatch):
     """Verify full source reuse and export reuse while every request still persists new telemetry."""
     env = environment
@@ -683,7 +733,7 @@ def test_identity_inputs_and_safe_normalization(environment, monkeypatch):
     assert caching.identity_digest(request, config, 3000, 432000) == caching.identity_digest(request, other_creds, 3000, 432000)
     for url in ("postgresql://host2/archives", "postgresql://host:5433/archives", "postgresql://host/other"):
         assert caching.identity_digest(request, dict(config, SQLALCHEMY_DATABASE_URI=url), 3000, 432000) != caching.identity_digest(request, config, 3000, 432000)
-    monkeypatch.setattr(caching, "SEARCH_FORMAT_VERSION", 2)
+    monkeypatch.setattr(caching, "SEARCH_FORMAT_VERSION", caching.SEARCH_FORMAT_VERSION + 1)
     assert caching.identity_digest(request, env.app.config, 3000, 432000) != baseline
 
 
@@ -790,6 +840,15 @@ def test_backend_timeout_bytes_retry_and_error_contract():
         broken.delete("key")
     with pytest.raises(ValueError):
         broken.set("key", b"value", True)
+
+
+def test_cache_client_closes_the_pool_created_for_it(monkeypatch):
+    """Maintenance must release its short-lived pool without touching RQ."""
+    adapter = KeyValueCache.from_url("redis://localhost:6379/0", 0.5)
+    closed = []
+    monkeypatch.setattr(adapter.client.connection_pool, "close", lambda: closed.append(True))
+    adapter.client.close()
+    assert closed == [True]
 
 
 @pytest.mark.parametrize("retention", [518400, 0, "518400", True])

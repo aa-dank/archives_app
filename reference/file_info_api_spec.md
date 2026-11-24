@@ -51,7 +51,8 @@ deployment.  The endpoint must not accept an application password in a query
 parameter.
 
 All authenticated archive API users may read file metadata and source text in
-the first version.  Keep this check as a named policy helper so a later
+the first version, subject to the file's active text suppression. Keep the
+authentication check as a named policy helper so a later
 role-based text rule can be applied consistently.
 
 Responses containing source text must send:
@@ -78,7 +79,7 @@ valid.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `include_text` | `false` | When `true`, include the complete stored `file_contents.source_text` value as `source_text`.  When `false`, omit `source_text` entirely. |
+| `include_text` | `false` | When `true`, include the complete stored `file_contents.source_text` value as `source_text`, or null when text suppression is active. When `false`, omit `source_text` entirely. |
 | `include_user_paths` | `false` | When `true`, represent each location using a user-usable full path.  When `false`, represent it using the path columns stored in `file_locations`. |
 
 `file_hash` and `user_path` are mutually exclusive.  Repeated selectors, no
@@ -117,6 +118,7 @@ Database nulls are JSON `null`.
   "file_hash": "canonical-file-hash",
   "size_bytes": 1048576,
   "extension": "pdf",
+  "content_restricted_at": null,
   "location_count": 2,
   "locations": [],
   "text_status": "content_searchable",
@@ -136,7 +138,13 @@ own display behavior.
 
 `file_id`, raw extraction errors, `file_contents.source_metadata`, and
 `file_content_failures.source_metadata` are internal implementation details
-and are not exposed.
+and are not exposed. `restriction_reason` is also private.
+
+`content_restricted_at` is an ISO-8601 timestamp or null. A non-null value
+suppresses extracted-text display while preserving metadata, detected dates,
+and text/indexing status. A retained hash with zero indexed locations returns
+`200` with `location_count: 0` and `locations: []`. Its removed location's
+former user path returns `404`.
 
 ### Location representations
 
@@ -218,7 +226,7 @@ When `include_text=true`, add one member to the response:
 }
 ```
 
-If no `file_contents` row exists, or its `source_text` is null,
+If text suppression is active, no `file_contents` row exists, or its `source_text` is null,
 `source_text` is returned as `null`.  The response is otherwise the same as
 the metadata response.
 
@@ -227,7 +235,8 @@ length for this first version.  This API is expected to be low-frequency, and
 only roughly six of approximately 750,000 files have source text above 10 MB
 (including two around 60 MB and one around 26 MB).  The endpoint must retrieve
 the full value only when `include_text=true`; the default metadata request must
-not select or serialize `file_contents.source_text`.
+not select or serialize `file_contents.source_text`. Suppressed source text
+must not be fetched even when `include_text=true`; return null instead.
 
 The rare full-text responses are allowed to be large.  They should be treated
 as a deliberate client opt-in, not as an error or automatically truncated
@@ -288,7 +297,7 @@ database is migrated to enforce one.
   root, or traversal-like path components return `400`.
 - A valid but unindexed user path returns `404`; an indexed-path ambiguity
   across different hashes returns `409`.
-- `include_text=TRUE` returns the complete stored text, including a text value
+- For unrestricted files, `include_text=TRUE` returns the complete stored text, including a text value
   larger than 10 MB, and has `Cache-Control: private, no-store`.
 - A file without extracted content returns `source_text: null` when text is
   requested.
@@ -300,4 +309,7 @@ database is migrated to enforce one.
   order, using the documented `date` and `occurrences` keys.
 - Invalid booleans, unknown parameters, missing authentication, and unknown
   hashes produce the documented status and JSON error format.
-- The existing `/file_info/<file_hash>` HTML behavior remains unchanged.
+- Suppressed files return a timestamp and, when requested, `source_text: null`
+  without fetching source text. Metadata, dates, and status remain available.
+- The `/file_info/<file_hash>` HTML page follows the same suppression policy
+  and explains when a retained identity has no indexed locations.

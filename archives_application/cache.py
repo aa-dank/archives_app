@@ -83,7 +83,9 @@ class KeyValueCache:
             # Validate lazy connection options without opening a socket. Bad URL
             # options must disable the cache at startup, not fail a later search.
             pool.connection_class(**pool.connection_kwargs)
-            client = redis.Redis(connection_pool=pool)
+            # This adapter creates its own pool. Give the client ownership so
+            # short-lived maintenance clients release sockets when closed.
+            client = redis.Redis.from_pool(pool)
         except (redis.RedisError, TypeError, ValueError, OverflowError) as error:
             raise ValueError("Invalid cache connection configuration") from error
         return cls(client)

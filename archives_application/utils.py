@@ -773,21 +773,20 @@ class FlaskAppUtils:
     @staticmethod
     def create_temp_filepath(filename: str = None, unique_filepath: bool = True):
         """
-        Pattern for creating a path for a temp file on the server.
-        :param filename: the name of the file to be created. If no filename is provided, the path to the temp file directory is returned.
-        :param original_filepath: if True, will add a random number to the end of the filename until the filename is unique.
+        Return the temporary directory or a path within it, creating the directory.
+        :param filename: optional filename; omit to return the directory itself.
+        :param unique_filepath: append random digits if needed to avoid an existing filename.
         """
         temp_location_dirs = ["archives_application", "static", "temp_files"]
         temp_location = os.path.join(os.getcwd(), *temp_location_dirs)
 
-        if not os.path.exists(temp_location):
-            os.makedirs(temp_location)
-        
-        temp_path = os.path.join(temp_location, filename)
+        os.makedirs(temp_location, exist_ok=True)
 
         # if no filename is provided, return the path to the temp file directory
         if not filename:
-            return temp_path
+            return temp_location
+
+        temp_path = os.path.join(temp_location, filename)
 
         # if the file already exists, add a random number to the end of the filename
         while unique_filepath and os.path.exists(temp_path):
@@ -797,7 +796,7 @@ class FlaskAppUtils:
             else:
                 filename_parts[0] += str(random.randint(0, 1000000))
             filename = ".".join(filename_parts)
-            temp_path = os.path.join(os.getcwd(), *["archives_application", "static", "temp_files", filename])
+            temp_path = os.path.join(temp_location, filename)
         
         return temp_path
 

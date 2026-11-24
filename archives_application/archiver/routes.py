@@ -132,7 +132,8 @@ def file_info_api():
 
         - ``include_text``: Add the complete stored
           ``file_contents.source_text`` as ``source_text``.  Default requests
-          do not select or serialize this potentially large value.
+          do not select or serialize this potentially large value. Suppressed
+          files return ``source_text: null`` without retrieving their text.
         - ``include_user_paths``: Return each location's complete
           user-facing ``user_path``.  Otherwise each location contains a
           database-relative ``database_path``.  Both representations include
@@ -145,9 +146,14 @@ def file_info_api():
 
         ``file_hash``, ``size_bytes``, ``extension``, ``location_count``,
         ``locations``, ``text_status``, ``text_status_label``, ``text_length``,
-        ``text_updated_at``, and ``detected_dates``.  ``source_text`` appears
+        ``text_updated_at``, ``content_restricted_at``, and ``detected_dates``.  ``source_text`` appears
         only when ``include_text=true``; it is ``null`` when the file has no
-        content row or its stored source text is null.
+        content row, its stored source text is null, or suppression is active.
+        ``content_restricted_at`` is an ISO-8601 timestamp or null. The private
+        restriction reason is not returned. Suppression preserves metadata,
+        dates, and indexing status. A retained hash with no locations returns
+        ``200`` with ``location_count: 0`` and ``locations: []``; a removed
+        location's former user path returns ``404``.
 
         ``locations`` contains ``location_id``, ``filename``,
         ``existence_confirmed``, and ``hash_confirmed``, plus exactly one of
@@ -233,37 +239,6 @@ def file_info(file_hash):
     if can_view_text:
         response.headers["Cache-Control"] = "private, no-store"
     return response
-
-def remove_file_location(db: flask_sqlalchemy.SQLAlchemy, file_path: str):
-    """
-    Removes a file from the server and deletes the entry from the database
-    :param db: SQLAlchemy object
-    :param file_path: path to file on the server
-    :return: None
-    """
-    if os.path.exists(file_path):
-        os.remove(file_path)
-    
-    # extract the directories it is nested within and the filename; use these to query the database
-    path_list = utils.FileServerUtils.split_path(file_path)
-    file_server_root_index = os.path.join(*path_list[:-1]) 
-    server_dirs_list = path_list[file_server_root_index:-1]
-    server_dirs = os.path.join(*server_dirs_list)
-    file_loc = db.session.query(FileLocationModel).filter(FileLocationModel.file_server_directories == server_dirs,
-                                                          FileLocationModel.filename == path_list[-1]).first()
-    
-    if not file_loc:
-        return True
-    
-    other_locations = len(db.session.query(FileLocationModel).filter(FileLocationModel.file_id == file_loc.file_id).all()) > 1
-    file_deleted = db.session.delete(file_loc)
-    if not other_locations:
-        file_to_delete = db.session.query(FileModel).filter(FileModel.id == file_loc.file_id)
-        db.session.query(ArchivedFileModel).filter(ArchivedFileModel.file_id == file_to_delete.id).update({"file_id": None})
-        db.session.delete(file_to_delete)
-    
-    db.session.commit()
-    return file_deleted
 
 def get_user_handle():
     '''
@@ -2206,8 +2181,7 @@ def archived_or_not():
                         or a redirect with a flash message if the file is not found.
     Raises:
         Exception: An exception is raised when an error occurs during file processing,
-                    querying the database, or if the file is found in the database but
-                    no locations are associated with it.
+                    or querying the database.
     """
     form = archiver_forms.ArchivedOrNotForm()
     if form.validate_on_submit():
@@ -2227,7 +2201,8 @@ def archived_or_not():
             locations = db.session.query(FileLocationModel).filter(FileLocationModel.file_id == matching_file.id)
             locations_df = utils.FlaskAppUtils.db_query_to_df(locations)
             if locations_df.empty:
-                raise Exception(f"No locations found for indexed file, {filename}, though a matching file was found.")
+                flask.flash(f"No indexed copies are available for {filename}.", 'info')
+                return flask.redirect(flask.url_for('archiver.archived_or_not'))
             
             locations_df = generate_filepaths_dataframe(
                 locations_df,
@@ -2913,7 +2888,10 @@ def archives_search_api():
 
         ``content_rank`` and ``filepath_rank`` are numbers when that retrieval
         source matched and null otherwise. ``snippet`` is a plain-text excerpt
-        for content matches and is empty for filename/path-only matches.
+        for content matches and is empty for filename/path-only matches or
+        files with active text suppression. Suppressed files retain matching,
+        ranking, and metadata. Search and coverage require an indexed location;
+        retained identities without locations are excluded.
         ``text_status`` describes extraction coverage, such as
         ``content_searchable``, ``image_ocr_searchable``,
         ``text_extracted_not_chunked``, ``empty_or_thin_text``,
@@ -3081,16 +3059,9 @@ def _download_archive_search_workbook(query_args):
                 as_attachment=True,
                 mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             )
-        source_format = (
-            archive_search_service.WORKBOOK_TIMESTAMP_FORMAT
-            if len(timestamp) == 20 else '%Y%m%d%H%M%S'
-        )
-        readable_timestamp = datetime.strptime(timestamp, source_format).strftime(
-            '%Y-%m-%d %H:%M:%S'
-        )
-        raise FileNotFoundError(
-            f"Archive search results from {readable_timestamp} not found. "
-            f"Expected file at {xlsx_filepath}"
+        return flask.Response(
+            "These archive search results are no longer available. Please rerun the search.",
+            status=404,
         )
     except Exception as error:
         return utils.FlaskAppUtils.web_exception_subroutine(

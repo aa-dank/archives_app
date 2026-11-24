@@ -16,6 +16,10 @@
             <dd class="col-sm-8"><code>{{ file_info.file_hash }}</code></dd>
             <dt class="col-sm-4">Indexed locations</dt>
             <dd class="col-sm-8">{{ file_info.location_count }}</dd>
+            {% if file_info.content_restricted_at %}
+                <dt class="col-sm-4">Text suppression applied</dt>
+                <dd class="col-sm-8">{{ file_info.content_restricted_at }}</dd>
+            {% endif %}
         </dl>
     </div>
 
@@ -169,7 +173,9 @@
 
     <div class="content-section file-info-section">
         <h4>Extracted Text</h4>
-        {% if can_view_text %}
+        {% if file_info.content_restricted_at %}
+            <p>Extracted text is suppressed for this file and is not displayed.</p>
+        {% elif can_view_text %}
             {% if file_info.extracted_text %}
                 <pre id="extracted-text" class="file-info-extracted-text">{{ file_info.extracted_text }}</pre>
                 {% if file_info.text_truncated %}

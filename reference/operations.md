@@ -36,6 +36,21 @@ Archive search runs synchronously in the web process. Large unscoped content que
 
 The Docker files record a development web/Valkey stack with site-specific CIFS mounts. They do not include PostgreSQL, an RQ-worker service, or a maintenance scheduler. They should not be read as a complete description of the deployed infrastructure.
 
+### Current worker concurrency
+
+Production uses PostgreSQL 17 and a single RQ worker process. Traffic is low,
+and running queued app jobs one at a time is an intentional operating choice
+to avoid races between workers. Preserve this deployment arrangement for the
+text-suppression and restricted-file-retention work.
+
+This serializes queued app jobs; web requests, manual SQL changes, and external
+services can still overlap with them. Broader concurrency coordination and
+support for multiple workers are separate future work, outside this initiative.
+The current effort does not require new locking infrastructure or PostgreSQL
+concurrency-test infrastructure. Ordinary transaction boundaries and rollback
+checks remain necessary. Coordinate flag maintenance and cache/export purges
+with active searches and exports as described in the retention specification.
+
 ### WSL Valkey service
 
 The Ubuntu 22.04 development host uses upstream `valkey-server` and `valkey-tools`
@@ -252,9 +267,10 @@ reload/copy steps. The application still selects the deployment file by default.
 
 Use the shared endpoint with a separate cache client/pool and a distinct environment/dataset namespace;
 see [Configuration](configuration.md#archive-search-cache-and-workbook-retention)
-for all settings and a JSON example. Namespace changes are the initial bulk
-invalidation mechanism; never use `FLUSHDB`/`FLUSHALL` on a service shared with
-RQ. Old namespaced entries expire normally. Payload/search versions belong to
+for all settings and a JSON example. Namespace changes invalidate lookup, but
+do not remove old Excel files or their URLs. Use the suppression purge procedure
+below when old output must be removed; never use `FLUSHDB`/`FLUSHALL` on a service
+shared with RQ. Other old namespaced entries expire normally. Payload/search versions belong to
 the consumer and must advance when result interpretation or ranking changes.
 
 Workbooks live in the existing temporary directory on a single host, or a shared
@@ -287,6 +303,66 @@ headroom. This is a planning estimate, not a measured six-day traffic bound.
 Refreshes, concurrent misses, failed reference writes, and manual deletion can
 create extra files. Confirm capacity beyond other temporary artifacts and refine
 both cache and disk allowances from actual traffic after rollout.
+
+### Text suppression and search-output purge
+
+Phase 1 enforces non-null `files.content_restricted_at` on extracted text and
+search snippets. Suppressed files retain metadata, search matching, and access
+under existing filesystem rules. When their last indexed location is removed,
+app reconciliation retains the canonical identity, timestamp, reason, and
+archive-history links, and deletes content, chunks, detected dates, and failures.
+An identical re-upload reuses that identity. The app does not modify suppression
+flags in Phase 1; management forms and apply/remove endpoints remain Phase 2.
+
+Run this procedure at rollout and whenever suppression flags are changed via
+SQL or another external workflow. Result-cache versioning prevents reuse of
+pre-change search results, but existing Excel files remain accessible until
+physically removed. A flag change does not automatically invalidate output.
+
+1. Stop new Archive Search requests and exports, and allow active requests to
+   finish, or stop the serving web processes after draining them. Keep every
+   publisher using this cache namespace or export directory stopped until the
+   procedure finishes. Archive Search runs in the web process, so stopping the
+   single RQ worker alone does not drain searches. At rollout also drain old
+   worker jobs and install compatible web/worker code before resuming them.
+2. Apply any intended flag changes through the existing SQL workflow and commit
+   them. For removal, clear both `content_restricted_at` and `restriction_reason`.
+   Phase 1 does not automatically clean a locationless identity immediately on
+   an external flag clearance; future app cleanup uses the current flag.
+3. From the repository root, as the service user with the deployment's normal
+   environment/configuration and export-directory permissions, run:
+
+   ```bash
+   ARCHIVES_CONFIG_FILE=deploy_app_config.json .venv/bin/flask --app run:app purge-archive-search-output --publishers-stopped
+   ```
+
+   `--publishers-stopped` records the operator's assertion that step 1 has been
+   completed; the command does not stop or inspect processes itself. It removes
+   all `<CACHE_NAMESPACE>:archive-search:*` keys, across search-cache versions,
+   plus recognized Archive Search workbooks and leftover staging/reservation
+   files in the app's temporary directory. RQ keys, other caches, previews, and
+   uploads are preserved. The key-value service account needs `SCAN` and `DEL`
+   permissions. The purge also runs when result caching is disabled.
+   A nonempty namespace is required; `--namespace NAME` can explicitly select
+   a previous namespace. Repeat for any previous namespace that could still be
+   used, and on every separate host-local export directory. Shared export
+   storage needs one physical cleanup while all its publishers are stopped.
+4. Require a zero exit status and `Purge complete.`. Cache and filesystem errors
+   are reported separately; a partial purge exits nonzero even if one side
+   succeeds. A cache failure stops the cache pass while physical export cleanup
+   still runs. Failed export deletions identify the generated filename. Keep
+   publishers stopped, fix the failure, and retry. The operation
+   is repeatable. Keep committed suppression flags in place during a retry.
+5. Verify old workbook download and `/static/temp_files/...` URLs return `404`,
+   then resume the compatible web and single-worker processes. Run a fresh
+   search and check a suppressed file's metadata remains visible while its
+   snippet, extracted text, and Excel snippet cell are absent.
+
+The command neither changes database flags nor purges already downloaded user
+copies. SQL changes and global publication coordination remain operator-managed;
+multi-worker coordination and external scraper changes are separate work.
+Before rolling back to code that deletes all last-location identities, preserve
+the small active-suppression identity set through the approved backup process.
 
 Before enabling on the selected deployment, run the cache and RQ contract checks
 with `ARCHIVES_CACHE_TEST_URL` and `ARCHIVES_RQ_TEST_URL` set to that endpoint:

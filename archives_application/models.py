@@ -120,6 +120,34 @@ class FileModel(db.Model):
         cascade="all, delete-orphan",
     )
 
+    def cleanup_if_unlocated(self):
+        """Clean one unlocated identity, retaining active suppression; never commit.
+
+        The caller owns this transaction. App jobs run through a single worker;
+        coordination with concurrent external writers is outside this policy.
+        Explicit child deletes support historical constraints without cascades.
+        """
+        outcome = {"file_removed": False, "restricted_file_retained": False}
+        # Refresh a previously loaded identity so a completed SQL flag change
+        # is respected; pending changes in this session autoflush first.
+        current = FileModel.query.filter_by(id=self.id).populate_existing().first()
+        if current is None:
+            return outcome
+        if db.session.query(FileLocationModel.id).filter_by(file_id=current.id).first() is not None:
+            return outcome
+        # Chunks reference content; delete them first even without DB cascades.
+        for model in (FileContentFtsChunkModel, FileDateMentionModel,
+                      FileContentFailureModel, FileContentModel):
+            model.query.filter_by(file_hash=current.hash).delete(synchronize_session="fetch")
+        if current.content_restricted_at is not None:
+            outcome["restricted_file_retained"] = True
+        else:
+            ArchivedFileModel.query.filter_by(file_id=current.id).update({"file_id": None})
+            # Bulk deletion avoids ORM loading source text/embeddings to cascade.
+            FileModel.query.filter_by(id=current.id).delete(synchronize_session="fetch")
+            outcome["file_removed"] = True
+        return outcome
+
     def __repr__(self):
         return f"file: {self.id}, {self.hash}, {self.size}, {self.extension}"
 
@@ -134,6 +162,26 @@ class FileLocationModel(db.Model):
     filename = db.Column("filename", db.String)
     existence_confirmed = db.Column("existence_confirmed", db.DateTime)
     hash_confirmed = db.Column("hash_confirmed", db.DateTime)
+
+    def remove_from_db(self):
+        """Remove this location and clean its parent atomically, without commit.
+
+        Repeated removal is a no-op. Flush the removal before checking whether
+        the parent still has any indexed copies.
+        """
+        outcome = {"location_removed": False, "file_removed": False,
+                   "restricted_file_retained": False}
+        location_id = self.id
+        current = FileLocationModel.query.filter_by(id=location_id).populate_existing().first()
+        if current is None:
+            return outcome
+        parent = db.session.get(FileModel, current.file_id)
+        db.session.delete(current)
+        db.session.flush()
+        outcome["location_removed"] = True
+        if parent is not None:
+            outcome.update(parent.cleanup_if_unlocated())
+        return outcome
 
     def __repr__(self):
         return f"File Location: {self.id}, {self.file_id}, {self.file_server_directories}, {self.filename}, {self.existence_confirmed}, {self.hash_confirmed}"
